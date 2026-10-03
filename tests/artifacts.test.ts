@@ -169,7 +169,7 @@ describe("artifactOwnerEmail", () => {
   });
 
   it.each(["slack", "webhook", "schedule"] as const)(
-    "names nobody for a %s run — its id is a channel or a trigger, not a mailbox",
+    "does not derive an owner from a %s actor without an explicit owner email",
     (kind) => {
       expect(artifactOwnerEmail({ kind, id: "U123" })).toBeUndefined();
     },
@@ -181,7 +181,7 @@ describe("artifactOwnerEmail", () => {
 });
 
 describe("put", () => {
-  it("indexes by agent, which is the only axis every artifact has", async () => {
+  it("indexes ordinary output by agent", async () => {
     await artifactRepository.put(artifact());
     expect(await store.getItem(keys.artifact("a1"))).toMatchObject({
       PK: "ARTIFACT#a1",
@@ -200,14 +200,13 @@ describe("put", () => {
     });
   });
 
-  it("leaves the owner index empty for a run nobody's mailbox caused", async () => {
-    // Sparse rather than a placeholder: a Slack artifact is reachable through
-    // its agent, and a row under a fake owner would be listed for nobody.
+  it("leaves the owner index empty when the fixture has no owner email", async () => {
+    // The repository does not invent an owner for an incomplete stored context.
     await artifactRepository.put(artifact({ actor: { kind: "slack", id: "U123" } }));
     const stored = await store.getItem(keys.artifact("a1"));
     expect(stored?.GSI2PK).toBeUndefined();
     expect(stored?.GSI2SK).toBeUndefined();
-    // Still findable, which is the whole reason the agent index is not optional.
+    // This ordinary output remains available through the Agent index.
     expect(stored?.GSI1PK).toBe("ARTIFACTAGENT#poster-bot");
   });
 
@@ -264,8 +263,7 @@ describe("listing", () => {
     store.seed([
       row({ artifactId: "mine" }),
       row({ artifactId: "theirs", actor: { kind: "user", id: "someone@daangn.com" } }),
-      // A Slack run names no mailbox, so it is in nobody's gallery — only its
-      // agent's listing reaches it.
+      // This fixture omits the resolved caller email; it has only an Agent index.
       row({ artifactId: "nobodys", actor: { kind: "slack", id: "U123" } }),
     ]);
     const found = await artifactRepository.listByOwner("bruce@daangn.com");

@@ -129,8 +129,8 @@ function providerHarness(opts: {
      * callers — they already hold the entry, so the identity check it feeds
      * costs no read.
      */
-    headersFor: (agentName = "p", serverName = "slack") =>
-      provider.headersFor(agentName, serverName, (opts.server ?? OAUTH_SERVER).auth!),
+    headersFor: (userId = "p", serverName = "slack") =>
+      provider.headersFor(userId, serverName, (opts.server ?? OAUTH_SERVER).auth!),
     provider,
     refreshCalls,
     updates,
@@ -138,7 +138,7 @@ function providerHarness(opts: {
   };
 }
 
-describe("resolving the Authorization for an agent's connection", () => {
+describe("resolving Authorization for a caller's personal connection", () => {
   it("uses the stored token without refreshing when it outlives any run", async () => {
     // The header must stay byte-identical between runs: the discovery cache is
     // keyed on url + headers, so refreshing every run would change the key every
@@ -166,7 +166,7 @@ describe("resolving the Authorization for an agent's connection", () => {
     expect(h.updates[0]).toMatchObject({ accessToken: "enc:refreshed-token", status: "connected" });
   });
 
-  it("shares a rotating OAuth refresh across concurrent requests for the same Agent grant", async () => {
+  it("shares a rotating OAuth refresh across concurrent requests for the same personal grant", async () => {
     let finish!: (tokens: TokenSet) => void;
     const waiting = new Promise<TokenSet>(resolve => { finish = resolve; });
     const h = providerHarness({ connection: connectionFixture({ revision: "same-grant", expiresAt: new Date(Date.now() + 1000).toISOString() }), refresh: () => waiting });
@@ -210,7 +210,7 @@ describe("resolving the Authorization for an agent's connection", () => {
     expect(h.current()!.scopes).not.toContain("files:write");
   });
 
-  it("will not spend this agent's credentials at an authorization server that did not issue them", async () => {
+  it("will not send the caller's credentials to an authorization server that did not issue them", async () => {
     // SEP-2352. A refresh is the one thing on the run path that presents the
     // client_id and secret, so an entry repointed by a re-discovery would send
     // them to a server that never registered them.
@@ -236,9 +236,7 @@ describe("resolving the Authorization for an agent's connection", () => {
     // The path that needs no refresh still hands out a bearer token, and a token
     // carries an RFC 8707 audience. An admin who repoints this shared entry —
     // by editing its URL and rediscovering, or by deleting and recreating it
-    // under the same name — would otherwise have every agent's token
-    // delivered to a server it was never minted for, across the admin/owner
-    // boundary the rest of this codebase keeps.
+    // under the same name — must not send a caller's personal token to another resource.
     const h = providerHarness({
       connection: connectionFixture({ resource: "https://oauth-mcp.test" }),
       server: {
@@ -329,7 +327,7 @@ describe("resolving the Authorization for an agent's connection", () => {
   });
 
   it("preserves credential data but requires reauthentication after an uncertain token endpoint failure", async () => {
-    // A 5xx or a timeout must never cost someone their connection.
+    // Preserve stored credentials and refuse replay of an uncertain rotating refresh.
     const transient = providerHarness({
       connection: connectionFixture({ expiresAt: new Date(Date.now() + 1_000).toISOString() }),
       refresh: async () => {
@@ -342,7 +340,7 @@ describe("resolving the Authorization for an agent's connection", () => {
     expect(transient.current()).toMatchObject({ status: "needs_reauth", accessToken: "enc:live-token", refreshToken: "enc:refresh-1" });
   });
 
-  it("explains an unconnected agent instead of sending nothing", async () => {
+  it("explains a missing personal connection", async () => {
     const h = providerHarness({ connection: null });
     const result = await h.headersFor();
     expect(result.headers).toEqual({});
@@ -483,8 +481,8 @@ describe("a refresh racing a reconnect", () => {
     const provider = createMcpAuthProvider({ ...isolatedMcpRefresh(),
       connections: {
         ...mcpConnectionRepository,
-        async get(agentName, serverName) {
-          const snapshot = await mcpConnectionRepository.get(agentName, serverName);
+        async get(userId, serverName) {
+          const snapshot = await mcpConnectionRepository.get(userId, serverName);
           read.resolve();
           await resume.promise;
           return snapshot;
@@ -608,7 +606,7 @@ afterEach(() => {
 });
 
 describe("a run against an OAuth-required server", () => {
-  it("sends the agent's bearer token", async () => {
+  it("sends the bearer token resolved for the caller", async () => {
     const seen = stubMcpServer();
     try {
       const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
@@ -627,9 +625,8 @@ describe("a run against an OAuth-required server", () => {
     }
   });
 
-  it("completes without that server's tools when the agent has not connected it", async () => {
-    // The whole point of degrading rather than failing: an agent that has not
-    // connected Slack must still be able to answer everything else.
+  it("completes without that server's tools when the caller has not connected it", async () => {
+    // Missing personal OAuth removes this server's tools and emits a loss warning.
     const seen = stubMcpServer();
     try {
       const channel = new FakeChannel([[contentChunk("answered anyway"), usageChunk(1, 1)]]);
