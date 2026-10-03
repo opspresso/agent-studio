@@ -918,6 +918,19 @@ describe("syncPluginsFromSnapshot", () => {
     expect(plugins.removed).toEqual([{ name: "retired", actor: ACTOR }]);
   });
 
+  it.each([new ValidationError("Blocked URL"), new Error("Storage unavailable")])("does not report credential loss when a server URL update fails: %s", async failure => {
+    const original = storedServer("github", { headers: { Authorization: "encrypted-fixture" }, auth: { type: "oauth2" } as never });
+    const { deps, mcps } = makeDeps({ servers: [original], refuse: { github: failure } });
+    const result = await syncPluginsFromSnapshot(deps, snapshot([
+      repoPlugin("devops", { mcpJsonRaw: mcpJson({ github: httpServer("https://elsewhere.test/mcp") }) }),
+    ]), ACTOR);
+
+    const report = section(result, "devops").mcpServers;
+    expect(report.overwritten).toEqual([]);
+    expect(report.skipped).toEqual([{ name: "github", reason: failure instanceof ValidationError ? "invalid-url" : "write-failed", detail: failure.message }]);
+    expect(mcps.store.get("github")).toEqual(original);
+  });
+
   it("reports dropped credentials when the repository moves a server's address", async () => {
     // The use case drops stored headers and OAuth on a URL move; the sync's
     // job is to say so where the operator is looking, and to still send the

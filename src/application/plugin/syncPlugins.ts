@@ -578,25 +578,25 @@ export async function syncPluginsFromSnapshot(
         mcpReport.unchanged.push(name);
         continue;
       }
-      // Moving the address costs the credentials entered for the old one —
-      // the use case drops stored headers and any OAuth block rather than
-      // send them to whatever the repository now points at. Reported here,
-      // where the operator who must re-enter them is looking.
-      if (patch.url !== undefined && (Object.keys(current.headers).length > 0 || current.auth)) {
-        const lost = [
-          ...(Object.keys(current.headers).length > 0
-            ? [`${Object.keys(current.headers).length} header(s)`]
-            : []),
-          ...(current.auth ? ["OAuth"] : []),
-        ];
-        mcpReport.skipped.push({
-          name,
-          reason: "credentials-reset",
-          detail: `moved to ${patch.url}; dropped ${lost.join(" and ")}`,
-        });
-      }
       if (await fence(mcpReport.skipped, name, () => deps.mcps.update(name, patch))) {
         mcpReport.overwritten.push({ name, fields: Object.keys(patch) });
+        // Moving the address costs the credentials entered for the old one —
+        // the use case drops stored headers and any OAuth block rather than
+        // send them to whatever the repository now points at. Reported here,
+        // where the operator who must re-enter them is looking.
+        if (patch.url !== undefined && (Object.keys(current.headers).length > 0 || current.auth)) {
+          const lost = [
+            ...(Object.keys(current.headers).length > 0
+              ? [`${Object.keys(current.headers).length} header(s)`]
+              : []),
+            ...(current.auth ? ["OAuth"] : []),
+          ];
+          mcpReport.skipped.push({
+            name,
+            reason: "credentials-reset",
+            detail: `moved to ${patch.url}; dropped ${lost.join(" and ")}`,
+          });
+        }
         if (current.source !== source) {
           await adopted("mcp", name, current.source, source);
         }
