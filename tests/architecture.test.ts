@@ -1656,8 +1656,8 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/app/api/_lib/inboundEvent.ts",
   },
   {
-    // Telegram has one way to put a growing answer on screen — send, then edit
-    // — and one message holds 4,096 characters. A second Telegram entry point
+    // Studio sends and edits Telegram replies in place; one message holds
+    // 4,096 characters. A second Telegram entry point
     // that edited for itself is a second copy of the pacing, the split and the
     // rendered-then-plain fallback. The pattern matches the edit *call*, not
     // the port method or the adapter that implements it.

@@ -350,7 +350,7 @@ export function buildAgentSlackManifest(
 }
 
 /**
- * Verify an agent's stored bot token against Slack. Owner-gated by the caller;
+ * Check ownership and verify the stored bot token against Slack.
  * `authTest` is injected so this stays free of the Slack HTTP client.
  */
 export async function testAgentSlack(

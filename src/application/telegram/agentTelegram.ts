@@ -78,7 +78,7 @@ export interface AgentTelegramResult {
 }
 
 /**
- * Owner or admin, unlike the shared agent catalog: this exposes the masked
+ * Owner-only, unlike the shared agent catalog: this exposes the masked
  * bot token. Checked here rather than at the route so no verb can be added
  * without it.
  */
@@ -288,8 +288,8 @@ export function resolveAgentTelegramRuntime(
 }
 
 /**
- * Verify an agent's stored bot token against Telegram. Owner-gated by the
- * caller; `getMe` is injected so this stays free of the Telegram HTTP client.
+ * Check ownership and verify the stored bot token against Telegram.
+ * `getMe` is injected so this stays free of the Telegram HTTP client.
  */
 export async function testAgentTelegram(
   repo: AgentRepository,
