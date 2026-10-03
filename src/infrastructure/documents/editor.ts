@@ -191,7 +191,9 @@ export async function editDocument(file: DocumentFile, operations: readonly Docu
   if (output.byteLength > MAX_RENDERED_BYTES) throw new DocumentError("The edited document exceeds the output byte limit");
   const reopened = openZip(output);
   if (reopened.entries.length !== parts.size) throw new DocumentError("The edited package lost entries");
-  await readDocument({ bytes: output, mimeType: DOCUMENT_MIME_TYPES[format], filename: file.name, label: file.name });
+  // A workbook may contain only formulas with invalidated caches or cleared cells.
+  if (format === "xlsx") inspectXlsx(output, true);
+  else await readDocument({ bytes: output, mimeType: DOCUMENT_MIME_TYPES[format], filename: file.name, label: file.name });
   let externalRelationships = 0;
   for (const [name, bytes] of parts) {
     if (!name.endsWith(".rels")) continue;

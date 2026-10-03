@@ -137,6 +137,31 @@ describe("workbook editing", () => {
     return { bytes: buildZip(Object.fromEntries(parts)), mimeType: output.mimeType, name: "report.xlsx" };
   }
 
+  it("reopens a formula-only workbook after its calculation cache is cleared", async () => {
+    const original = await documentRenderer.create({
+      title: "Calculation", created: meta.created, format: "xlsx",
+      sheets: [{ name: "Main", rows: [[{ formula: "1+1", cachedValue: 2 }]] }],
+    });
+    const file = { bytes: original.bytes, mimeType: original.mimeType, name: "calculation.xlsx" };
+    const edited = await documentEditor.edit(file, [
+      { operation: "set_cell", sheet: "Main", cell: "A1", value: { formula: "1+2" } },
+    ]);
+    const inspection = await documentEditor.inspect({ ...file, bytes: edited.bytes });
+    expect(JSON.parse(inspection.text)).toMatchObject({ address: "A1", value: "", formula: "1+2" });
+    expect(edited.validation.content).toBe("reopened");
+    expect(edited.validation.warnings.join(" ")).toContain("not calculated");
+  });
+
+  it("allows clearing the last populated workbook cell", async () => {
+    const original = await documentRenderer.create({
+      title: "Empty", created: meta.created, format: "xlsx", sheets: [{ name: "Main", rows: [[1]] }],
+    });
+    const file = { bytes: original.bytes, mimeType: original.mimeType, name: "empty.xlsx" };
+    const edited = await documentEditor.edit(file, [{ operation: "set_cell", sheet: "Main", cell: "A1", value: null }]);
+    expect(JSON.parse((await documentEditor.inspect({ ...file, bytes: edited.bytes })).text))
+      .toMatchObject({ address: "A1", value: "" });
+  });
+
   it("updates and inserts cells, retains styles, and invalidates dependent formula caches", async () => {
     const file = await workbook();
     const output = await documentEditor.edit(file, [
