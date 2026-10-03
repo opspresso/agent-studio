@@ -12,6 +12,18 @@ const text = (files: TarFile[]) =>
   files.map((file) => [file.path, file.symlink ? "<symlink>" : file.bytes.toString("utf8")]);
 
 describe("readTarArchive", () => {
+  it.each(["1junk", "1e2", "+1", "1.5"])("rejects a non-decimal PAX size instead of silently cutting file bytes: %s", async (size) => {
+    await expect(readTarArchive(writeTar([{ path: "file.txt", content: "body", paxRecords: { scope: "x", records: [`size=${size}`] } }])))
+      .rejects.toThrow(/corrupt pax header/);
+  });
+
+  it.each(["18x path=file.txt\n", "17 path=file.txt!", "11 comment\n", "9 =value\n"])("rejects malformed PAX record framing: %j", async (record) => {
+    const body = Buffer.from(record);
+    const archive = Buffer.concat([tarHeader("PaxHeader/x", body.length, "x"), body,
+      Buffer.alloc(512 - body.length), writeTar([{ path: "file.txt", content: "body" }])]);
+    await expect(readTarArchive(archive)).rejects.toThrow(/corrupt pax header/);
+  });
+
   it("reads a gzip-compressed archive and a plain one alike", async () => {
     const entries = [
       { path: "plugins/", type: "dir" as const },

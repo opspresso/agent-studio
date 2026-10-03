@@ -279,27 +279,28 @@ function parsePaxRecords(data: Uint8Array, offset: number): { path?: string; siz
   let at = 0;
   while (at < bytes.length) {
     const space = bytes.indexOf(0x20, at);
-    const length =
-      space > at ? Number.parseInt(bytes.toString("latin1", at, space), 10) : Number.NaN;
-    if (!Number.isInteger(length) || length <= 0 || at + length > bytes.length) {
+    const digits = space > at ? bytes.toString("latin1", at, space) : "";
+    const length = /^[0-9]+$/.test(digits) ? Number(digits) : Number.NaN;
+    const end = at + length;
+    if (!Number.isSafeInteger(length) || length <= 0 || end > bytes.length ||
+      end < space + 4 || bytes[end - 1] !== 0x0a) {
       throw new TarArchiveError(`corrupt pax header before byte ${offset}`);
     }
-    const record = bytes.toString("utf8", space + 1, at + length - 1);
+    const record = bytes.toString("utf8", space + 1, end - 1);
     const equals = record.indexOf("=");
-    if (equals > 0) {
-      const key = record.slice(0, equals);
-      const value = record.slice(equals + 1);
-      if (key === "path") {
-        records.path = value;
-      } else if (key === "size") {
-        const size = Number.parseInt(value, 10);
-        if (!Number.isInteger(size) || size < 0) {
-          throw new TarArchiveError(`corrupt pax header before byte ${offset}: bad size`);
-        }
-        records.size = size;
+    if (equals <= 0) throw new TarArchiveError(`corrupt pax header before byte ${offset}`);
+    const key = record.slice(0, equals);
+    const value = record.slice(equals + 1);
+    if (key === "path") {
+      records.path = value;
+    } else if (key === "size") {
+      const size = /^[0-9]+$/.test(value) ? Number(value) : Number.NaN;
+      if (!Number.isSafeInteger(size) || size < 0) {
+        throw new TarArchiveError(`corrupt pax header before byte ${offset}: bad size`);
       }
+      records.size = size;
     }
-    at += length;
+    at = end;
   }
   return records;
 }
