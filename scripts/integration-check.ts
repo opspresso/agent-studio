@@ -208,6 +208,8 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
   await checkSchemaBaseline();
   const { checkRuntimeSessions } = await import("./runtime-session-check");
   await checkRuntimeSessions();
+  const { checkSessionExpiry } = await import("./session-expiry-check");
+  await checkSessionExpiry();
   const { checkWorkspaces } = await import("./workspace-check");
   await checkWorkspaces();
   const { checkMcpRefreshCoordination } = await import("./mcp-refresh-check");
