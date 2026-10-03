@@ -116,7 +116,7 @@ function reasoningNote(): string {
   return warningFrame("The reasoning for this run appears on the saved message once it finishes.");
 }
 
-function frameFor(chunk: EngineChunk, imagesArePersisted: boolean): string {
+function frameFor(chunk: EngineChunk): string {
   if (chunk.file) {
     // Same rule as an image, and the same reason: a megabyte of base64 has no
     // business in a replay buffer. The file itself is already stored, so the
@@ -128,10 +128,11 @@ function frameFor(chunk: EngineChunk, imagesArePersisted: boolean): string {
     );
   }
   if (chunk.image) {
+    const action = chunk.image.fetched ? "fetched" : "generated";
     return warningFrame(
-      imagesArePersisted
-        ? "An image was generated here. It appears in the conversation once this run finishes."
-        : "An image was generated here and is not kept: it was only visible on the connection that asked for it.",
+      chunk.image.key
+        ? `An image was ${action} here. It appears in the conversation once this run finishes.`
+        : `An image was ${action} here and is not kept: it was only visible on the connection that asked for it.`,
     );
   }
   let frame: string;
@@ -210,7 +211,7 @@ function createWriter(deps: ChatDeps, chatId: string, runId: string) {
       push(reasoningNote());
       return;
     }
-    push(frameFor(chunk, deps.artifacts !== undefined));
+    push(frameFor(chunk));
   }
 
   /** The buffered frames as rows, oldest first, each under the item limit. */
