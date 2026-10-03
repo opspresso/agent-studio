@@ -213,7 +213,8 @@ DELETE /api/skills/{name}     → 204                     | 404
 - `mcps` 는 `headers` 를 AES 로 암호화해 저장하고 마스킹해서 돌려준다 (길이 보존.
   9자 이상은 양끝 4자씩 드러낸다). 업데이트 때 마스킹된 값이나 빈 값은
   저장된 secret 을 보존한다. 이들의 `url` 은 SSRF 가드를 받는다.
-  private/loopback/link-local/metadata 대상(또는 http(s) 가 아닌 scheme)은 `400` 으로 거절된다.
+  배포가 허용한 내부 호스트와 관리형 loopback을 제외한 private/loopback/link-local/metadata
+  대상, 또는 HTTP(S)가 아닌 scheme은 `400`으로 거절된다.
 - `mcps` 는 선택적인 `content` (markdown 운영자 노트) 도 받는다. `description` 은 agent 런의
   서버 표에서 모델이 보는 한 줄 요약이고, `content` 는 콘솔 전용이라 모델에 절대 닿지 않는다.
 - **managed** MCP 항목은 그것을 소유하지 않은 공유 레지스트리 라우트에서 거절된다:
@@ -584,7 +585,7 @@ DELETE /api/chats/{chatId}/runs/{runId}      → { cancelled }
 사람은 `error` 가 아니라 `warning` 프레임을 받는다.
 
 `images` 는 사용자의 첨부를 인라인 바이트로 담은 것이다. `[ { b64, mimeType } ]`, 턴당 최대
-4개, 각각 5MB, `image/png|jpeg|gif|webp`. `b64`는 padding을 붙이거나 생략한 canonical base64여야 한다.
+4개, 각각 5 MiB, `image/png|jpeg|gif|webp`. `b64`는 padding을 붙이거나 생략한 canonical base64여야 한다.
 마지막 문자에서 사용하지 않는 비트는 0이어야 한다.
 모델에는 content part 로 닿고, (오브젝트 스토리지가
 설정돼 있으면) 사용자 메시지에 **object key** 로 저장된다. 읽기는 그 응답을 위해 서명된 URL 로
@@ -592,7 +593,7 @@ DELETE /api/chats/{chatId}/runs/{runId}      → { cancelled }
 돌아오는 대신 메시지에서 빠진다.
 
 `documents` 는 보는 것이 아니라 읽는 파일이다. `[ { b64, mimeType, name } ]`, 턴당 최대 4개,
-각각 10MB이며 `b64`는 이미지와 같은 형식으로 검증한다: PDF 와 텍스트, Markdown, CSV/TSV, JSON, YAML, XML,
+각각 10 MiB이며 `b64`는 이미지와 같은 형식으로 검증한다: PDF 와 텍스트, Markdown, CSV/TSV, JSON, YAML, XML,
 HTML, DOCX, XLSX, PPTX, HWP/HWPX, ODT/ODS/ODP, RTF 이다. Office 형식은 내장 문서 엔진이 읽으며 MCP 등록이나 Agent binding을 요구하지 않는다.
 파싱이 실패하면 추출 실패 warning을 돌려준다. 저장된 원본의 참조는 유지한다. `name` 은 필수이고,
 `mimeType` 이 `application/octet-stream` 일 때. 업로드는 흔히 이렇게 도착한다. 판단을 떠맡는다.
@@ -608,8 +609,8 @@ HTML, DOCX, XLSX, PPTX, HWP/HWPX, ODT/ODS/ODP, RTF 이다. Office 형식은 내�
 한 턴에는 텍스트나 두 종류 중 하나의 첨부가 최소 하나는 있어야 한다 (전부 비면 → `400`). 턴을
 싣는 모든 라우트(chat 라우트 둘, `predict`, `agent`, `chat/completions`)는 요청 본문을
 정당한 턴이 가질 수 있는 최대치(모든 첨부가 각자의 한도에 산문이 들어갈 여유를 더한 것)로
-제한하고 그것을 넘으면 `413` 으로 답한다. 본문이 메모리에 올라온 뒤가 아니라 선언된 길이로 미리
-검사한다. 레지스트리와 Agent 설정 편집은 skill 의 전체 파일 묶음 무게에 맞춰 훨씬 더 빡빡하게
+제한하고 그것을 넘으면 `413`으로 답한다. 선언된 `Content-Length`를 먼저 검사하고 실제로 읽은
+바이트에도 같은 상한을 적용한다. 레지스트리와 Agent 설정 편집은 skill의 전체 파일 묶음에 맞춰 더 작게
 제한된다.
 
 chat 읽기(`GET /api/chats/{chatId}`)는 각 문서의 `name`, `note`와 다운로드용 `file?`을 돌려주고 `text`는 비운다:
@@ -660,7 +661,7 @@ Agent의 `parameters.policy`에는 `maxInputChars`(1–1,000,000), `blockedTools
 Workspace 조회·중단·종료는 `withAuth`, 새 작업·Git 승인 요청은 `withMemberAuth`로 보호한다.
 조회·실행·승인은 Chat 소유자만 가능하며
 현재 Agent 접근 권한도 확인한다. 다른 소유자의 Workspace는 404로 응답한다.
-Chat과 Workspace는 `user` actor의 UTC 월 비용을 합산해 Settings의 등급별 월 한도를 적용한다
+Chat과 Workspace는 같은 Studio 사용자 ID의 모든 호출 출처에 대한 UTC 월 비용을 합산해 등급별 월 한도를 적용한다
 (초기 member $20, admin은 항상 무제한). 실행 전 이미 한도에 도달하면 새 작업을 실행하지 않는다.
 비용은 완료 후 집계되므로 진행 중인 작업이 마지막 잔액을 넘길 수 있다. 등급·사용량 조회가
 실패해도 새 실행을 허용하지 않으며, 기존 작업 조회·취소·종료는 계속 가능하다.
@@ -1091,7 +1092,8 @@ PUT에서 생략한 필드는 보존하고, 빈 값이나 마스킹된 Secret은
 유지한다. Client ID를 변경하면 이전 Secret은 재사용하지 않으며, 빈 Client ID는 공용 앱을 제거한다.
 빈 Redirect URI는 배포의 기본 콜백을 사용한다. 공용 앱이 없으면 Client ID Metadata Document,
 동적 등록 순서로 연결한다. 자동 등록 서버의 수동 설정은 Tools에서 접힌 상태로 제공한다.
-OAuth 설정을 읽은 뒤 다른 요청이 변경했다면 저장은 `409`로 거부한다.
+서버가 OAuth 설정을 읽고 저장하는 사이에 다른 요청이 변경하면 저장을 `409`로 거부한다.
+OAuth 설정을 삭제하면 Workspace Git도 사용할 수 없다. Workspace Git은 정적 헤더를 사용하지 않는다.
 
 RFC 9728 protected-resource 메타데이터 → RFC 8414 authorization-server 메타데이터 순으로
 따라가며, 발견된 모든 엔드포인트를 SSRF 정책으로 다시 검증하고 `https` 일 것을 요구한다.
@@ -1153,7 +1155,7 @@ POST   /api/agents/{name}/mcp-connections/{server}/tools
 - `/tools`는 현재 Agent binding과 호출자 자신의 OAuth grant로 도구를 조회한다.
   `headerOverrides`로 미저장 초안을 검사하는 기능은 Agent 소유자에게만 허용한다.
   registry의 `POST /api/mcps/{name}/tools`도 본인의 grant를 쓰지만 Agent binding을 적용하지 않는다.
-  OAuth 연결이 없으면 두 경로 모두 정적 credential로 우회하지 않는다.
+  OAuth를 사용하는 서버에 본인 연결이 없으면 두 경로 모두 정적 credential로 우회하지 않는다.
   두 probe 모두 요청한 사용자의 email을 보호된 `X-User-Email`로 추가한다.
   마스킹된 override는 현재 Agent 설정의 같은 서버 바인딩에서 해석한다. 두 probe는 tenant header를
   보내지 않으므로 tenant별 도구 목록은 실제 런과 다를 수 있다.
@@ -1308,7 +1310,8 @@ secret으로 키잉한 16자리 hex 다이제스트다. 이메일 변경과 토�
 곳에서 퍼센트 인코딩된다 (공백, 제어 문자, 출력 가능한 ASCII 밖의 모든 것, 그리고 `%`). 이는
 UUID 나 평범한 키에 대해서는 아무것도 바꾸지 않으면서 서로 다른 두 값을 두 개의 대화로 유지한다.
 인코딩 후 최대 495자이고, 그보다 긴 헤더는 자기가 선언한 대화 없이 조용히 실행되는 대신 `400` 으로
-답한다. 없으면 각 요청이 별도의 대화로 처리된다. 표면이 스레드를 *가진* 곳에서는
+답한다. 없으면 MCP에 대화 header를 보내지 않는다. 모델 이력은 호출자가 `messages`로 전달한다.
+표면이 스레드를 가진 곳에서는
 플랫폼이 직접 이름을 붙인다: chat 은 `chat:{chatId}`,
 Slack 답글은 `slack:{channel}:{threadTs}`다.
 [design/observability.md](design/observability.md#사용량과-비용-귀속) 를 보라.
@@ -1371,7 +1374,7 @@ OpenAI Chat Completions 호환 형태로 같은 Agent 도구 루프를 실행한
 
 **이미지 입력.** 메시지 본문은 문자열 대신 OpenAI content part 여도 된다. 이미지 바이트는
 `data:image/…;base64,…` URL 로 인라인 이동한다. PNG, JPEG, GIF, WebP만 받고 디코딩 크기는
-하나당 5MB로 제한하며 base64 형식도 검증한다. 원격 URL은 받지 않는다. 호출자가 고른 주소를
+하나당 5 MiB로 제한하며 base64 형식도 검증한다. 원격 URL은 받지 않는다. 호출자가 고른 주소를
 모델 제공자에게 넘기면
 이 배포의 SSRF 정책을 적용할 수 없기 때문이다. Agent 설정의 모델은 `imageInput` 능력을 가져야
 한다. 아니면 `400`이며, 이미지를 읽을 수 없는 `fallbackModel`은 그 요청에서 건너뛴다.
@@ -1504,10 +1507,10 @@ Agent 접근을 확인하며 이메일은 현재 계정에서 해석한다. 대�
 
 Trigger 읽기·생성·수정 응답에는 토큰이 없다. 개인 토큰은 위의 별도 API에서 관리한다.
 
-관리자는 Webhook 생성·수정에 `githubReview: {scope:"accessible"}` 또는
+Agent 소유자는 Webhook 생성·수정에 `githubReview: {scope:"accessible"}` 또는
 `{scope:"repositories", repositories:["owner/repo"]}`를 전달할 수 있다. 수정의 `null`은 리뷰를
 끄고 생략은 기존 선택을 유지한다. 저장소 목록은 최대 20개이며 wildcard·URL은 받지 않는다.
-해당 Agent의 GitHub MCP 인증이 필요하며 자동 리뷰 게시 활성화는 관리자에게 한정한다.
+해당 Agent의 GitHub MCP OAuth 설정이 필요하며 자동 리뷰 게시 활성화도 Agent 소유자에게 한정한다.
 활성 리뷰 설정 저장은 Workspace 도구 활성화,
 차단·대화형 승인 없는 Workspace 정책을 요구하고 누락은 400으로 거절한다. 설정 읽기의 선택적
 `reviewIssue`는 현재 누락을 설명한다. 권한 철회와 비활성화는 가능하며 저장은 실행 권한이나
@@ -1659,7 +1662,7 @@ HTML 이외에는 스크립트 없는 `ARTIFACT_VIEW_POLICY`를 적용한다. HT
 
 서명된 오브젝트 URL 로는 그 헤더를 실을 수 없고, 건네진 주소는 그것을 연 사람의 권한보다
 오래 산다. public 모드에서는 영구다. `/view`는 매 요청 session으로 읽기 권한을 확인한다. 읽기 상한은
-2 MB 이고, 권한 술어는 삭제와 같다.
+2 MiB이고, 파일 소유권 판정은 삭제와 같다. 조회와 삭제의 등급 조건은 위의 라우트 색인을 따른다.
 
 ```
 GET /api/objects/{...key}?exp=<unix>&sig=<hmac>[&dl=<filename>]
@@ -1676,23 +1679,23 @@ GET /api/objects/{...key}?exp=<unix>&sig=<hmac>[&dl=<filename>]
 타입 중 raster image 와 PDF 를 제외한 것은 정적 view와 같은
 `sandbox; default-src 'none'` 아래로 나간다. raster image 와 PDF 는
 `frame-ancestors 'none'` 만 적용한다. 한 번에 읽는 상한은 저장될 수 있는 오브젝트의 최대인
-10 MB 다.
+10 MiB다.
 
 각 행은 `artifactId`, `kind`, `source`, `key` (object key), `mimeType`,
-`byteSize`, `filename?`, `derivedFrom?` (수정본의 원본 artifact ID), `agentName`, `actor?`, `ownerEmail?` (Slack 런의
-출력이 누구 앞으로 정리되는지. 물어본 사람에서 해석한다), `ancestry?` (transfer 사슬. 바깥쪽이
+`byteSize`, `filename?`, `derivedFrom?` (수정본의 원본 artifact ID), `agentName`, `actor?`, `ownerEmail?`
+(확인된 생성 사용자), `ancestry?` (transfer 사슬. 바깥쪽이
 먼저), `producedBy?`, `model?` (그린 모델. 이름을 댈 수 있는 생산자만. MCP 도구의
 그림, 렌더링된 문서, 첨부는 비어 있다), `runId?`, `prompt?`, `createdAt`, 그리고 서명된 `url` (15분. 문서의 것은
 자기 이름으로 내려받도록 서명된다) 을 싣는다. URL 은 타일마다 가져오는 대신 인라인으로 들어간다.
 사전 서명은 로컬 서명이라 한 페이지치가 비용이 들지 않는 반면, 각각 왕복하면 갤러리가 N+1 이 된다.
 주소를 만들 수 없으면 없으며, UI 는 그것을 깨진 이미지가 아니라 사용 불가로 렌더링한다.
 
-**두 목록은 한 집합의 두 가지 뷰가 아니다.** `/api/artifacts` 는 소유자 인덱스를 읽는데, 여기에는
-actor 가 이메일을 지목하거나 표면이 소유자 이메일을 해석한 행만 들어 있다. Slack 런은 질문한
-사람의 이메일을 해석할 수 있으면 이 목록에도 들어가고, 조회가 실패하면 agent 에만 남는다.
-Webhook 결과는 토큰 발급자의 현재 계정에 귀속된다.
-Schedule 결과는 등록자의 현재 계정에 귀속된다. `from`/`to` 는 실재하는 날짜로 검증되는 UTC 일이고, `before` 는 이전 페이지의
-`nextBefore` 다.
+`/api/artifacts`는 로그인한 사용자의 소유자 인덱스를 읽는다. Agent 실행 결과는 확인된
+Studio 사용자 이메일로 귀속하며, Slack 프로필 조회의 성공 여부에 의존하지 않는다.
+Webhook은 토큰 발급자, Schedule은 등록자의 현재 계정으로 실행한다.
+Agent별 목록은 해당 Agent의 일반 Artifact 인덱스를 읽으며 Agent 소유자만 조회한다.
+비공개 Audio 파일은 개인 목록에만 포함한다. `from`/`to`는 실제 날짜로 검증하는 UTC 일이고,
+`before`는 이전 페이지의 `nextBefore`다.
 
 삭제는 생성자 또는 해당 Agent 소유자에게 허용된다. 남의 출력을 지우면
 `artifact.delete` 감사 행이 기록되고, 자기 것을 지우면 그렇지 않다. chat 메시지는 object key 의
