@@ -220,7 +220,7 @@ function UsageDetail({ name }: { name: string }) {
             />
             <StatCard
               label={t("agentUsage.callers")}
-              value={ownerLoading || ownerError || actorLoading ? "—" : actorTotal.toLocaleString(locale)}
+              value={ownerLoading || ownerError || !maySeeActors || actorLoading || actorError ? "—" : actorTotal.toLocaleString(locale)}
               detail={
                 ownerLoading || actorLoading
                   ? t("common.loading")
@@ -229,7 +229,7 @@ function UsageDetail({ name }: { name: string }) {
                     : t(
                         maySeeActors
                           ? "agentUsage.distinctIdentities"
-                          : "agentUsage.ownerAdminOnly",
+                          : "agentUsage.ownerOnly",
                     )
               }
               Icon={IconUsers}

@@ -1688,7 +1688,7 @@ export const ko: Messages = {
   "agentUsage.empty": "이 기간에는 기록된 사용량이 없습니다.",
   "agentUsage.callers": "호출자",
   "agentUsage.whoSpent": "호출자별 사용량",
-  "agentUsage.ownerAdminOnly": "소유자만 확인 가능",
+  "agentUsage.ownerOnly": "소유자만 확인 가능",
   "agentUsage.distinctIdentities": "고유 호출자",
   "agentUsage.unavailable": "호출자 상세를 불러오지 못함",
   "agentUsage.perCallerRange": "선택한 기간의 호출자별 합계",

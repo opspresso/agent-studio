@@ -1761,7 +1761,7 @@ export const en = {
   "agentUsage.empty": "No usage recorded in this range.",
   "agentUsage.callers": "Callers",
   "agentUsage.whoSpent": "Usage by caller",
-  "agentUsage.ownerAdminOnly": "Visible to owners and admins",
+  "agentUsage.ownerOnly": "Visible to the Agent owner",
   "agentUsage.distinctIdentities": "Unique callers",
   "agentUsage.unavailable": "Caller details unavailable",
   "agentUsage.perCallerRange": "Per caller in the selected range",
