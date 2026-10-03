@@ -331,6 +331,22 @@ const BINDING = { agentName: "painter", botToken: "tok" };
 /** A run that yields nothing but `done`. */
 const deps0 = (slack: SlackClientPort) => makeDeps([{ done: true }], slack);
 
+describe("Slack output metadata", () => {
+  it.each([["image/jpeg", "jpg"], ["image/webp", "webp"], ["image/gif", "gif"]])("keeps %s uploads identifiable by their extension", async (mimeType, extension) => {
+    const { slack, uploads } = makeSlackFake();
+    await handleSlackEvent(makeDeps([{ image: { b64: "AA==", mimeType } }, { done: true }], slack), EVENT, BINDING);
+    expect(uploads[0]?.filename).toBe(`generated-${NOW}-1.${extension}`);
+  });
+
+  it("bounds image and session titles without splitting a Unicode character", async () => {
+    const { slack, uploads, titles } = makeSlackFake();
+    const deps = makeDeps([{ image: { b64: "AA==", mimeType: "image/png", prompt: "x".repeat(79) + "😀" } }, { done: true }], slack);
+    await handleSlackEvent(deps, { ...DM_EVENT, event: { ...DM_EVENT.event, text: "x".repeat(59) + "😀" } }, BINDING);
+    expect(uploads[0]?.title).toBe("x".repeat(79));
+    expect(titles[0]?.title).toBe("x".repeat(59));
+  });
+});
+
 describe("stopping Slack runs", () => {
   it("checks a stop recorded just before model completion without waiting for a poll tick", async () => {
     const { slack, uploads, finalText } = makeSlackFake();

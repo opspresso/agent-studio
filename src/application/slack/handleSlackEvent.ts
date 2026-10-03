@@ -18,6 +18,8 @@ import type { ChatMessageInput } from "@/domain/llm/types";
 import { MAX_CONCURRENT_SLACK_PROFILE_LOOKUPS } from "@/domain/slack/reader";
 import { log } from "@/shared/logger";
 import { mapWithLimit } from "@/shared/mapWithLimit";
+import { cutCodePoints } from "@/shared/utf8Text";
+import { savedFileName } from "@/domain/artifact/types";
 /** How much of the opening question names the thread in the agent's history. */
 const MAX_THREAD_TITLE_LENGTH = 60;
 /**
@@ -218,13 +220,12 @@ async function slackReplyChannel(
     },
     async sendImage(image, index) {
       if (target.canWrite?.() === false) return;
-      const ext = image.mimeType === "image/png" ? "png" : "jpg";
       await deps.slack.uploadImage(token, {
         channel: target.channel,
         threadTs: target.threadTs,
-        filename: `generated-${Date.now()}-${index + 1}.${ext}`,
+        filename: savedFileName(`generated-${Date.now()}-${index + 1}`, image.mimeType),
         data: Buffer.from(image.b64, "base64"),
-        title: image.prompt?.slice(0, 80) ?? "Generated image",
+        title: cutCodePoints(image.prompt ?? "Generated image", 80),
       });
     },
     fileLink: (file) => `:paperclip: <${file.url}|${mrkdwnText(file.name)}>`,
@@ -441,7 +442,7 @@ export async function handleSlackEvent(
     started = true;
     await deps.slack.setSessionStatus(token, {
       channel_id: event.channel, thread_ts: threadTs, status: "processing",
-      ...(!event.thread_ts && message ? { title: message.slice(0, MAX_THREAD_TITLE_LENGTH) } : {}),
+      ...(!event.thread_ts && message ? { title: cutCodePoints(message, MAX_THREAD_TITLE_LENGTH) } : {}),
       ...(!event.bot_id && event.user ? { initiator_user_id: event.user } : {}),
     }).catch((error) => log.error("slack", "session start failed", error));
 
