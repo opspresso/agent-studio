@@ -89,14 +89,15 @@ export async function processAudioJob(
     }
     current = updated;
   });
+  const renew = () => serial(async () => {
+    if (!current || current.status !== "running" || operationSignal.aborted) return;
+    const now = deps.now();
+    if (!await deps.jobs.heartbeat(current, now.toISOString(), new Date(now.getTime() + AUDIO_JOB_LEASE_MS).toISOString())) {
+      leaseAbort.abort();
+    }
+  });
   const heartbeat = setInterval(() => {
-    void serial(async () => {
-      if (!current || current.status !== "running" || operationSignal.aborted) return;
-      const now = deps.now();
-      if (!await deps.jobs.heartbeat(current, now.toISOString(), new Date(now.getTime() + AUDIO_JOB_LEASE_MS).toISOString())) {
-        leaseAbort.abort();
-      }
-    }).catch(() => leaseAbort.abort());
+    void renew().catch(() => leaseAbort.abort());
   }, AUDIO_JOB_HEARTBEAT_MS);
   unrefTimer(heartbeat);
 
@@ -117,6 +118,9 @@ export async function processAudioJob(
     while (current.status === "running") {
       operationSignal.throwIfAborted();
       await deps.authorize(current);
+      operationSignal.throwIfAborted();
+      // Cancellation or a new lease may have committed while authorization was pending.
+      await renew();
       operationSignal.throwIfAborted();
       switch (current.stage) {
         case "importing": {

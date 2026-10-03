@@ -316,6 +316,7 @@ lease generation·file ref·checksum·expiry·segment manifest·output manifest�
   submit해도 초과하지 않는다. 완료 claim은 원본 만료 후에도 유지한다. 재처리는 명시적 revision 또는 종료 작업 삭제 후 새 제출로 요청한다.
 - worker 기본 lease는 2분·heartbeat는 30초·poll은 10초다. 모든 checkpoint는 lease generation으로
   조건부 갱신한다. 소유권을 잃은 worker는 abort하며 외부 요청에는 안정적 idempotency key를 사용한다.
+  각 단계의 권한 조회가 끝난 뒤에도 같은 직렬 큐로 lease를 갱신해 취소·소유권 변경을 확인하고 다음 단계를 시작한다.
 - 일시 오류는 최초 시도 포함 5회, 재시도 간격은 1·5·15·60분이다. 인증·입력 오류는
   즉시 blocked다. 최종 failed/blocked는 slot을 반환하고 명시적 재시도 전 다시 선택하지 않는다.
 - 24시간 실행 구간은 최초 worker claim의 `startedAt`부터 계산하며 큐 대기는 포함하지 않는다.

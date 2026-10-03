@@ -129,6 +129,21 @@ describe("audio job processor", () => {
     expect((await jobs.get("audio", "job-1"))?.transcriptRef).toBeUndefined();
   });
 
+  it.each([
+    ["importing", "importFile"], ["transcribing", "transcribe"],
+    ["postprocessing", "postprocess"], ["storing", "store"], ["cleaning", "clean"],
+  ] as const)("does not start %s after cancellation during authorization", async (stage, effect) => {
+    await submit({ postprocess: { agentName: "writer" }, destination: { serverName: "memory", documents: true, memories: false } });
+    const d = deps();
+    d.authorize = vi.fn(async job => {
+      if (job.stage === stage) expect(await jobs.cancel(job.agentName, job.id, job.revision, new Date().toISOString())).toBe(true);
+    });
+    await processAudioJob(d, "audio", "job-1");
+    expect(d[effect]).not.toHaveBeenCalled();
+    expect(await jobs.get("audio", "job-1")).toMatchObject({ status: "cancelled" });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("blocks revoked permissions before accessing any external source", async () => {
     await submit(); const d = deps();
     d.authorize = vi.fn(async () => { throw new AudioJobStepError("user_inactive", false); });
@@ -199,8 +214,16 @@ describe("audio job processor", () => {
 
   it("aborts a provider when heartbeat loses ownership", async () => {
     await submit(); const d = deps();
-    const heartbeat = vi.spyOn(jobs, "heartbeat").mockResolvedValue(false);
+    const heartbeat = jobs.heartbeat;
+    let dispatched = false;
+    let failedRenewals = 0;
+    vi.spyOn(jobs, "heartbeat").mockImplementation(async (...args) => {
+      if (!dispatched) return heartbeat(...args);
+      failedRenewals += 1;
+      return false;
+    });
     d.transcribe = vi.fn(async (_job, context) => {
+      dispatched = true;
       await new Promise<void>((_resolve, reject) => {
         context.signal.addEventListener("abort", () => reject(context.signal.reason), { once: true });
       });
@@ -209,7 +232,8 @@ describe("audio job processor", () => {
     const running = processAudioJob(d, "audio", "job-1");
     await vi.advanceTimersByTimeAsync(30_000);
     expect(await running).toMatchObject({ status: "running", stage: "transcribing" });
-    expect(heartbeat).toHaveBeenCalledTimes(1);
+    expect(d.transcribe).toHaveBeenCalledOnce();
+    expect(failedRenewals).toBe(1);
     expect((await jobs.get("audio", "job-1"))?.transcriptRef).toBeUndefined();
     expect(vi.getTimerCount()).toBe(0);
   });
