@@ -105,6 +105,7 @@
 | 저장된 이미지 참조를 주소로 바꾸기 | `src/domain/chat/imageRefs.ts` 의 `resolveImageUrl` | 코드 |
 | 저장된 파일 참조를 다운로드 주소로 바꾸기 | `src/domain/chat/fileRefs.ts` 의 `resolveFileUrl` | 코드 |
 | Chat 의 run lease 를 누가 놓는가 | `src/application/chat/runLog.ts` 의 `teeToRunLog` | 코드 |
+| 새 Chat·후속 사용자 턴의 claim·첨부 준비·메시지 저장·실행 연결 | `src/application/chat/startChatTurn.ts`; 접근 검사와 현재 설정 선택은 각 진입 유스케이스가 맡는다 | 코드 |
 | Chat 목록을 한 번에 몇 개 읽는가, 그리고 최대 몇 개까지 허용하는가 | `src/domain/chat/repository.ts` 의 `CHAT_PAGE` / `MAX_CHAT_PAGE`. use case 의 기본값, 엔드포인트의 상한, 탭별 사이드바 "더 보기"의 증가폭이 모두 같은 결정이고, `domain` 은 셋 다 닿을 수 있는 유일한 계층이다(순수 TS 라 클라이언트 번들에 들어가도 된다) | 코드 |
 | Chat 메시지를 꼬리부터 읽는 정렬 키 범위 | `src/infrastructure/db/keys.ts` 의 `chatMessageRange`. 하한 클램프까지 포함해서 | 코드 |
 | 꼬리로 읽어 온 메시지를 화면의 것과 어떻게 합치는가 | `src/app/chats/_lib/mergeMessages.ts` | 코드 |

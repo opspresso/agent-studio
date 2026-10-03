@@ -7,6 +7,8 @@ there are no framework, adapter or composition-root imports here. Read
 ## Ownership
 
 - `run.ts` folds display output and persists it. Admission reads the Agent’s current configuration.
+- `startChatTurn.ts` prepares new user turns for both creation and subsequent sends: claim, sequence,
+  attachments, user-row persistence and lazy execution. Approval resume adds no user turn.
 - `runLease.ts` claims one active run per chat; `runLog.ts` owns terminal logging and release.
 - `replayRunLog.ts` replays/follows a detached run; `cancelRun.ts` persists and polls cancellation.
 - `workspaceContinuation.ts` consumes durable Workspace action results once, claims the source chat lease,
