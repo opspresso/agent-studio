@@ -345,6 +345,7 @@ export function createReplySink(
       });
       let refused: unknown;
       for (const [index, piece] of pieces.entries()) {
+        if (target.canWrite?.() === false) return;
         const last = index === pieces.length - 1;
         const body = last && !final ? `${piece.text} ${indicator}` : piece.text;
         try {
@@ -478,6 +479,7 @@ export function createReplySink(
     // on every push after it. The rest arrives through `writeEdited`, which
     // opens the messages that continue this one.
     for (;;) {
+      if (target.canWrite?.() === false) return;
       const [first] = splitMessages(text, {
         room: editRoom - indicator.length - 1,
         window: EDIT_CUT_WINDOW,
@@ -585,6 +587,7 @@ export function createReplySink(
    * unopened so the next call — a status or the answer itself — retries.
    */
   async function showProgress(text: string): Promise<void> {
+    if (target.canWrite?.() === false) return;
     // The clear at the end of a run has nothing to say here, and once the answer
     // has started arriving the message belongs to it. Rewriting the message with
     // what it already says costs a call and shows the reader nothing — the same
@@ -785,7 +788,7 @@ export function createReplySink(
         await open(fullText).catch((error) => {
           log.error("slack", "reply could not be opened", error);
         });
-        if (mode === "unopened") {
+        if (mode === "unopened" || target.canWrite?.() === false) {
           return;
         }
         lastWrite = Date.now();
@@ -903,6 +906,7 @@ export function createReplySink(
           if (mode === "stream") {
             await slack.stopStream(token, { channel: messageChannel, ts: messageTs }).catch(() => {});
           }
+          if (target.canWrite?.() === false) return;
           await slack.deleteMessage(token, { channel: messageChannel, ts: messageTs });
         } else if (mode === "stream") {
           const remaining = finalText.slice(flushed);

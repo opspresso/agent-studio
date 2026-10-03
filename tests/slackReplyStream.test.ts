@@ -11,6 +11,55 @@ beforeEach(() => {
 
 const DM: ReplyTarget = { channel: "D1", threadTs: "1.0", assistantThread: true };
 
+describe("ownership changes during a Slack write", () => {
+  it("does not post edited continuations after the first write loses ownership", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    let owns = true;
+    const { slack, posted, updates } = makeChannelFake();
+    const sink = createReplySink(slack, "tok", { ...DM, canWrite: () => owns });
+    await sink.push("visible");
+    const update = slack.updateMessage;
+    slack.updateMessage = async (...args) => { const result = await update(...args); owns = false; return result; };
+    await sink.finish("x".repeat(8000), "");
+    expect(updates).toHaveLength(1);
+    expect(posted).toHaveLength(1);
+  });
+
+  it.each([false, true])("does not append or fall back after ownership is lost opening a stream (refused=%s)", async refused => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    let owns = true;
+    const { slack, appended, posted } = makeStreamingChannelFake();
+    slack.startStream = async () => {
+      owns = false;
+      if (refused) throw new Error("stream unavailable");
+      return { ts: "old-stream", channel: "D1" };
+    };
+    await createReplySink(slack, "tok", { ...DM, canWrite: () => owns }).push("old answer");
+    expect(appended).toEqual([]);
+    expect(posted).toEqual([]);
+  });
+
+  it("does not post a progress fallback after ownership is lost", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    let owns = true;
+    const { slack, posted } = makeStreamingChannelFake();
+    slack.startStream = async () => { owns = false; throw new Error("stream unavailable"); };
+    await createReplySink(slack, "tok", { ...CHANNEL, canWrite: () => owns }).status("thinking");
+    expect(posted).toEqual([]);
+  });
+
+  it("does not delete progress after ownership is lost closing the stream", async () => {
+    let owns = true;
+    const { slack, deleted } = makeStreamingChannelFake();
+    const sink = createReplySink(slack, "tok", { ...CHANNEL, canWrite: () => owns });
+    await sink.status("thinking");
+    const stop = slack.stopStream;
+    slack.stopStream = async (...args) => { await stop(...args); owns = false; };
+    await sink.finish("", "");
+    expect(deleted).toEqual([]);
+  });
+});
+
 /** Records only what these tests are about — the status text and its rotation. */
 function makeSlackFake() {
   const statuses: Array<{ status: string; loading_messages?: string[] }> = [];
