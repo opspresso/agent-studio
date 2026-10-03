@@ -34,11 +34,14 @@ import { runningRunUpdater } from "./fakeTriggerRuns";
 
 beforeEach(() => {
   entropy.sequence = 0;
-  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.useFakeTimers();
   vi.setSystemTime("2026-01-01T00:00:00.000Z");
   vi.stubEnv("AES_ENCRYPTION_KEY", Buffer.alloc(32, 3).toString("base64"));
 });
-afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
+afterEach(() => {
+  try { expect(vi.getTimerCount()).toBe(0); }
+  finally { vi.useRealTimers(); vi.unstubAllEnvs(); }
+});
 
 const SECRET = "asw_test-secret-value";
 
@@ -329,6 +332,7 @@ describe("admitDelivery", () => {
     expect(result.status).toBe("accepted");
     expect(f.rows).toHaveLength(1);
     expect(f.rows[0]).toMatchObject({ status: "running", triggerId: AGENT_WEBHOOK_ID });
+    if (result.status === "accepted") await result.release();
   });
 
   it("refuses a redelivery of the same Idempotency-Key without a second history row", async () => {
@@ -338,16 +342,19 @@ describe("admitDelivery", () => {
     const second = await admitDelivery(f.deps, "p", SECRET, "evt-1");
     expect(second.status).toBe("duplicate");
     expect(f.rows).toHaveLength(1);
+    if (first.status === "accepted") await first.release();
   });
 
   it("treats different keys as different deliveries", async () => {
     // Overlap allowed, so the only thing that could refuse the second is the
     // idempotency claim — which is what this is about.
     const f = fixture({ stored: trigger({ allowConcurrent: true }) });
-    await admitDelivery(f.deps, "p", SECRET, "evt-1");
-    expect((await admitDelivery(f.deps, "p", SECRET, "evt-2")).status).toBe(
-      "accepted",
-    );
+    const first = await admitDelivery(f.deps, "p", SECRET, "evt-1");
+    const second = await admitDelivery(f.deps, "p", SECRET, "evt-2");
+    expect(first.status).toBe("accepted");
+    expect(second.status).toBe("accepted");
+    if (first.status === "accepted") await first.release();
+    if (second.status === "accepted") await second.release();
   });
 
   it("records a skip when the Agent has no configuration", async () => {
@@ -366,14 +373,17 @@ describe("admitDelivery", () => {
     const second = await admitDelivery(f.deps, "p", SECRET, null);
     expect(second.status).toBe("busy");
     expect(f.rows.map((r) => r.status)).toEqual(["running", "skipped"]);
+    if (first.status === "accepted") await first.release();
   });
 
   it("allows overlap when the trigger opts in", async () => {
     const f = fixture({ stored: trigger({ allowConcurrent: true }) });
-    await admitDelivery(f.deps, "p", SECRET, null);
-    expect((await admitDelivery(f.deps, "p", SECRET, null)).status).toBe(
-      "accepted",
-    );
+    const first = await admitDelivery(f.deps, "p", SECRET, null);
+    const second = await admitDelivery(f.deps, "p", SECRET, null);
+    expect(first.status).toBe("accepted");
+    expect(second.status).toBe("accepted");
+    if (first.status === "accepted") await first.release();
+    if (second.status === "accepted") await second.release();
   });
 
   it("frees the overlap lease once the delivery finishes", async () => {
@@ -383,9 +393,9 @@ describe("admitDelivery", () => {
       throw new Error("expected an accepted delivery");
     }
     await executeDelivery(f.deps, first, {});
-    expect((await admitDelivery(f.deps, "p", SECRET, null)).status).toBe(
-      "accepted",
-    );
+    const next = await admitDelivery(f.deps, "p", SECRET, null);
+    expect(next.status).toBe("accepted");
+    if (next.status === "accepted") await next.release();
   });
 });
 
@@ -616,7 +626,9 @@ describe("executeDelivery", () => {
     expect(f.rows.find((row) => row.runId === "lost")?.status).toBe("failed");
     expect(f.runs).toHaveLength(0);
     // The slot came back: the next delivery is admitted, not busy.
-    expect((await admitDelivery(f.deps, "p", SECRET, null)).status).toBe("accepted");
+    const next = await admitDelivery(f.deps, "p", SECRET, null);
+    expect(next.status).toBe("accepted");
+    if (next.status === "accepted") await next.release();
   });
 
   it("still finishes the row when history writes fail", async () => {
