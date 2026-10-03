@@ -63,16 +63,18 @@ function SkipLine({ skip }: { skip: SyncSkip }) {
 export function PluginSyncSummary({
   result,
   onApply,
+  busy,
 }: {
   result: PluginSyncResult;
   /** Re-runs the sync with the chosen removals. */
   onApply: (selection: PluginSyncSelection) => Promise<void>;
+  /** Shared with source sync/upload so an older operation cannot replace a newer report. */
+  busy: boolean;
 }) {
   const t = useT();
   const [removeSkills, setRemoveSkills] = useState<string[]>([]);
   const [removeServers, setRemoveServers] = useState<string[]>([]);
   const [removePlugins, setRemovePlugins] = useState<string[]>([]);
-  const [applying, setApplying] = useState(false);
   const [applyError, setApplyError] = useState<string | null>(null);
 
   const totals = { created: 0, overwritten: 0, unchanged: 0, removed: 0, skipped: result.skipped.length };
@@ -94,7 +96,7 @@ export function PluginSyncSummary({
     );
 
   async function apply() {
-    setApplying(true);
+    if (busy) return;
     setApplyError(null);
     try {
       await onApply({
@@ -112,8 +114,6 @@ export function PluginSyncSummary({
       // unhandled rejection and the reader cannot tell whether anything was
       // deleted.
       setApplyError(reportError(e, "Delete failed"));
-    } finally {
-      setApplying(false);
     }
   }
 
@@ -170,6 +170,7 @@ export function PluginSyncSummary({
                 key={`rm-${orphan.name}`}
                 size="xs"
                 checked={picked.includes(orphan.name)}
+                disabled={busy}
                 onChange={() => setPicked(toggle(picked, orphan.name))}
                 label={
                   orphan.boundTo === null
@@ -241,6 +242,7 @@ export function PluginSyncSummary({
                 key={`plugin-${name}`}
                 size="xs"
                 checked={removePlugins.includes(name)}
+                disabled={busy}
                 onChange={() => setRemovePlugins(toggle(removePlugins, name))}
                 label={name}
               />
@@ -250,7 +252,7 @@ export function PluginSyncSummary({
 
         {chosen > 0 && (
           <Group>
-            <Button size="xs" loading={applying} onClick={() => void apply()}>
+            <Button size="xs" loading={busy} onClick={() => void apply()}>
               Delete {chosen} entr{chosen === 1 ? "y" : "ies"}
             </Button>
             {applyError ? (

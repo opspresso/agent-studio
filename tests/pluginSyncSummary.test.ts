@@ -23,7 +23,7 @@ describe("Plugin deletion review", () => {
       ] }, mcpServers: empty() }],
     };
     const markup = renderToStaticMarkup(createElement(MantineProvider, {
-      children: createElement(PluginSyncSummary, { result, onApply: async () => {} }),
+      children: createElement(PluginSyncSummary, { result, onApply: async () => {}, busy: false }),
     }));
     expect(markup).toContain(`unknown — ${t("plugins.bindingsUnavailable")}`);
     expect(markup).not.toContain(`unbound — ${t("plugins.bindingsUnavailable")}`);
