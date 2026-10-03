@@ -9,14 +9,13 @@ import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
 export interface GitWorktreeConfig {
   webUrl: string;
   internalHosts: string[];
-  /** A server-side broker issues a repository-scoped installation token, never a PAT. */
-  credential?: (repository: string, access: "read" | "write") => Promise<{ token: string; expiresAt: string }>;
-  serverToken?: () => Promise<string>;
+  /** The caller's token is used only by server-side Git bundle transport. */
+  serverToken: () => Promise<string>;
 }
 
 export function createCodingWorktree(control: SandboxControl, config: GitWorktreeConfig): CodingWorktree {
-  const transport = config.serverToken ? createGitBundleTransport(config.serverToken) : undefined;
-  async function network(repository: string, access: "read" | "write", expectedUrl?: string) {
+  const transport = createGitBundleTransport(config.serverToken);
+  async function network(repository: string, expectedUrl?: string) {
     if (!isRepositoryName(repository)) throw new Error("Invalid coding repository");
     const url = new URL(`${config.webUrl.replace(/\/+$/, "")}/${repository}.git`);
     if (url.username || url.password || url.search || url.hash || !["http:", "https:"].includes(url.protocol)) throw new Error("Invalid Git web URL");
@@ -29,19 +28,16 @@ export function createCodingWorktree(control: SandboxControl, config: GitWorktre
       if (!ip) throw new Error("Git host did not resolve");
       resolve = `${url.hostname}:${url.port || (url.protocol === "https:" ? "443" : "80")}:${ip.includes(":") ? `[${ip}]` : ip}`;
     }
-    if (!transport && !config.credential) throw new Error("Workspace Git credentials are not configured");
-    const credential = transport ? {} : await config.credential!(repository, access);
-    return { url: url.href, ...credential, ...(resolve ? { resolve } : {}) };
+    return { url: url.href, ...(resolve ? { resolve } : {}) };
   }
   return {
     async prepare(externalId, repository) {
       if (!isGitBranch(repository.baseBranch) || !isGitBranch(repository.branch) || !repository.branch.startsWith("agent/")) throw new Error("Invalid workspace Git branch");
       const expectedUrl = `${config.webUrl.replace(/\/+$/, "")}/${repository.repository}.git`;
       if (repository.remoteUrl && repository.remoteUrl !== expectedUrl) throw new Error("Workspace repository origin changed");
-      const remote = repository.baseSha ? { url: expectedUrl } : await network(repository.repository, "read", repository.remoteUrl);
-      if (repository.sourceRevision && !transport) throw new Error("Review checkout requires credential-free Git bundle transport");
-      const bundle = transport && !repository.baseSha ? await transport.download(remote, repository.baseBranch, repository.sourceRevision) : undefined;
-      const result = await control<{ baseSha: string; headSha: string }>(externalId, "git-prepare", { ...remote, ...repository, ...(bundle ? { bundle } : {}), existingOnly: !!repository.baseSha });
+      const remote = repository.baseSha ? { url: expectedUrl } : await network(repository.repository, repository.remoteUrl);
+      const bundle = !repository.baseSha ? await transport.download(remote, repository.baseBranch, repository.sourceRevision) : undefined;
+      const result = await control<{ baseSha: string; headSha: string }>(externalId, "git-prepare", { url: remote.url, ...repository, ...(bundle ? { bundle } : {}), existingOnly: !!repository.baseSha });
       if (repository.baseSha && repository.baseSha !== result.baseSha) throw new Error("Workspace Git base changed");
       if (repository.sourceRevision && (repository.sourceRevision !== result.baseSha || repository.sourceRevision !== result.headSha)) throw new Error("Review Workspace differs from the verified commit");
       return { ...repository, ...result, remoteUrl: remote.url };
@@ -49,11 +45,9 @@ export function createCodingWorktree(control: SandboxControl, config: GitWorktre
     review: externalId => control(externalId, "git-review", {}),
     async commit(externalId, input) { return (await control<{ sha: string }>(externalId, "git-commit", input)).sha; },
     async push(externalId, repository) {
-      const remote = await network(repository.repository, "write", repository.remoteUrl);
-      if (transport) {
-        const { bundle } = await control<{ bundle: string }>(externalId, "git-bundle", { ...remote, ...repository }, Math.ceil(WORKSPACE_LIMITS.checkpointBytes * 4 / 3) + 1000);
-        await transport.upload(remote, repository.branch, repository.headSha!, bundle);
-      } else await control(externalId, "git-push", { ...remote, ...repository });
+      const remote = await network(repository.repository, repository.remoteUrl);
+      const { bundle } = await control<{ bundle: string }>(externalId, "git-bundle", { url: remote.url, ...repository }, Math.ceil(WORKSPACE_LIMITS.checkpointBytes * 4 / 3) + 1000);
+      await transport.upload(remote, repository.branch, repository.headSha!, bundle);
     },
   };
 }

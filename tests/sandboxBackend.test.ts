@@ -17,7 +17,7 @@ describe("shared Sandbox control protocol", () => {
     await provider.start("pod-uid", "run-1", { argv: ["sh"], stdin: "echo task", timeoutMs: 1000 });
     expect(await provider.operation("pod-uid", "run-1")).toMatchObject({ status: "running" });
     await provider.cancel("pod-uid", "run-1");
-    const git = createCodingWorktree(control, { webUrl: "https://git.example.test", internalHosts: [] });
+    const git = createCodingWorktree(control, { webUrl: "https://git.example.test", internalHosts: [], serverToken: vi.fn() });
     expect(await git.review("pod-uid")).toMatchObject({ diff: "change" });
     expect(await git.commit("pod-uid", { operationId: "approval-1", message: "change", fingerprint: "before", ownerEmail: "owner@example.test", createdAt: "2026-09-30T00:00:00Z" })).toBe("a".repeat(40));
     expect(calls.map(call => call.action)).toEqual(["start", "operation", "cancel", "git-review", "git-commit"]);

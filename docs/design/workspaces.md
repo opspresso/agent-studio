@@ -308,7 +308,8 @@ Annotated tag는 최대 8단계까지 commit을 해석하고 순환·비커밋 �
 GitHub API 요청과 clone·push는 원래 호출자의 사용자 ID로 개인 MCP 인증을 dispatch마다 다시 읽는다.
 PR 게시자는 Workspace의 `pullRequestUser`에 기록하며 서명된 GitHub 상태 갱신도 그 사용자로 조회한다.
 OAuth 검증·갱신은 기존 MCP 인증 제공자가 소유한다. 인증된 clone과 push는 서버의 임시 bare
-저장소에서 수행하며, Sandbox에는 자격증명이 없는 Git bundle만 전달한다. 서버는 저장소
+저장소에서 수행하며, Sandbox에는 자격증명이 없는 Git bundle만 전달한다. Sandbox Git 제어기는
+자격증명 필드와 직접 push를 거절하고 새 저장소는 bundle로만 준비한다. 서버는 저장소
 파일을 checkout하거나 hook·build script를 실행하지 않고 호스트의 Git 설정·credential helper를
 상속하지 않는다. 임시 디렉터리는 작업 후 삭제한다. PR publish는 bundle의 정확한 head를
 확인하고 지정된 `agent/` 브랜치만 push한다. [Git bundle](https://git-scm.com/docs/git-bundle)은

@@ -63,18 +63,9 @@ async function scalar(args, options) {
   if (result.truncated) throw new Error("Git metadata exceeds its bound");
   return result.text.trim();
 }
-function networkConfig(request) {
-  const url = new URL(request.url);
+function validateRemote(raw) {
+  const url = new URL(raw);
   if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error("Invalid Git remote URL");
-  const config = [];
-  if (request.resolve) config.push(["http.curloptResolve", request.resolve]);
-  if (request.token) {
-    if (typeof request.token !== "string" || request.token.includes("\n") || !Number.isFinite(Date.parse(request.expiresAt)) || Date.parse(request.expiresAt) <= Date.now() || Date.parse(request.expiresAt) > Date.now() + 3_700_000) {
-      throw new Error("Git credentials must be short-lived");
-    }
-    config.push([`http.${url.origin}/.extraHeader`, `Authorization: Basic ${Buffer.from(`x-access-token:${request.token}`).toString("base64")}`]);
-  }
-  return config;
 }
 async function ownWorktree(base = work) {
   for (const name of await fs.readdir(base)) {
@@ -115,22 +106,22 @@ export async function checkpointGitFiles() {
 }
 
 export async function handleGit(action, request) {
+  if (["token", "expiresAt", "resolve"].some(key => key in request)) throw new Error("Sandbox Git accepts credential-free requests only");
   if (action === "git-prepare") {
     const branch = safeBranch(request.branch);
     if (!branch.startsWith("agent/")) throw new Error("Workspace requires an agent branch");
-    const config = networkConfig(request);
+    validateRemote(request.url);
     if (!await exists(gitDir)) {
       if (request.existingOnly) throw new Error("Saved workspace Git metadata is missing");
+      if (request.bundle === undefined) throw new Error("Repository bundle is required");
       if ((await fs.readdir(work)).length) throw new Error("Cannot attach repository: the workdir is not empty; existing files were kept");
       const bundleFile = `${root}/source.bundle`;
       try {
-        if (request.bundle !== undefined) {
-          if (typeof request.bundle !== "string" || Buffer.byteLength(request.bundle, "base64") > 64 * 1024 * 1024) throw new Error("Repository bundle exceeds Workspace storage limit");
-          await fs.writeFile(bundleFile, Buffer.from(request.bundle, "base64"), { mode: 0o600, flag: "wx" });
-        }
+        if (typeof request.bundle !== "string" || Buffer.byteLength(request.bundle, "base64") > 64 * 1024 * 1024) throw new Error("Repository bundle exceeds Workspace storage limit");
+        await fs.writeFile(bundleFile, Buffer.from(request.bundle, "base64"), { mode: 0o600, flag: "wx" });
         await git(["clone", "--no-checkout", "--no-tags", "--single-branch", "--branch", safeBranch(request.baseBranch),
-          "--separate-git-dir", gitDir, "--", request.bundle !== undefined ? bundleFile : request.url, work],
-        { config: request.bundle !== undefined ? [...config, ["protocol.file.allow", "always"]] : config, unbound: true });
+          "--separate-git-dir", gitDir, "--", bundleFile, work],
+        { config: [["protocol.file.allow", "always"]], unbound: true });
         await git(["remote", "set-url", "origin", request.url]);
       } finally { await fs.rm(bundleFile, { force: true }); }
       const baseSha = await scalar(["rev-parse", "HEAD"]);
@@ -174,21 +165,17 @@ export async function handleGit(action, request) {
     await git(["read-tree", sha]);
     return { sha };
   }
-  if (action === "git-push" || action === "git-bundle") {
+  if (action === "git-bundle") {
     if (await exists(`${root}/active`)) throw new Error("Cannot publish while a workspace task is running");
     const branch = safeBranch(request.branch);
     if (!branch.startsWith("agent/") || await scalar(["branch", "--show-current"]) !== branch || await scalar(["rev-parse", "HEAD"]) !== request.headSha) throw new Error("Workspace Git head changed");
     if (await scalar(["config", "--get", "remote.origin.url"]) !== request.url) throw new Error("Workspace Git remote changed");
-    if (action === "git-bundle") {
-      const file = `${root}/publish.bundle`;
-      try {
-        await git(["bundle", "create", file, `refs/heads/${branch}`]);
-        if ((await fs.stat(file)).size > 64 * 1024 * 1024) throw new Error("Repository bundle exceeds Workspace storage limit");
-        return { bundle: (await fs.readFile(file)).toString("base64") };
-      } finally { await fs.rm(file, { force: true }); }
-    }
-    await git(["push", "--", request.url, `HEAD:refs/heads/${branch}`], { config: networkConfig(request) });
-    return { pushed: true };
+    const file = `${root}/publish.bundle`;
+    try {
+      await git(["bundle", "create", file, `refs/heads/${branch}`]);
+      if ((await fs.stat(file)).size > 64 * 1024 * 1024) throw new Error("Repository bundle exceeds Workspace storage limit");
+      return { bundle: (await fs.readFile(file)).toString("base64") };
+    } finally { await fs.rm(file, { force: true }); }
   }
   throw new Error("Unknown Git operation");
 }

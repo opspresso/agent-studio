@@ -19,21 +19,21 @@ async function main() {
       fs.writeFileSync('/control/source/hello.txt','before\\n');
       fs.writeFileSync('/control/source/.gitignore','node_modules/\\n');
       git(['-C','/control/source','add','.']); git(['-C','/control/source','commit','-m','fixture']);
-      git(['clone','--bare','/control/source','/control/remote.git']);
-      git(['--git-dir=/control/remote.git','update-server-info']);
-      const server=cp.spawn('python3',['-m','http.server','8765','--bind','127.0.0.1','--directory','/control'],{detached:true,stdio:'ignore'});server.unref();
-      setTimeout(()=>{},200);
+      git(['-C','/control/source','bundle','create','/control/fixture.bundle','main']);
+      process.stdout.write(fs.readFileSync('/control/fixture.bundle').toString('base64'));
     `;
-    await dockerCall(["exec", "-i", "--user", "0", id, "node"], fixture);
-    const repo = { url: "http://127.0.0.1:8765/remote.git", baseBranch: "main", branch: `agent/${workspaceId}` };
+    const bundle = await dockerCall(["exec", "-i", "--user", "0", id, "node"], fixture);
+    const repo = { url: "https://git.example.test/fixture/remote.git", baseBranch: "main", branch: `agent/${workspaceId}` };
     const credential = { token: "ephemeral-test-credential", expiresAt: new Date(Date.now() + 60_000).toISOString() };
-    const initial = await control<{ baseSha: string; headSha: string }>(id, "git-prepare", { ...repo, ...credential });
+    await assert.rejects(control(id, "git-prepare", { ...repo, ...credential, bundle }), /credential-free/);
+    await assert.rejects(control(id, "git-prepare", repo), /bundle is required/);
+    await assert.rejects(control(id, "git-push", repo), /Unknown Git operation/);
+    const initial = await control<{ baseSha: string; headSha: string }>(id, "git-prepare", { ...repo, bundle });
     assert.equal(initial.baseSha, initial.headSha);
     const run = (script: string) => provider.execute(id, { argv: ["/bin/sh", "-s"], stdin: script, timeoutMs: 10_000 });
     assert.equal((await run("cat hello.txt")).stdout, "before\n");
     const gitConfig = await run("git config --local --list");
     assert.ok(!gitConfig.stdout.includes(credential.token) && !gitConfig.stdout.includes("extraheader"), "Git configuration never stores the transient credential");
-    await assert.rejects(control(id, "git-prepare", { ...repo, token: "long-lived-test", expiresAt: "2099-01-01T00:00:00Z" }), /short-lived/);
     assert.notEqual((await run("git checkout -b forbidden")).exitCode, 0, "agent cannot alter protected Git state");
     assert.notEqual((await run("rm .git")).exitCode, 0, "agent cannot replace the Git pointer");
     assert.equal((await run("printf after > hello.txt; printf added > new.txt; mkdir node_modules; truncate -s 70000000 node_modules/cache")).exitCode, 0);
@@ -68,7 +68,7 @@ async function main() {
     const files = await provider.execute(restored, { argv: ["/bin/sh", "-c", "cat hello.txt new.txt; test ! -e node_modules/cache"], timeoutMs: 10_000 });
     assert.equal(files.stdout, "afteradded");
     assert.equal(files.exitCode, 0, "Git-ignored dependencies are regenerated instead of checkpointed");
-    console.log("[ok] Workspace Git: clone, protected agent branch, full-tree review, approved commit identity, ignored caches and offline restore");
+    console.log("[ok] Workspace Git: credential-free bundle import, protected agent branch, full-tree review, approved commit identity, ignored caches and offline restore");
   } finally { for (const id of containers) await provider.destroy(id); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });
