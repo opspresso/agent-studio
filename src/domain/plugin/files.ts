@@ -21,6 +21,15 @@ export interface PluginRoot {
   manifestPath: string;
 }
 
+/** Closest strict ancestor, with the repository root represented by an empty path. */
+function ancestorRoot(path: string, roots: ReadonlySet<string>): string | undefined {
+  for (let at = path.lastIndexOf("/"); at > 0; at = path.lastIndexOf("/", at - 1)) {
+    const parent = path.slice(0, at);
+    if (roots.has(parent)) return parent;
+  }
+  return path !== "" && roots.has("") ? "" : undefined;
+}
+
 /**
  * Every directory holding a `plugin.json`, anywhere in the tree — a repo may
  * be one plugin at its root or a monorepo of many. A root inside another root
@@ -47,12 +56,9 @@ export function selectPluginRoots(entries: SkillTreeEntry[]): {
 
   const roots: PluginRoot[] = [];
   const nested: PluginRoot[] = [];
+  const paths = new Set(all.map(root => root.rootPath));
   for (const candidate of all) {
-    const inside = all.some(
-      (other) =>
-        other !== candidate &&
-        (other.rootPath === "" || candidate.rootPath.startsWith(`${other.rootPath}/`)),
-    );
+    const inside = ancestorRoot(candidate.rootPath, paths) !== undefined;
     (inside ? nested : roots).push(candidate);
   }
   return { roots, nested };
@@ -85,14 +91,10 @@ export function groupEntriesByRoot(
     wholeTree.push(...entries);
     return byRoot;
   }
+  const paths = new Set(byRoot.keys());
   for (const entry of entries) {
-    for (let at = entry.path.lastIndexOf("/"); at > 0; at = entry.path.lastIndexOf("/", at - 1)) {
-      const owner = byRoot.get(entry.path.slice(0, at));
-      if (owner) {
-        owner.push(entry);
-        break;
-      }
-    }
+    const owner = ancestorRoot(entry.path, paths);
+    if (owner !== undefined) byRoot.get(owner)!.push(entry);
   }
   return byRoot;
 }
@@ -105,12 +107,8 @@ export function excludeSubtrees(
   if (roots.length === 0) {
     return entries;
   }
-  return entries.filter(
-    (entry) =>
-      !roots.some(
-        (root) => root.rootPath === "" || entry.path.startsWith(`${root.rootPath}/`),
-      ),
-  );
+  const paths = new Set(roots.map(root => root.rootPath));
+  return entries.filter(entry => ancestorRoot(entry.path, paths) === undefined);
 }
 
 /**
