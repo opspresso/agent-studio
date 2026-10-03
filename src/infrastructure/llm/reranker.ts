@@ -1,6 +1,7 @@
 import type { RerankerPort } from "@/domain/vector/types";
 import { calculateRerankCost } from "@/domain/llm/models";
 import { fetchProvider } from "./providerFetch";
+import { waitWithSignal } from "@/shared/waitWithSignal";
 
 interface RerankerConfig {
   baseUrl: string;
@@ -32,26 +33,6 @@ function inputTokensOf(body: unknown): number {
 /** A catalog rerank must not hold the tools preparation stage indefinitely. */
 const RERANKER_TIMEOUT_MS = 15_000;
 
-async function waitWithSignal<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
-  signal.throwIfAborted();
-  return await new Promise<T>((resolve, reject) => {
-    const onAbort = (): void => {
-      reject(signal.reason instanceof Error ? signal.reason : new Error("Rerank was cancelled"));
-    };
-    signal.addEventListener("abort", onAbort, { once: true });
-    pending.then(
-      (value) => {
-        signal.removeEventListener("abort", onAbort);
-        resolve(value);
-      },
-      (error: unknown) => {
-        signal.removeEventListener("abort", onAbort);
-        reject(error);
-      },
-    );
-  });
-}
-
 /** Reranking as served by vLLM's `/v1/rerank`. */
 export function createReranker(resolve: () => Promise<RerankerConfig> | RerankerConfig): RerankerPort {
   return {
@@ -61,7 +42,7 @@ export function createReranker(resolve: () => Promise<RerankerConfig> | Reranker
       }
       const timeout = AbortSignal.timeout(RERANKER_TIMEOUT_MS);
       const operationSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
-      const config = await waitWithSignal(Promise.resolve(resolve()), operationSignal);
+      const config = await waitWithSignal(resolve, operationSignal);
       const headers = new Headers({ "content-type": "application/json" });
       if (config.apiKey) {
         headers.set("authorization", `Bearer ${config.apiKey}`);

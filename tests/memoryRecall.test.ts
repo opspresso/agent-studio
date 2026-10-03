@@ -177,6 +177,22 @@ describe("recallMemories", () => {
     expect(callMcpTool).not.toHaveBeenCalled();
   });
 
+  it("bounds an unanswered recall and clears its timer", async () => {
+    vi.useFakeTimers();
+    const pending = recallMemories({
+      configuration: bound("memory"),
+      mcp: {
+        mcpServers: [server("memory", ["recall"])], aliasFor: () => "recall",
+        callMcpTool: () => new Promise(() => {}),
+      },
+      query: "q",
+    });
+    await vi.advanceTimersByTimeAsync(10_000);
+    await expect(pending).resolves.toMatchObject({ asked: 1, failed: 1,
+      warnings: [expect.stringContaining("no answer within 10s")] });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("handles a dispatch rejection when cancellation occurs inside the call", async () => {
     const controller = new AbortController();
     const stopped = new Error("Stop pressed");
