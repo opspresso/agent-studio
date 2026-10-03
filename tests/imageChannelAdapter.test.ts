@@ -438,6 +438,22 @@ describe("OpenRouter image dialect", () => {
 });
 
 describe("the OpenAI image dialect", () => {
+  it("keeps each multipart source filename consistent with its MIME type and bytes", async () => {
+    const sources = ["image/png", "image/jpeg", "image/webp", "image/gif"].map((mimeType, index) => ({
+      mimeType, b64: Buffer.from(`source-${index}`).toString("base64"),
+    }));
+    let files: File[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (_input: unknown, init?: RequestInit) => {
+      files = (init!.body as FormData).getAll("image[]") as File[];
+      return Response.json({ data: [{ b64_json: "ZWRpdA==" }] });
+    }));
+    await channel.editImage({ model: "openai/gpt-image-2", prompt: "combine", images: sources });
+    expect(files.map(file => file.name)).toEqual(["image-1.png", "image-2.jpg", "image-3.webp", "image-4.gif"]);
+    expect(files.map(file => file.type)).toEqual(sources.map(image => image.mimeType));
+    expect(await Promise.all(files.map(async file => Buffer.from(await file.arrayBuffer()).toString("base64"))))
+      .toEqual(sources.map(image => image.b64));
+  });
+
   it("still sends size and quality, and no xAI fields", async () => {
     const box = stubFetch({
       data: [{ b64_json: "aW1n" }],

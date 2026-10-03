@@ -129,7 +129,7 @@
 | 저장된 artifact 를 그 타입답게 페이지로 만들기 | `src/app/api/artifacts/[artifactId]/view/_lib/viewPage.tsx` | 구조 |
 | 구분자로 나뉜 행의 파싱 (RFC 4180) | `src/app/api/artifacts/[artifactId]/view/_lib/csv.ts` 의 `parseCsv` | 구조 |
 | 런이 파일로 쓸 수 있는 타입과 그 크기 | `src/domain/artifact/types.ts` 의 `SAVABLE_TYPES` / `isSavable` / `MAX_SAVED_FILE_BYTES` | 구조 |
-| 저장된 파일이 독자에게 어떤 이름으로 내려가는가 | `src/domain/artifact/types.ts` 의 `savedFileName` | 구조 |
+| MIME에 맞는 파일 이름. 다운로드와 이미지 편집 업로드가 같은 확장자 규칙을 쓴다 | `src/domain/artifact/types.ts` 의 `savedFileName` | 구조 |
 | 일반 산출물 오브젝트를 삭제하기 | `src/infrastructure/storage/s3ObjectStore.ts` | 구조 |
 | 비공개 source 본문 제거와 지연 업로드 재생성 차단 | `src/infrastructure/storage/sourceObjectStore.ts` 의 `delete`. 0바이트 표식으로 키를 유지하며 source 읽기에서는 없는 파일로 취급한다 | 구조 |
 | proxied 오브젝트 주소와 그 토큰. `/api/objects/<key>?exp=&sig=[&dl=]`, HMAC 이 무엇을 덮는가 | `src/infrastructure/storage/objectUrlToken.ts`. 키·만료·다운로드 파일명을 같은 HMAC 계약으로 서명·검증한다 | 구조 |

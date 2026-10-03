@@ -1,7 +1,6 @@
 /**
- * Images API adapter with the same per-provider dispatch as the text channel:
- * `provider/model` ids route to registered provider channels with the prefix
- * stripped; everything else uses the default channel.
+ * Image generation and editing resolve each selected model to its registered
+ * provider endpoint, credential and wire ID, like the text channel.
  *
  * Unlike the text channel, the wire protocol here is **not** one shape for
  * everybody. Chat Completions is a de-facto standard every provider implements;
@@ -25,6 +24,7 @@ import {
   SUPPORTED_IMAGE_TYPES,
 } from "@/domain/llm/imageLimits";
 import { imageDataUrl } from "@/domain/llm/types";
+import { savedFileName } from "@/domain/artifact/types";
 import { readBodyText } from "@/shared/httpBody";
 import { fetchProvider } from "./providerFetch";
 import { log } from "@/shared/logger";
@@ -334,7 +334,7 @@ function xaiEditSources(images: ImageBytes[]): Record<string, unknown> {
   return first && refs.length === 1 ? { image: first } : { images: refs };
 }
 
-/** The target resolver is injected; see `createChannel`. */
+/** The target resolver is injected; provider configuration stays outside this adapter. */
 export function createImageChannel(resolveTarget: TargetResolver): ImageChannel {
   return {
     async generateImage(params: ImageGenerationParams): Promise<ImageGenerationResult> {
@@ -429,7 +429,7 @@ export function createImageChannel(resolveTarget: TargetResolver): ImageChannel 
       // The edit endpoint is multipart: the bytes go up as files, not base64 json.
       const files = await Promise.all(
         params.images.map((image, index) =>
-          toFile(Buffer.from(image.b64, "base64"), `image-${index + 1}${extensionFor(image.mimeType)}`, {
+          toFile(Buffer.from(image.b64, "base64"), savedFileName(`image-${index + 1}`, image.mimeType), {
             type: image.mimeType,
           }),
         ),
@@ -454,15 +454,4 @@ export function createImageChannel(resolveTarget: TargetResolver): ImageChannel 
       return toImageResult(response, "edit");
     },
   };
-}
-
-/** File extension matching a supported image mime type; providers key on it. */
-function extensionFor(mimeType: string): string {
-  if (mimeType === "image/jpeg") {
-    return ".jpg";
-  }
-  if (mimeType === "image/webp") {
-    return ".webp";
-  }
-  return ".png";
 }
