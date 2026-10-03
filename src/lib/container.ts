@@ -66,7 +66,6 @@ import { createAudioJobUseCases, type SubmitAudioJobInput } from "@/application/
 import { createAudioTool } from "@/application/audio/audioTool";
 import { sourceRefreshFingerprint } from "@/application/audio/sourceRefreshIdentity";
 import { createMcpSourceRefresher } from "@/application/execution/refreshMcpSource";
-import { mcpUserEmail } from "@/application/mcpMetadataHeaders";
 import { currentRunContext } from "@/shared/runContext";
 import { createAudioTranscriptionStep } from "@/application/audio/transcribeFile";
 import { createAudioPostprocessStep } from "@/application/audio/postprocess";
@@ -1027,7 +1026,7 @@ export const executionDeps: ExecutionDeps = {
   sourceRefreshIdentity,
   audioTools: async (agentName, origin) => {
     if (!config.objectBucketName) return undefined;
-    const email = mcpUserEmail(origin.actor, origin.userEmail);
+    const email = origin.user?.email;
     if (!email || !origin.user || !origin.actor) return undefined;
     const agent = origin.ancestry[0] ?? agentName;
     const runtime = getAudioRuntime();
@@ -1069,7 +1068,7 @@ export const triggerRunnerDeps: TriggerRunnerDeps = {
   webhookCredentials: webhookTokenUseCases,
   openReviewWorkspace: async (target, grant) => {
     const { agentName, triggerId, email: ownerEmail } = grant;
-    const tool = await executionDeps.workspaceTool?.(agentName, { ancestry: [agentName], actor: triggerActor({ kind: "webhook", agentName, triggerId }), userEmail: ownerEmail, user: { userId: grant.userId, email: grant.email }, executionGrant: grant }, target);
+    const tool = await executionDeps.workspaceTool?.(agentName, { ancestry: [agentName], actor: triggerActor({ kind: "webhook", agentName, triggerId }), user: { userId: grant.userId, email: grant.email }, executionGrant: grant }, target);
     if (!tool) throw new ValidationError("PR review Workspace is unavailable; check the Agent's Workspace enablement, repository policy and Sandbox backend");
     return openReviewWorkspace({ tool, state: async id => {
       const workspace = await workspaceRepository.get(id);
@@ -1244,7 +1243,7 @@ export function getAudioRuntime() {
     await authorize(job.agentName, job.userEmail);
     const configuration = job.destination?.configuration;
     if (!configuration || !job.destination) throw new AudioJobStepError("delivery_configuration_missing", false);
-    const mcp = await buildMcpTools(executionDeps, configuration, signal, { actor: job.actor, user: job.user, userEmail: job.userEmail });
+    const mcp = await buildMcpTools(executionDeps, configuration, signal, { actor: job.actor, user: job.user });
     const required = [...(job.destination.documents ? ["document_ingest", "document_ingest_status", "document_ingest_retry"] : []),
       ...(job.destination.memories ? ["remember"] : [])];
     if (required.some((name) => !mcp.aliasFor?.(job.destination!.serverName, name))) {

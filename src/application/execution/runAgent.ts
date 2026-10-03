@@ -217,7 +217,6 @@ export async function* executeAgent(
     ...(input.backgroundTask ? { backgroundTask: true } : {}),
     ancestry: [input.agent.name],
     actor: input.actor,
-    userEmail: input.user.email,
     // Carried unconditionally, like the actor: a child is answering the same
     // person as its parent. Whether a *prompt* names them stays a per-Agent
     // question that `callerFor` answers at each engine-input boundary — this

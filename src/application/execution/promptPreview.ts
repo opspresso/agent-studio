@@ -58,13 +58,13 @@ export async function previewPrompt(
     );
   }
 
-  const origin = { actor: input.actor, user: input.user, userEmail: input.user.email };
+  const origin = { actor: input.actor, user: input.user };
   const memory = input.message?.trim()
     ? await prepareMemoryForRun(deps, {
         configuration,
         query: input.message,
         signal: input.signal,
-        ...(origin ? { origin } : {}),
+        origin,
       })
     : { input: {}, warnings: [], asked: 0, failed: 0 };
   const resolved = await resolveRunTools(

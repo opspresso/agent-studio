@@ -145,7 +145,7 @@
 | 화자 전환별 분할·샘플 coverage·동일 화자 pause 병합 | `src/infrastructure/llm/audioSegmenter.ts` | 코드 |
 | 오디오 Agent 큐의 접수 순서·due 인덱스·직렬 claim | `src/infrastructure/db/repositories/audioJobRepository.ts`; 큐 첫 작업만 실행하고 작업 전이와 큐 갱신을 transaction으로 묶는다 | 구조 |
 | 오디오 작업 화면의 동시 상태 조회 수와 갱신 병합 | `src/app/agents/[name]/audio/jobPolling.ts`의 `MAX_CONCURRENT_AUDIO_JOB_READS`와 `mergeAudioJobUpdates` | 구조 |
-| 아웃바운드 MCP 요청의 예약 metadata 헤더 — 철자, 저장된 표기 제거, actor→email 판정 | `src/application/mcpMetadataHeaders.ts` 의 `TENANT_ID_HEADER` / `USER_EMAIL_HEADER` / `CONVERSATION_ID_HEADER` / `stripMcpMetadataHeaders` / `mcpUserEmail` / `applyMcpUserEmail`. API 레이어는 `src/app/api/agents/_lib/conversation.ts` 에서 conversation 철자를 *인바운드* 로 읽고, API Reference 탭(`endpoints.ts`)이 그것을 호출자에게 보여준다. 그 두 파일뿐이다 | 구조 |
+| 아웃바운드 MCP 요청의 예약 metadata 헤더 — 철자, 저장된 표기 제거, 확인된 사용자 이메일 정규화 | `src/application/mcpMetadataHeaders.ts`의 `TENANT_ID_HEADER` / `USER_EMAIL_HEADER` / `CONVERSATION_ID_HEADER` / `stripMcpMetadataHeaders` / `applyMcpUserEmail`. 실행의 사용자 값은 `RunIdentity.user.email`이다. API 레이어는 `src/app/api/agents/_lib/conversation.ts`에서 conversation 철자를 인바운드로 읽고, API Reference 탭(`endpoints.ts`)이 호출자에게 보여준다 | 구조 |
 | Agent 변경 시각의 단조 증가 | `src/shared/nextUpdatedAt.ts`. Agent 수정과 오디오 후처리 참조의 삭제 방지 transaction이 함께 사용한다 | 구조 |
 | 사람이 읽을 저장 오브젝트의 크기 | `src/app/_lib/formatBytes.ts` 의 `formatBytes` | 구조 |
 | 선언 없이 온 그림의 종류를 바이트로 알아내기 | `src/domain/llm/imageSniff.ts` | 구조 |

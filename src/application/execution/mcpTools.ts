@@ -14,7 +14,6 @@ import * as engine from "@/application/runtime";
 import {
   applyMcpUserEmail,
   CONVERSATION_ID_HEADER,
-  mcpUserEmail,
   TENANT_ID_HEADER,
 } from "@/application/mcpMetadataHeaders";
 import { resolveMcpCredentials } from "@/application/mcp/credentials";
@@ -34,8 +33,8 @@ export async function buildMcpTools(
   deps: McpToolDeps,
   configuration: AgentConfiguration,
   signal?: AbortSignal,
-  /** Where the run came from; its email actor and conversation reach the server as headers. */
-  origin?: Partial<Pick<RunOrigin, "actor" | "user" | "userEmail" | "conversation">> & Partial<Pick<RunOrigin, "ancestry">>,
+  /** The authenticated user's email and conversation reach the server as metadata headers. */
+  origin?: Partial<Pick<RunOrigin, "actor" | "user" | "conversation">> & Partial<Pick<RunOrigin, "ancestry">>,
 ): Promise<{
   signature: string;
   mcpTools: import("@/domain/llm/channel").ChannelToolDef[];
@@ -114,7 +113,7 @@ export async function buildMcpTools(
         // The platform's own values, applied last: the strip above already
         // removed every stored spelling, so nothing merged from the registry
         // or a binding survives to be folded with these.
-        applyMcpUserEmail(headers, mcpUserEmail(origin?.actor, origin?.userEmail));
+        applyMcpUserEmail(headers, origin?.user?.email);
         headers[TENANT_ID_HEADER] = configuration.agentName;
         return {
           server: {
@@ -127,7 +126,7 @@ export async function buildMcpTools(
             ...(mappings?.length ? { resultTransforms: Object.fromEntries(mappings.map((mapping) => [mapping.tool,
               (result: unknown) => defaults && !refreshIdentity ? Promise.resolve({ text: "Error: default file mapping requires a connection identity." }) : mapMcpSource({ result, mapping, serverName: mcp.name, agentName: origin?.ancestry?.[0] ?? configuration.agentName,
                 ...(mapping.refreshArgument && refreshIdentity ? { refresh: { agentName: configuration.agentName, serverName: mcp.name, mapping, identity: refreshIdentity } } : {}),
-                userEmail: mcpUserEmail(origin?.actor, origin?.userEmail), register: deps.registerMcpSource })])) } : {}),
+                userEmail: origin?.user?.email, register: deps.registerMcpSource })])) } : {}),
           },
           description: mcp.description ?? "",
           ...(credentialWarning ? { warning: credentialWarning } : {}),

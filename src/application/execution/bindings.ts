@@ -463,10 +463,10 @@ export async function resolveRunTools(
   signal?: AbortSignal,
   queries?: readonly string[],
   /**
-   * Where the run came from. MCP resolution names an email actor and the
+   * Where the run came from. MCP resolution names the authenticated user and the
    * conversation to every server as request headers.
    */
-  origin?: Partial<Pick<RunOrigin, "actor" | "user" | "executionGrant" | "userEmail" | "conversation" | "backgroundTask">> & Partial<Pick<RunOrigin, "ancestry">>,
+  origin?: Partial<Pick<RunOrigin, "actor" | "user" | "executionGrant" | "conversation" | "backgroundTask">> & Partial<Pick<RunOrigin, "ancestry">>,
   /** Records billable Rerank calls for a real run; previews leave it absent. */
   recordRerankUsage?: engine.RecordUsageFn,
 ): Promise<{

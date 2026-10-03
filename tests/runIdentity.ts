@@ -7,8 +7,8 @@ export function interactiveIdentity(email = "owner@example.test", userId = `fixt
 }
 
 /** Synthetic ingress proof for facade tests; production resolves these through real authentication. */
-export function executionIdentity(actor: RunActor = { kind: "user", id: "owner@example.com" }, email?: string): RunIdentity {
-  const user = interactiveIdentity(email ?? (actor.kind === "user" || actor.kind === "agent-token" ? actor.id : "owner@example.com")).user;
+export function executionIdentity(actor: RunActor = { kind: "user", id: "owner@example.com" }, email?: string, userId?: string): RunIdentity {
+  const user = interactiveIdentity(email ?? (actor.kind === "user" || actor.kind === "agent-token" ? actor.id : "owner@example.com"), userId).user;
   if (actor.kind === "user") return { user, actor };
   const agentName = actor.kind === "webhook" || actor.kind === "schedule" ? actor.id.split(":")[0]! : "source";
   const common = { ...user, agentName };

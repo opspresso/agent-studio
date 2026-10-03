@@ -5,11 +5,9 @@
  * a registry entry's headers, an Agent's overrides — can never supply them:
  * every stored spelling is stripped before any decision reads the header map,
  * and the platform's own values are stamped afterwards. One module owns the
- * spellings, the strip, and the actor-to-email judgement, so a run and every
+ * spellings, the strip, and email normalization, so a run and every
  * probe present the same identity contract to the same server.
  */
-
-import type { RunActor } from "@/domain/execution/actor";
 
 /**
  * The header every MCP request names its calling agent with — the agent
@@ -39,9 +37,8 @@ export const TENANT_ID_HEADER = "X-Tenant-Id";
 
 /**
  * The header a request names its user with — the delegated identity an MCP
- * server may scope per-user permissions by (Agent Memory does). Carried by
- * `user` and `agent-token` actors, whose ids are emails, and by surfaces
- * that resolve an address separately from a non-email actor (Slack). Not a
+ * server may scope per-user permissions by (Agent Memory does). The value is
+ * the authenticated Studio user's email, independent of the actor kind. Not a
  * credential: the server must pair it with its own Bearer token or OAuth
  * grant before trusting it. Rides the session's identity map like the tenant,
  * so a server free to expose different tools per user is cached per user.
@@ -97,22 +94,6 @@ export function stripMcpMetadataHeaders(headers: Record<string, string>): void {
 function normalizedEmail(value: string | undefined): string | undefined {
   const email = value?.trim().toLowerCase();
   return email || undefined;
-}
-
-/**
- * The user a run presents to MCP servers. An email-shaped actor (`user`,
- * `agent-token`) is its own answer; otherwise the surface's separately
- * resolved address (Slack's profile lookup) stands in, and a surface with
- * neither presents nobody.
- */
-export function mcpUserEmail(
-  actor: RunActor | undefined,
-  resolvedUserEmail?: string,
-): string | undefined {
-  if (actor?.kind === "user" || actor?.kind === "agent-token") {
-    return normalizedEmail(actor.id);
-  }
-  return normalizedEmail(resolvedUserEmail);
 }
 
 /**

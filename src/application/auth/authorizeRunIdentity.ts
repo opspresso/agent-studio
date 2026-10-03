@@ -3,7 +3,7 @@ import { ForbiddenError } from "@/application/errors";
 import { resolveRunUser, type RunUserDeps } from "./resolveRunUser";
 import { assertExecutionGrant, type ExecutionGrantDeps } from "./authorizeExecutionGrant";
 
-export function assertRunIdentity(identity: RunIdentity): void {
+export function assertRunIdentity(identity: Partial<RunIdentity>): asserts identity is RunIdentity {
   const { user, actor, executionGrant: grant } = identity;
   if (!user?.userId || !user.email || !actor?.id) throw new ForbiddenError("An authenticated Studio caller is required");
   if ((actor.kind === "user" || actor.kind === "agent-token") && actor.id !== user.email) {

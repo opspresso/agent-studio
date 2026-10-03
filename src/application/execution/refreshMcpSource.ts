@@ -32,7 +32,7 @@ export function createMcpSourceRefresher(deps: McpToolDeps & Pick<ExecutionDeps,
       return { sourceRef: "refresh", filename: source.filename, mimeType: source.mimeType };
     } }, { ...configuration,
       mcpList: [{ ...binding, tools: [recipe.mapping.tool], sourceOutputs: [{ ...recipe.mapping, refreshArgument: undefined }] }] }, signal,
-    { actor: job.actor, user: job.user, userEmail: job.userEmail });
+    { actor: job.actor, user: job.user });
     try {
       const alias = client.aliasFor?.(recipe.serverName, recipe.mapping.tool);
       if (!alias || !client.callMcpTool || !job.sourceIdentity) throw new AudioJobStepError("source_refresh_unavailable", false);

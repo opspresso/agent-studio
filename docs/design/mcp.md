@@ -31,7 +31,7 @@ Plugin sync는 streamable-HTTP 서버만 가져오며 header를 가져오지 않
 | Header | 의미 | discovery cache |
 |---|---|---|
 | `X-Tenant-Id` | 호출하는 Agent 이름 | 신원 키에 포함 |
-| `X-User-Email` | 확인한 user·agent-token 이메일 또는 표면이 해석한 이메일 | 신원 키에 포함 |
+| `X-User-Email` | 확인된 Studio 사용자의 `RunIdentity.user.email` | 신원 키에 포함 |
 | `X-Conversation-Id` | 표면과 호출자 범위로 구분한 대화 주소 | 요청 문맥으로만 전달 |
 
 이 값은 credential을 대신하지 않는다. MCP 서버는 자기 Bearer/OAuth와 함께 인가해야 한다.

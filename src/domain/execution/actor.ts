@@ -178,11 +178,6 @@ export interface RunOrigin extends RunIdentity {
   /** Source processing may read bound skills; its calling use case owns all external effects. */
   backgroundTask?: boolean;
   /**
-   * A user email resolved by a surface whose actor id is not an email, such as
-   * Slack.
-   */
-  userEmail?: string;
-  /**
    * Who the actor is, in words. Travels the transfer chain for the same reason
    * the actor does — a subagent is answering the same person as its parent.
    */

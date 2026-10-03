@@ -16,16 +16,23 @@ describe("orchestrated private source ownership", () => {
       } } } as unknown as McpToolDeps;
     const configuration = { agentName: "audio", mcpList: [{ name: "files" }] } as unknown as AgentConfiguration;
     const raw = { content: [{ type: "text", text: JSON.stringify({ id: "recording", url: "https://files.example.test/audio?sig=private" }) }] };
-    await buildMcpTools(deps, configuration, undefined, { userEmail: "owner@example.test" });
+    const origin = { user: { userId: "owner-id", email: "owner@example.test" }, actor: { kind: "slack" as const, id: "U1" } };
+    await buildMcpTools(deps, configuration, undefined, origin);
+    expect(servers[0]!.headers?.["X-User-Email"]).toBe(origin.user.email);
     expect((await servers[0]!.resultTransforms!.read!(raw)).text).not.toContain("sig=");
     const first = vi.mocked(register).mock.calls[0] as unknown as [{ namespace: string }];
     identity = "connection-2";
-    await buildMcpTools(deps, configuration, undefined, { userEmail: "owner@example.test" });
+    await buildMcpTools(deps, configuration, undefined, origin);
     await servers[0]!.resultTransforms!.read!(raw);
     const second = vi.mocked(register).mock.calls[1] as unknown as [{ namespace: string }];
     expect(second[0].namespace).not.toBe(first[0].namespace);
-    await buildMcpTools(deps, { ...configuration, mcpList: [{ name: "files", sourceOutputs: [] }] }, undefined, { userEmail: "owner@example.test" });
+    await buildMcpTools(deps, { ...configuration, mcpList: [{ name: "files", sourceOutputs: [] }] }, undefined, origin);
     expect(servers[0]!.resultTransforms).toBeUndefined();
+    await buildMcpTools(deps, configuration, undefined, { actor: { kind: "user", id: origin.user.email } });
+    expect(servers[0]!.headers?.["X-User-Email"]).toBeUndefined();
+    const anonymous = await servers[0]!.resultTransforms!.read!(raw);
+    expect(anonymous.text).not.toContain("sig=");
+    expect(register).toHaveBeenCalledTimes(2);
   });
   it("registers the source under the main Agent while retaining the child connection for refresh", async () => {
     let servers: McpServerConfig[] = [];
@@ -38,7 +45,7 @@ describe("orchestrated private source ownership", () => {
     const configuration = { agentName: "downloader", mcpList: [{ name: "files", sourceOutputs: [
       { tool: "read", namespace: "account", idPath: ["id"], urlPath: ["url"], mimeType: "audio/mpeg", refreshArgument: "id" },
     ] }] } as unknown as AgentConfiguration;
-    await buildMcpTools(deps, configuration, undefined, { actor: { kind: "user", id: "owner@example.test" }, ancestry: ["main", "downloader"] });
+    await buildMcpTools(deps, configuration, undefined, { user: { userId: "owner-id", email: "owner@example.test" }, actor: { kind: "user", id: "owner@example.test" }, ancestry: ["main", "downloader"] });
     const result = await servers[0]!.resultTransforms!.read!({ content: [{ type: "text", text: JSON.stringify({ id: "recording", url: "https://files.example.test/audio?sig=private" }) }] });
     expect(register).toHaveBeenCalledWith(expect.objectContaining({ agentName: "main", userEmail: "owner@example.test",
       refresh: expect.objectContaining({ agentName: "downloader", identity: "child-connection" }) }));
