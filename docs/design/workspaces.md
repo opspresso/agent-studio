@@ -76,6 +76,8 @@ Docker에서는 지정한 사용자 네트워크에서 호스트 주소를, Kube
 `count_tokens`다. 요청 필드·모델·도구 종류를 제한하며 공유 공급자의 저장 대화·파일·벡터 저장소·prompt
 참조와 hosted 도구는 허용하지 않는다. Responses는 `store: false`를 강제하며 CLI의 자체 이력으로
 재개한다. Codex의 provider 웹 검색도 비활성화한다. 모델·도구 루프 자체는 각 CLI가 소유한다.
+도구 결과의 `content`·`output`과 문서 source 안의 중첩 content도 같은 파일 참조 검사를 통과해야 한다.
+직접 보낸 파일·이미지 bytes와 도구 인자의 일반 데이터 필드는 유지한다.
 
 Gateway는 원래 JSON/SSE를 전달하면서 요청별 공급자 사용량을 정규화한다. 캐시 입력은 총 입력의
 부분집합이며 Anthropic의 cache read/write 입력은 총 입력에 더한다. Native CLI가 출력하는 누적 비용을

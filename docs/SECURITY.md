@@ -747,7 +747,8 @@ Native CLI에는 공급자 API 키 대신 하나의 Workspace Run에 한정된 �
 `AES_ENCRYPTION_KEY`에서 별도 HKDF 목적 키를 파생하며 오브젝트 URL 서명과 교환할 수 없다.
 Run 만료·취소·종료·원래 인증 수단 철회는 다음 모델 요청을 거절한다. 요청자의 Authorization,
 쿠키, 임의 헤더를 공급자에게 전달하지 않는다. 공유 Provider에 저장된 대화·prompt·파일·도구 리소스는
-참조할 수 없으며 Responses는 저장을 끈다. Gateway 주소는 배포자가 지정하고 Sandbox 네트워크에서
+참조할 수 없다. 중첩된 도구 결과·문서 content에도 같은 검사를 적용하며, 직접 보낸 bytes와
+도구 인자의 일반 데이터는 허용한다. Responses는 저장을 끈다. Gateway 주소는 배포자가 지정하고 Sandbox 네트워크에서
 Studio에 필요한 통신만 허용한다. [Workspace 계약](design/workspaces.md#native-모델-gateway)을 따른다.
 
 ## SDK Session과 승인 상태
