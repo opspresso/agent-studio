@@ -336,6 +336,37 @@ test("explicit and implicit numeric date cells use the workbook epoch", () => {
   }
 });
 
+test.each([
+  ['<!-- <workbookPr date1904="1"/> --><workbookPr date1904="0"/>', "1900-01-01"],
+  ['<workbookPr note="date1904=\'1\'" date1904="0"/>', "1900-01-01"],
+  ['<workbookPr date1904="&#49;"/>', "1904-01-02"],
+])("date conversion uses the actual workbook property: %s", (properties, expected) => {
+  const bytes = buildZip({
+    "xl/workbook.xml": utf8(workbook("Sheet1").replace("<workbook>", `<workbook>${properties}`)),
+    "xl/_rels/workbook.xml.rels": utf8(RELS),
+    "xl/styles.xml": utf8('<styleSheet><cellXfs><xf numFmtId="14"/></cellXfs></styleSheet>'),
+    "xl/worksheets/sheet1.xml": utf8(sheet('<row><c s="0"><v>1</v></c></row>')),
+  });
+  assert.equal(read(bytes).text, `## Sheet1\n${expected}`);
+  assert.equal(inspectXlsx(bytes).sheets[0]!.cells[0]!.value, expected);
+});
+
+test.each([
+  '<styleSheet><cellXfs><!-- <xf numFmtId="14"/> --><xf numFmtId="0"/></cellXfs></styleSheet>',
+  '<styleSheet><numFmts><numFmt numFmtId="200" formatCode="#,##0"/>' +
+    '<!-- <numFmt numFmtId="200" formatCode="yyyy-mm-dd"/> --></numFmts>' +
+    '<cellXfs><xf numFmtId="200"/></cellXfs></styleSheet>',
+])("commented number formats cannot convert a numeric value into a date: %s", styles => {
+  const bytes = buildZip({
+    "xl/workbook.xml": utf8(workbook("Sheet1")),
+    "xl/_rels/workbook.xml.rels": utf8(RELS),
+    "xl/styles.xml": utf8(styles),
+    "xl/worksheets/sheet1.xml": utf8(sheet('<row><c s="0"><v>45123</v></c></row>')),
+  });
+  assert.equal(read(bytes).text, "## Sheet1\n45123");
+  assert.equal(inspectXlsx(bytes).sheets[0]!.cells[0]!.value, "45123");
+});
+
 test("the 1900 leap-year bug and the 1904 epoch are both accounted for", () => {
   // Serial 60 is the 1900-02-29 Excel believes in and the calendar does not,
   // so every serial past it is one day ahead of a naive epoch.
