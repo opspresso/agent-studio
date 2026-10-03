@@ -74,6 +74,19 @@ describe("native document editing", () => {
     expect(output.validation.content).toBe("reopened");
   });
 
+  it.each(["docx", "pptx", "hwpx"] as const)("allows explicitly clearing all %s text targets", async format => {
+    const file = await source(format);
+    const { targets } = await documentEditor.inspect(file);
+    expect(targets.length).toBeGreaterThan(0);
+    const output = await documentEditor.edit(file, targets.map(target => ({
+      ...target, operation: "replace_text", replacement: "",
+    })));
+    const after = await documentEditor.inspect({ ...file, bytes: output.bytes });
+    expect(after.targets).toHaveLength(targets.length);
+    expect(after.targets.every(target => target.text === "")).toBe(true);
+    expect(allParts(output.bytes).get("extra/preserved.bin")).toEqual(Uint8Array.from([0, 255, 17, 4]));
+  });
+
   it("refuses stale, repeated and non-text targets without mutating the original", async () => {
     const file = await source("docx");
     const original = file.bytes.slice();
