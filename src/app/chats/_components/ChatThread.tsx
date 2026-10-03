@@ -484,6 +484,7 @@ export function ChatThread({ chatId }: { chatId: string }) {
                 <LiveAssistant
                   turn={live}
                   running={streaming}
+                  completed={shown?.status === "finished" && !shown.error}
                   {...(shown?.startedAtMs !== undefined
                     ? { startedAtMs: shown.startedAtMs }
                     : {})}

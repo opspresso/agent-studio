@@ -195,3 +195,47 @@ test("reports a refused Stop and lets the reader retry without dropping the repl
   await expect(page.getByText("Answer still streaming", { exact: true })).toBeVisible();
   await expect(stop).toBeVisible();
 });
+
+for (const outcome of ["completed", "provider-failed", "connection-lost"] as const) {
+  test(`announces completion only for a completed answer (${outcome})`, async ({ page }) => {
+    await page.addInitScript((outcome) => {
+      const original = window.fetch.bind(window);
+      window.fetch = (input, init) => {
+        if (String(input) === "/api/chats/chat-1/messages" && init?.method === "POST") {
+          return Promise.resolve(new Response(new ReadableStream({ start(controller) {
+            const encode = (frames: unknown[]) => new TextEncoder().encode(frames.map(frame => `data: ${JSON.stringify(frame)}\n\n`).join(""));
+            controller.enqueue(encode([{ runId: "run-1", userSeq: 1 }, { delta: { content: "Streamed answer" } }]));
+            window.addEventListener("finish-fixture-run", () => {
+              if (outcome === "connection-lost") { controller.error(new Error("Connection lost")); return; }
+              controller.enqueue(encode([...(outcome === "provider-failed" ? [{ error: "Provider failed" }] : []), { ended: true }]));
+              controller.close();
+            }, { once: true });
+          } }), { headers: { "Content-Type": "text/event-stream" } }));
+        }
+        return original(input, init);
+      };
+    }, outcome);
+    await page.route("**/api/chats/chat-1**", route => {
+      const url = new URL(route.request().url());
+      if (url.pathname.endsWith("/runs/run-1")) return route.fulfill({ json: { active: true } });
+      if (url.pathname.endsWith("/stream")) return route.fulfill({ status: 503, json: { error: "Reconnect unavailable" } });
+      // Keep the live answer mounted while the stored replacement is unavailable.
+      return url.search ? route.fulfill({ status: 503, json: { error: "History unavailable" } }) : route.fulfill({ json: THREAD });
+    });
+    await page.goto(base);
+    await expect(page.getByText("Existing message", { exact: true })).toBeVisible();
+    await page.getByRole("textbox", { name: "Message", exact: true }).fill("Next message");
+    await page.getByRole("button", { name: "Send", exact: true }).click();
+    await expect(page.getByText("Streamed answer", { exact: true })).toBeVisible();
+    const completion = page.getByRole("status").filter({ hasText: "Answer complete" });
+    await expect(completion).toHaveCount(0);
+    await page.evaluate(() => window.dispatchEvent(new Event("finish-fixture-run")));
+    await expect(page.getByRole("button", { name: "Stop", exact: true })).toHaveCount(0);
+    if (outcome === "completed") {
+      await expect(completion).toHaveCount(1);
+    } else {
+      await expect(page.getByRole("alert")).toContainText(outcome === "provider-failed" ? "Provider failed" : "Reconnect unavailable");
+      await expect(completion).toHaveCount(0);
+    }
+  });
+}
