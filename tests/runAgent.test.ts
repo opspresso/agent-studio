@@ -1328,7 +1328,6 @@ describe("executeAgent local subagent dispatch", () => {
             ...configurationFixture({ piiFiltering: false }),
             agentName: "summarizer",
             systemPrompt: "You summarize.",
-            userPromptTemplate: "Answer in exactly one sentence.",
           }
         : null) as ExecutionDeps["agents"];
 
@@ -1510,8 +1509,7 @@ describe("executeAgent hands the conversation to a transferred agent", () => {
 
 describe("executeAgent subagent turn budget", () => {
   it("clamps a child's maxTurn to the parent's ceiling", async () => {
-    // The child continues the parent's turn counter, so a child configuration with a
-    // larger maxTurn would raise the limit the whole run started under.
+    // The child's allowance cannot exceed the parent's remaining turn budget.
     const childCall = (id: string) => toolCallChunk(0, id, "GenerateImage", '{"prompt":"fox"}');
     const channel = new FakeChannel([
       [
@@ -1550,8 +1548,7 @@ describe("executeAgent subagent turn budget", () => {
       }),
     );
 
-    // Child starts at turn 1 and stops at the parent's ceiling of 3 — two model
-    // calls. Its own maxTurn of 50 would have let it run until the scripts ran out.
+    // After the parent's first model call, the child receives at most two turns.
     expect(channel.seenParams.filter((params) => params.model === "gpt-child")).toHaveLength(2);
     expect(chunks.some((chunk) => chunk.author === "child" && chunk.warning?.includes("turn limit (2 turns)"))).toBe(true);
     expect(chunks.filter((chunk) => !chunk.author && chunk.delta?.content).map((chunk) => chunk.delta?.content).join("")).toBe("parent recovered");
