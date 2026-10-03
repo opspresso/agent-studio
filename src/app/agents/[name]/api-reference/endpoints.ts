@@ -84,11 +84,11 @@ export interface ApiReferenceContext {
   origin: string;
   /** Whether the current viewer has issued their personal Webhook token. */
   webhook: { configured: boolean } | null;
-  /** Slack integration status (owner or admin), or null when not visible to the viewer. */
+  /** Slack integration status (Agent owner only), or null when not visible to the viewer. */
   slack: { configured: boolean } | null;
-  /** Telegram integration status (owner or admin), or null when not visible to the viewer. */
+  /** Telegram integration status (Agent owner only), or null when not visible to the viewer. */
   telegram: { configured: boolean } | null;
-  /** Teams integration status (owner or admin), or null when not visible to the viewer. */
+  /** Teams integration status (Agent owner only), or null when not visible to the viewer. */
   teams: { configured: boolean } | null;
 }
 
