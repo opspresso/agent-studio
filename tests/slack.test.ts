@@ -96,9 +96,10 @@ describe("slackClient.threadReplies", () => {
       };
     });
 
-    const messages = await slackClient.threadReplies("tok", { channel: "C1", ts: "1" });
+    const { messages, truncated } = await slackClient.threadReplies("tok", { channel: "C1", ts: "1" });
 
     expect(messages.map((m) => m.text)).toEqual(["oldest", "mid", "newest"]);
+    expect(truncated).toBe(false);
     expect(urls).toHaveLength(2);
     expect(urls[1]).toContain("cursor=c2");
   });

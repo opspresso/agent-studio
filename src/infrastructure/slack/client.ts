@@ -14,7 +14,7 @@ import { log } from "@/shared/logger";
 import { readBodyBytes } from "@/shared/httpBody";
 import { neutralizeSlackMentions } from "@/domain/slack/outboundText";
 import { getCachedProfile, rememberProfile } from "./profileCache";
-import type { SlackChannelListing, SlackChannelQuery } from "@/domain/slack/reader";
+import type { SlackChannelListing, SlackChannelQuery, SlackThreadListing } from "@/domain/slack/reader";
 export type { SlackMessage };
 
 /** The slice of `users.info`'s user object a profile is built from. */
@@ -557,8 +557,9 @@ export const slackClient = {
   async threadReplies(
     token: string,
     args: { channel: string; ts: string; limit?: number },
-  ): Promise<SlackMessage[]> {
+  ): Promise<SlackThreadListing> {
     const messages: SlackMessage[] = [];
+    const cursors = new Set<string>();
     let cursor: string | undefined;
     for (let page = 0; page < MAX_THREAD_PAGES; page += 1) {
       const remaining = args.limit === undefined ? undefined : args.limit - messages.length;
@@ -573,22 +574,21 @@ export const slackClient = {
       }
       const data = await slackGet<{
         messages?: SlackMessage[];
+        has_more?: boolean;
         response_metadata?: { next_cursor?: string };
       }>(token, "conversations.replies", params);
-      messages.push(...(data.messages ?? []).slice(0, remaining));
-      if (args.limit !== undefined && messages.length >= args.limit) {
-        return messages;
+      const pageMessages = data.messages ?? [];
+      messages.push(...pageMessages.slice(0, remaining));
+      cursor = firstNonEmpty(data.response_metadata?.next_cursor);
+      if (cursor) {
+        if (cursors.has(cursor)) throw new Error("Slack returned a repeated thread pagination cursor");
+        cursors.add(cursor);
       }
-      cursor = data.response_metadata?.next_cursor || undefined;
-      if (!cursor) {
-        return messages;
+      if ((args.limit !== undefined && messages.length >= args.limit) || !cursor) {
+        return { messages, truncated: Boolean(cursor) || data.has_more === true || pageMessages.length > (remaining ?? Infinity) };
       }
     }
-    log.warn(
-      "slack",
-      `thread ${args.ts} exceeds ${MAX_THREAD_PAGES} pages; newest replies were not read`,
-    );
-    return messages;
+    return { messages, truncated: true };
   },
 
   /**

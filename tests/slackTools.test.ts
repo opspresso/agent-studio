@@ -75,7 +75,7 @@ function makeSlackFake(
     },
     async threadReplies(_token, args) {
       calls.push({ method: "threadReplies", args });
-      return over.thread ?? [];
+      return { messages: over.thread ?? [], truncated: false };
     },
     async listChannels(_token, args) {
       calls.push({ method: "listChannels", args });
@@ -207,6 +207,14 @@ describe("reading a channel", () => {
 });
 
 describe("reading a thread", () => {
+  it("reports unread replies instead of presenting a partial thread as complete", async () => {
+    const { slack } = makeSlackFake();
+    slack.threadReplies = async () => ({ messages: [{ ts: TS_A, text: "read portion" }], truncated: true });
+    const result = await createSlackWorkspaceReader(slack, TOKEN)("SlackThread", { channel: "C1", thread_ts: TS_A });
+    expect(result).toContain("read portion");
+    expect(result).toContain("More thread replies were not read");
+  });
+
   it("keeps Slack's order, which is already oldest first", async () => {
     const { read } = makeSlackFake({
       thread: [
@@ -549,7 +557,7 @@ describe("resolving a crowd of names", () => {
         }));
       },
       async threadReplies() {
-        return [];
+        return { messages: [], truncated: false };
       },
       async listChannels() {
         return { channels: [], truncated: false };

@@ -260,12 +260,13 @@ export function createSlackWorkspaceReader(
           return `Error: ${SLACK_THREAD_TOOL_NAME} requires a channel id and a thread_ts.`;
         }
         // Already oldest-first from Slack, unlike a channel's history.
-        const messages = await slack.threadReplies(token, {
+        const { messages, truncated } = await slack.threadReplies(token, {
           channel,
           ts: threadTs,
           limit: countArg(args, "limit"),
         });
-        return await transcript(slack, token, messages);
+        const text = await transcript(slack, token, messages);
+        return truncated ? `${text}\n(More thread replies were not read; this result is incomplete.)` : text;
       }
       case SLACK_USER_TOOL_NAME: {
         const userId = stringArg(args, "user");

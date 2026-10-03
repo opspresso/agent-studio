@@ -452,10 +452,12 @@ export async function handleSlackEvent(
     let replies: SlackMessage[] = [];
     if (event.thread_ts !== undefined) {
       try {
-        replies = await deps.slack.threadReplies(token, {
+        const history = await deps.slack.threadReplies(token, {
           channel: event.channel,
           ts: event.thread_ts,
         });
+        replies = history.messages;
+        if (history.truncated) warnings.push("Newer thread replies were not read because the history scan reached its limit.");
       } catch (error) {
         log.error("slack", "thread history failed", error);
         warnings.push("Thread history unavailable; answered without prior context.");
@@ -467,7 +469,7 @@ export async function handleSlackEvent(
     // the question being answered.
     const historyTurns = threadToTurns(replies, event.ts, selfUserId(body));
     if (historyTurns.length > MAX_THREAD_HISTORY_MESSAGES) {
-      warnings.push(`Thread history limited to the most recent ${MAX_THREAD_HISTORY_MESSAGES} messages.`);
+      warnings.push(`Thread history limited to the most recent ${MAX_THREAD_HISTORY_MESSAGES} messages in the retrieved portion.`);
     }
     const rawTurns = historyTurns.slice(-MAX_THREAD_HISTORY_MESSAGES);
 

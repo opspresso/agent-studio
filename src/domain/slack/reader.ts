@@ -22,6 +22,13 @@ export interface SlackChannelListing {
   truncated: boolean;
 }
 
+export interface SlackThreadListing {
+  /** Oldest first, within the inspected pages. */
+  messages: SlackMessage[];
+  /** Later replies remain unread after a result or page bound. */
+  truncated: boolean;
+}
+
 /**
  * The reads a run's Slack tools are served from.
  *
@@ -42,7 +49,7 @@ export interface SlackReaderPort {
   threadReplies(
     token: string,
     args: { channel: string; ts: string; limit?: number },
-  ): Promise<SlackMessage[]>;
+  ): Promise<SlackThreadListing>;
   /** Filter before the result limit; the adapter bounds page inspection and reports omissions. */
   listChannels(token: string, args?: SlackChannelQuery): Promise<SlackChannelListing>;
   /**

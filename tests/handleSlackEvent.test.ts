@@ -165,14 +165,14 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
       calls.push("threadReplies");
       // Slack returns everything already in the thread — including whatever
       // this handler posted itself.
-      return [
+      return { messages: [
         ...replies,
         ...posted.map((message, index) => ({
           ts: `100.${index + 1}`,
           bot_id: "B0", user: "U0",
           text: message.text,
         })),
-      ];
+      ], truncated: false };
     },
     async startStream(_token, args) {
       calls.push("startStream");
@@ -878,6 +878,15 @@ describe("handleSlackEvent", () => {
 
     expect(finalText()).toContain("answer");
     expect(finalText()).toContain(":warning:");
+  });
+
+  it("warns about newer replies omitted by the thread reader's page bound", async () => {
+    const { slack, finalText } = makeSlackFake();
+    slack.threadReplies = async () => ({ messages: [{ ts: "0.1", user: "U1", text: "old exchange" }], truncated: true });
+    await handleSlackEvent(makeDeps([{ delta: { content: "answer" } }, { done: true }], slack),
+      { ...EVENT, event: { ...EVENT.event, thread_ts: "0.1" } }, BINDING);
+    expect(finalText()).toContain("answer");
+    expect(finalText()).toContain("Newer thread replies were not read");
   });
 
   it("sends an attached image to the agent as a content part", async () => {
