@@ -82,12 +82,8 @@ export interface ApiReferenceContext {
   configured: boolean;
   /** Absolute origin for example URLs (e.g. window.location.origin); "" is tolerated. */
   origin: string;
-  /**
-   * The Agent webhook's switch, or null when not visible to the viewer — the
-   * secret it is authenticated with is owner-readable, so a viewer who cannot
-   * see the switch has nothing to call this endpoint with.
-   */
-  webhook: { enabled: boolean } | null;
+  /** Whether the current viewer has issued their personal Webhook token. */
+  webhook: { configured: boolean } | null;
   /** Slack integration status (owner or admin), or null when not visible to the viewer. */
   slack: { configured: boolean } | null;
   /** Telegram integration status (owner or admin), or null when not visible to the viewer. */
@@ -413,10 +409,10 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
     }
   }
 
-  // The Agent webhook: shown once it is switched on, and deliberately not
+  // The Agent webhook: shown once the viewer has a token, and deliberately not
   // gated on saved Agent settings — the address is live either way, and what it
   // answers without one is the `no-configuration` status documented below.
-  if (webhook && webhook.enabled) {
+  if (webhook?.configured) {
     const webhookPath = agentWebhookPath(agentName, "YOUR_CREDENTIAL_ID");
     const webhookBody = { event: "build.finished", status: "ok" };
     endpoints.push({
@@ -436,7 +432,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
           name: "status",
           type: "string",
           description:
-            '"accepted" when admitted for background execution; "disabled", "duplicate", "busy" (overlap is off), "no-configuration", "ping" or "ignored" when no run starts. All return 202.',
+            '"accepted" when admitted for background execution; "duplicate", "busy" (overlap is off), "no-configuration", "ping" or "ignored" when no run starts. All return 202.',
         },
         {
           name: "runId",

@@ -1258,7 +1258,9 @@ DELETE /api/agents/{name}/webhook-token        → 204
 일반 발신자는 전체 토큰을 `X-Trigger-Secret`에 넣는다. GitHub는
 `/api/webhook/{agent}?credential={credentialId}`를 Payload URL로 쓰고 전체 토큰을 Secret에 넣는다.
 URL의 공개 식별자만으로 인증되지 않는다. 요청 서명·발급 사용자·현재 계정·Agent 접근을 검사한다.
-공유 Webhook 활성화와 리뷰 정책은 소유자이 관리하며 토큰 보유만으로 공유 설정을 수정할 수 없다.
+토큰 생성으로 본인의 호출이 활성화되고 폐기하면 중지된다. 별도 활성화 스위치는 없다.
+발급은 누락된 공유 Webhook 설정을 같은 transaction에서 기본값으로 생성하며 기존 설정·이력을 보존한다.
+겹침·리뷰 정책은 Agent 소유자가 관리하며 토큰 보유만으로 공유 설정을 수정할 수 없다.
 
 ## 실행
 
@@ -1469,7 +1471,7 @@ transfer 해 들어간 agent 가 아니라 런을 시작한 사람에게 귀속�
 `webhook` (`AGENT_WEBHOOK_ID`) 아래 저장되고, `create` 는 그 양쪽을 400 으로 강제한다.
 Webhook은 다른 ID를 가질 수 없고 Schedule은 예약 ID를 사용할 수 없다.
 개인 토큰의 공개 식별자는 호출자를 선택하며 Trigger를 선택하지 않는다.
-Agent 연동 화면의 Webhook 스위치를 처음 켜면 공유 설정 행을 생성한다.
+첫 개인 Webhook 토큰 발급이 공유 설정 행을 생성한다. 마지막 토큰을 폐기해도 설정과 이력은 유지한다.
 
 설정 (owner):
 
@@ -1484,13 +1486,14 @@ GET    /api/agents/{name}/triggers/{trigger}/runs?limit=20 → 200 { runs: [ …
 생성 본문: `{ triggerId (slug), kind?, description?, enabled?, allowConcurrent?, cron?, timezone?, message?, deliveries?, githubReview? }`. `kind` 의 기본값은 `webhook` 이다. `schedule` 은
 `cron` (다섯 필드) 과 `timezone` (IANA) 을 요구하고, 각 kind 는 상대의 필드를 무시하는 대신 400
 으로 거절한다.
-`cron`/`timezone`/`message`/`deliveries` 는 schedule 의 것이다. `deliveries` 는 최대 3개이고
+`enabled`/`cron`/`timezone`/`message`/`deliveries` 는 schedule 의 것이다. Webhook의 `enabled` 변경은 400이며
+예약된 `webhook` 설정 삭제도 400이다. 호출 중지는 본인 토큰 폐기로 수행한다. `deliveries` 는 최대 3개이고
 플랫폼을 중복할 수 없는 tagged union 이다: `{ kind: "slack", channelId }`,
 `{ kind: "telegram", chatId, threadId? }`, `{ kind: "teams", conversationId }`. `triggerId` 는 agent 이름과 같은 규칙
 (`^[a-z0-9-]+$`) 을 따른다. 콘솔은 입력한 것을 agent 폼이 쓰는 것과 같은 `toSlug` 헬퍼로
 정규화하고, API 는 클라이언트가 무엇이든 그 밖의 것을 거절한다.
 
-Webhook 설정은 실행 활성화·겹침·리뷰 정책만 보관한다. 개인 토큰의 발급 사용자 ID가 호출자이며
+Webhook 설정은 겹침·리뷰 정책을 보관하며 활성 여부를 별도로 저장하지 않는다. 개인 토큰의 발급 사용자 ID가 호출자이며
 입력 payload의 사용자·email·actor는 권한에 사용하지 않는다. 접수한 credential ID·사용자 ID를
 실행 문맥과 Workspace 큐에 보관하고 실행·도구 호출·리뷰 조회·게시·큐 실행 전에 현재 권한을 재검사한다.
 
@@ -1505,7 +1508,7 @@ Trigger 읽기·생성·수정 응답에는 토큰이 없다. 개인 토큰은 �
 `{scope:"repositories", repositories:["owner/repo"]}`를 전달할 수 있다. 수정의 `null`은 리뷰를
 끄고 생략은 기존 선택을 유지한다. 저장소 목록은 최대 20개이며 wildcard·URL은 받지 않는다.
 해당 Agent의 GitHub MCP 인증이 필요하며 자동 리뷰 게시 활성화는 관리자에게 한정한다.
-활성 리뷰 설정 저장과 Webhook 재활성화는 Workspace 도구 활성화,
+활성 리뷰 설정 저장은 Workspace 도구 활성화,
 차단·대화형 승인 없는 Workspace 정책을 요구하고 누락은 400으로 거절한다. 설정 읽기의 선택적
 `reviewIssue`는 현재 누락을 설명한다. 권한 철회와 비활성화는 가능하며 저장은 실행 권한이나
 `allowConcurrent`를 자동으로 켜지 않는다.
@@ -1527,7 +1530,7 @@ POST /api/webhook/{agent}
   Idempotency-Key: <optional>
   { "any": "json payload" }
 → 202 { ok: true, status: "accepted", runId }
-→ 202 { ok: true, status: "duplicate" | "disabled" | "busy" | "no-configuration" }
+→ 202 { ok: true, status: "duplicate" | "busy" | "no-configuration" }
 → 202 { ok: true, status: "ping" }
 → 409 { status: "review-not-ready", error } (PR 리뷰 필수 설정 누락; 접수·멱등 claim 전 거절)
 → 202 { ok: true, status: "ignored", reason } (PR review event not selected)

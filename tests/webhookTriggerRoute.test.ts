@@ -34,11 +34,17 @@ describe("agent GitHub webhook delivery route", () => {
     await POST(request({ "X-Trigger-Secret": "generic-secret", "Idempotency-Key": "event-1" }), context);
     expect(f.admit).toHaveBeenCalledWith(f.deps, "code-agent", "generic-secret", "event-1");
   });
-  it.each(["ping", "duplicate", "disabled"])("acknowledges %s without starting a model", async status => {
+  it.each(["ping", "duplicate"])("acknowledges %s without starting a model", async status => {
     f.admit.mockResolvedValueOnce({ status });
     const res = await POST(request({}), context);
     expect(res.status).toBe(202);
     expect(await res.json()).toEqual({ ok: true, status });
+    expect(f.after).not.toHaveBeenCalled();
+  });
+  it("refuses a revoked personal token instead of acknowledging a disabled Webhook", async () => {
+    f.admit.mockResolvedValueOnce({ status: "unauthorized" });
+    const res = await POST(request({ "X-Trigger-Secret": "revoked-token" }), context);
+    expect(res.status).toBe(401);
     expect(f.after).not.toHaveBeenCalled();
   });
   it("rejects bad metadata and oversized bodies without dispatching", async () => {

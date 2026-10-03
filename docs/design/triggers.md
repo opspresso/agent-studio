@@ -9,20 +9,23 @@ HTTP 요청·응답은 [API](../API.md#triggers), ticker·보존·알림은
 Agent에는 예약 ID `webhook`인 Webhook 하나와 이름이 있는 Schedule들을 둘 수 있다.
 Webhook 주소는 `agentWebhookPath`가 만드는 `/api/webhook/{agent}`다.
 다른 ID의 Webhook이나 `webhook`이라는 Schedule 생성은 거절한다.
+개인 Webhook 토큰을 생성하면 본인의 호출이 활성화되고 폐기하면 중지된다. 별도 스위치는 없다.
+첫 발급은 공유 설정을 토큰과 함께 원자적으로 생성한다. 재발급·다른 사용자 발급은 기존 설정을
+덮어쓰지 않고 마지막 토큰 폐기 후에도 공유 설정·이력은 유지한다. 연동 제목의 뱃지는 본인 토큰 유무만 표시한다.
 
 trigger와 실행 이력은 Agent 파티션에 저장하고 실행 이력에 보존 기간을 적용한다.
 모델 실행은 Agent와 함께 읽은 현재 Agent 설정을 고정한다.
 
 | 경계 | 동작 |
 |---|---|
-| 인증 | enabled 검사 전에 개인 Webhook 토큰 또는 해당 토큰의 서명을 검증하고 발급 사용자의 현재 권한을 확인한다 |
+| 인증 | 개인 Webhook 토큰 또는 해당 토큰의 서명을 검증하고 발급 사용자의 현재 권한을 확인한다 |
 | GitHub | 원본 body의 HMAC과 event·delivery header를 검사한다. GitHub 헤더가 있으면 일반 secret 방식으로 후퇴하지 않는다 |
 | 중복 | 일반 `Idempotency-Key`는 발급 사용자 ID로 구분한다. GitHub delivery·PR HEAD 키는 Agent Webhook 범위로 조건부 claim한다 |
 | 겹침 | 기본 `allowConcurrent: false`; DB 실행 슬롯으로 같은 trigger의 겹침을 거절한다 |
 | 입력 | JSON payload를 사용자 메시지로 직렬화한다 |
 | 실행 | 202 접수 후 `after()`에서 실행한다. 202는 성공적인 처리 완료가 아니다 |
 
-인증 실패·미설정·비활성·중복·서명된 ping은 새 실행 이력을 만들지 않는다.
+인증 실패·미설정·중복·서명된 ping은 새 실행 이력을 만들지 않는다.
 admission에서 Agent·현재 설정이 없거나 겹침·실행 사용자 정책에 거절된 경우에는
 skipped 이력을 남긴다. 시작한 실행은 running에서 succeeded 또는 failed로 마감한다.
 한도나 capability 손실은 succeeded에서도 warning으로 남을 수 있다.
@@ -34,7 +37,7 @@ skipped 이력을 남긴다. 시작한 실행은 running에서 succeeded 또는 
 `repositories`는 지정한 정확한 `owner/repo` 목록만 허용한다. 기본은 비활성이다.
 자동 리뷰 게시 설정 변경은 Agent 쓰기 권한에 더해 관리자를 검사한다.
 개인 Webhook 토큰을 가진 송신자는 발급 사용자의 현재 Agent 접근 권한으로 선택 범위의 리뷰를 요청한다.
-활성 리뷰 생성·리뷰 모드 저장·Webhook 재활성화는 Workspace 도구 활성화와
+활성 리뷰 생성·리뷰 모드 저장은 Workspace 도구 활성화와
 비대화식 실행 정책을 검사하며 누락은 400으로 거절한다. 해당 Agent의 GitHub MCP 인증과 Sandbox backend도 필요하다.
 읽기 응답의 `reviewIssue`는 현재 설정의 누락을 설명한다. 권한 철회와 비활성화는 항상 가능하며
 철회한 권한을 리뷰 설정 저장이나 읽기로 자동 복구하지 않는다. 리뷰 저장은 겹침 허용을 바꾸지 않는다.
@@ -80,7 +83,7 @@ Workspace는 이 리뷰의 저장소·커밋·command 런타임으로 제한한�
 종료된 Workspace 기록과 체크포인트는 기존 보존 정책을 따른다.
 
 모델의 정상 완료·비어 있지 않은 20,000자 이하 응답·경고 없음을 확인한 뒤,
-현재 Webhook 활성 상태와 저장소 권한 설정을 다시 읽는다. 어댑터가 PR의 열린 상태·draft·HEAD를
+현재 개인 Webhook 토큰과 저장소 권한 설정을 다시 읽는다. 어댑터가 PR의 열린 상태·draft·HEAD를
 재검사하고 해당 commit_id에 `COMMENT` 리뷰만 게시한다. 확인 직후 새 커밋이 생기더라도 리뷰는
 검토한 커밋에 연결된다. 승인·변경 요구·merge는 하지 않는다. 전송 오류나 확인되지 않은 응답을
 자동 재전송하지 않는다. 이력의 `review`는 대상과 posted/skipped/failed·실제 게시 URL·준비한

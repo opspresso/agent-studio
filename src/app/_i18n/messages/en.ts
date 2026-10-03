@@ -963,7 +963,7 @@ export const en = {
     "In an Agent's Integrations, save and enable the Telegram bot token; enabling registers its webhook. Use Register webhook again after an application URL change. For Teams, enable the Azure Bot's Teams channel, save its application ID and client secret (plus tenant ID for a single-tenant app), and set its messaging endpoint to the displayed URL. Test in a direct conversation before trying group mentions.",
   "guide.integrations.webhook": "Receive a webhook",
   "guide.integrations.webhookBody":
-    "Enable the Agent webhook in Integrations. Generic callers send X-Trigger-Secret; GitHub uses the same secret to sign X-Hub-Signature-256. The JSON payload becomes a user message. HTTP 202 acknowledges delivery; check Trigger history for execution and skipped runs. With overlap disabled, deliveries arriving during a run are skipped.",
+    "Issue your personal Webhook token in Integrations to enable calls; revoke it to stop them. Generic callers send X-Trigger-Secret; GitHub uses the same secret to sign X-Hub-Signature-256. The JSON payload becomes a user message. HTTP 202 acknowledges delivery; check Trigger history for execution and skipped runs. With overlap disabled, deliveries arriving during a run are skipped.",
   "guide.integrations.schedule": "Schedule a recurring task",
   "guide.integrations.scheduleBody":
     "In Agent Integrations, add a schedule with a five-field cron expression, an IANA time zone such as Asia/Seoul, and the message to run. Select any delivery destinations and enable it. Schedules use the current Agent configuration and require the deployment's external ticker. Check both run status and delivery results: a generated answer can succeed even when sending it to a bot fails.",
@@ -1069,7 +1069,7 @@ export const en = {
   "guide.trouble.tools": "A tool or memory is not used",
   "guide.trouble.toolsBody": "Check saved bindings, tool selection, Prompt preview, OAuth connections and run warnings. Test a request that needs the tool. Memory requires an explicitly bound server offering recall. File is built in and requires configured storage; it needs no MCP binding. Ask the operator about blocked internal hosts.",
   "guide.trouble.automation": "A bot or schedule is silent",
-  "guide.trouble.automationBody": "A webhook 202 acknowledges admission, not completion. Inspect status and Trigger history: accepted, duplicate, disabled, busy, no-configuration, ping or ignored. PR review mode requires a GitHub signature; generic callers use X-Trigger-Secret only in ordinary mode. Schedules require the ticker; Workspace approval/CI continuation requires its worker.",
+  "guide.trouble.automationBody": "A webhook 202 acknowledges admission, not completion. Inspect status and Trigger history: accepted, duplicate, busy, no-configuration, ping or ignored. PR review mode requires a GitHub signature; generic callers use X-Trigger-Secret only in ordinary mode. Schedules require the ticker; Workspace approval/CI continuation requires its worker.",
   "guide.trouble.files": "Attachments or downloads fail",
   "guide.trouble.filesBody":
     "Check the file type and upload limits first. An image needs an image-capable model; Office reading uses the built-in engine. Password-protected files, scans needing OCR, and unsupported edits require another workflow. If File is unavailable or the original was not kept, ask the operator to check storage configuration. For download failures, reopen Artifacts and check storage warnings, access mode, public base URL, connectivity, and retention.",
@@ -1628,7 +1628,7 @@ export const en = {
   // console starts a run.
   "webhook.section": "Webhook",
   "webhook.personalToken": "My Webhook token",
-  "webhook.personalTokenHint": "Invocations use your Studio account and current Agent access. Generic senders use X-Trigger-Secret. GitHub uses this token in its Secret field. Rotating or revoking this token affects only your Webhook callers.",
+  "webhook.personalTokenHint": "Create a token to enable your Webhook; delete it to stop your callers. Invocations use your Studio account and current Agent access. Generic senders use X-Trigger-Secret. GitHub uses this token in its Secret field. Rotating or revoking this token affects only your Webhook callers.",
   "webhook.githubHint": "GitHub: copy this URL into Payload URL, select application/json and put your Webhook token in Secret. The URL already includes your token identifier; no separate credential field is needed. Signed ping verifies the connection without running the Agent.",
   "webhook.reviewMode": "Webhook behavior",
   "webhook.generic": "Run Agent with the payload",
@@ -1641,7 +1641,7 @@ export const en = {
   "trigger.registeredBy": "Registered by: {email}",
   "trigger.registrationMissing": "Unknown user — register a new schedule",
   "webhook.intro":
-    "One address per Agent, off until you turn it on. An outside system starts a run by posting JSON with X-Trigger-Secret or a GitHub HMAC-SHA256 signature; the delivery is acknowledged immediately and its outcome appears in the history on the right. The webhook always runs the Agent’s current configuration.",
+    "One address per Agent, active for each user while their personal Webhook token exists. An outside system starts a run by posting JSON with X-Trigger-Secret or a GitHub HMAC-SHA256 signature; the delivery is acknowledged immediately and its outcome appears in the history on the right. The webhook always runs the Agent’s current configuration.",
   "schedule.section": "Schedules",
   "schedule.intro":
     "A cron expression in a timezone, fired without anyone asking. Schedules always run the Agent’s current configuration, and their outcomes appear in the history on the right.",

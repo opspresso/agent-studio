@@ -70,7 +70,6 @@ function trigger(overrides: Partial<WebhookTrigger> = {}): WebhookTrigger {
     triggerId: AGENT_WEBHOOK_ID,
     kind: "webhook",
     description: "",
-    enabled: true,
     allowConcurrent: false,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
@@ -222,11 +221,11 @@ describe("Webhook execution permissions", () => {
     expect((await admitDelivery(f.deps, "p", SECRET, null)).status).toBe("unauthorized");
     expect(f.claimed.size).toBe(0); expect(f.runs).toHaveLength(0);
   });
-  it.each(["token", "disabled"])("refuses authorization revoked after admission: %s", async reason => {
+  it.each(["token", "missing-settings"])("refuses authorization revoked after admission: %s", async reason => {
     const f = fixture();
     const admitted = await admitDelivery(f.deps, "p", SECRET, null);
     if (admitted.status !== "accepted") throw new Error("Webhook was not admitted");
-    if (reason === "token") f.identity.revoke(); else f.deps.triggers.get = async () => trigger({ enabled: false });
+    if (reason === "token") f.identity.revoke(); else f.deps.triggers.get = async () => null;
     await executeDelivery(f.deps, admitted, { task: "do work" });
     expect(f.runs).toHaveLength(0);
     expect(f.rows.at(-1)?.status).toBe("failed");
@@ -268,8 +267,8 @@ describe("admitDelivery", () => {
     expect(f.runs[0]?.message).not.toContain(SECRET);
     expect(f.runs[0]?.message).not.toContain(delivery.signature);
   });
-  it.each([null, "sha256=" + "a".repeat(64)])("rejects invalid signatures before claims or disabled state", async signature => {
-    const f = fixture({ stored: trigger({ enabled: false }) });
+  it.each([null, "sha256=" + "a".repeat(64)])("rejects invalid signatures before claims", async signature => {
+    const f = fixture();
     expect((await admitDelivery(f.deps, "p", signed({ signature }), null)).status).toBe("unauthorized");
     expect(f.claimed.size).toBe(0);
     expect(f.rows).toHaveLength(0);
@@ -315,21 +314,13 @@ describe("admitDelivery", () => {
     );
   });
 
-  it("checks the secret before the enabled flag", async () => {
-    // A disabled trigger must not answer a wrong secret differently from an
-    // enabled one; that difference is an oracle for which triggers exist.
-    const f = fixture({ stored: trigger({ enabled: false }) });
-    expect((await admitDelivery(f.deps, "p", "wrong", null)).status).toBe(
-      "unauthorized",
-    );
-  });
-
-  it("does not run a disabled trigger", async () => {
-    const f = fixture({ stored: trigger({ enabled: false }) });
-    expect((await admitDelivery(f.deps, "p", SECRET, null)).status).toBe(
-      "disabled",
-    );
-    expect(f.rows).toHaveLength(0);
+  it("does not require a shared enabled flag when a personal token is valid", async () => {
+    const f = fixture();
+    const stored = { ...trigger(), enabled: false };
+    f.deps.triggers.get = async () => stored;
+    const result = await admitDelivery(f.deps, "p", SECRET, null);
+    expect(result.status).toBe("accepted");
+    if (result.status === "accepted") await result.release();
   });
 
   it("accepts a valid delivery and opens a running history row", async () => {

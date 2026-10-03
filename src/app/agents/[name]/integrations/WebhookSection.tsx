@@ -1,13 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Badge, Button, Divider, Group, Select, Stack, Switch, Text, Textarea } from "@mantine/core";
-import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
-import { stateColor } from "@/app/_components/badgeColors";
+import { Alert, Button, Divider, Group, Select, Switch, Text, Textarea } from "@mantine/core";
 import { AGENT_WEBHOOK_ID } from "@/domain/trigger/types";
 import { useT } from "@/app/_i18n/provider";
 import {
-  createTrigger,
   listTriggers,
   updateTrigger,
   type TriggerView,
@@ -20,6 +17,7 @@ export function WebhookSection({ agentName, onSelect, selected, canManage = true
   const t = useT();
   const [webhook, setWebhook] = useState<TriggerView | null>(null);
   const [loading, setLoading] = useState(true);
+  const [tokenVersion, setTokenVersion] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reviewScope, setReviewScope] = useState("off");
@@ -56,7 +54,7 @@ export function WebhookSection({ agentName, onSelect, selected, canManage = true
     return () => {
       cancelled = true;
     };
-  }, [reload, canManage]);
+  }, [reload, canManage, tokenVersion]);
 
   async function act(action: () => Promise<void>) {
     setBusy(true);
@@ -71,39 +69,14 @@ export function WebhookSection({ agentName, onSelect, selected, canManage = true
     }
   }
 
-  /**
-   * The switch. Turning it on the first time is what creates the row — there is
-   * nothing else to configure, so asking anyone to "create a webhook" before
-   * they can enable one would be a step with no decision in it.
-   */
-  function setEnabled(enabled: boolean) {
-    void act(async () => {
-      if (!webhook) {
-        await createTrigger(agentName, { triggerId: AGENT_WEBHOOK_ID });
-        return;
-      }
-      await updateTrigger(agentName, AGENT_WEBHOOK_ID, { enabled });
-    });
-  }
-
   return (
-    <CollapsibleSection
-      title={t("webhook.section")}
+    <TokenSection
+      agentName={agentName}
+      purpose="webhook"
       onSelect={onSelect}
       selected={selected}
-      selectLabel={onSelect ? t("pint.historyView") : undefined}
-      // Readable while collapsed, like the token's set/none: whether an outside
-      // system can start this agent at all, before anyone opens the section.
-      badge={
-        loading || !canManage ? undefined : (
-          <Badge color={stateColor(webhook?.enabled === true)} radius="xl">
-            {webhook?.enabled ? "enabled" : "disabled"}
-          </Badge>
-        )
-      }
+      onChange={() => setTokenVersion(version => version + 1)}
     >
-      <Stack gap="md">
-        <TokenSection agentName={agentName} purpose="webhook" embedded />
         {canManage && <>
         <Divider />
         <Text fz="sm" c="dimmed">
@@ -115,14 +88,7 @@ export function WebhookSection({ agentName, onSelect, selected, canManage = true
           </Alert>
         )}
 
-        <Switch
-          label={t("trigger.enabled")}
-          checked={webhook?.enabled === true}
-          disabled={busy || loading}
-          onChange={(e) => setEnabled(e.currentTarget.checked)}
-        />
-
-        {webhook && (
+        {!loading && webhook && (
           <>
             {webhook.reviewIssue && <Alert color="yellow" title={t("webhook.reviewSetupRequired")}>
               {webhook.reviewIssue}
@@ -162,7 +128,6 @@ export function WebhookSection({ agentName, onSelect, selected, canManage = true
           </>
         )}
         </>}
-      </Stack>
-    </CollapsibleSection>
+    </TokenSection>
   );
 }

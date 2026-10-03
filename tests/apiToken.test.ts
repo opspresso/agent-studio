@@ -2,6 +2,8 @@ import { createHmac } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAgentCredentialUseCases } from "@/application/auth/agentCredentialUseCases";
 import { agentCredentialRepository } from "@/infrastructure/db/repositories/agentCredentialRepository";
+import { triggerRepository } from "@/infrastructure/db/repositories/triggerRepository";
+import { assertWebhookExecutionGrant } from "@/application/auth/webhookAuthorization";
 import { agentRepository } from "@/infrastructure/db/repositories/agentRepository";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { agentCredentialContext } from "@/domain/security/secretContext";
@@ -150,6 +152,45 @@ describe("purpose-scoped personal credentials", () => {
   const webhooks = createAgentCredentialUseCases({ purpose: "webhook", agents: agentRepository, tokens: agentCredentialRepository,
     members: { getById: async id => members.get(id) ?? null }, cipher: secretCipher, now: () => now,
     newId: () => `00000000-0000-4000-8000-${String(++sequence).padStart(12, "0")}` });
+
+  it("activates Webhooks on issuance and stops only the revoked caller while retaining shared behavior", async () => {
+    expect(await triggerRepository.get("bot", "webhook")).toBeNull();
+    const first = await webhooks.generate("bot", "first");
+    const trigger = await triggerRepository.get("bot", "webhook");
+    expect(trigger).toMatchObject({ kind: "webhook", allowConcurrent: false });
+    expect(trigger).not.toHaveProperty("enabled");
+    if (trigger?.kind !== "webhook") throw new Error("Missing Webhook settings");
+    const configured = { ...trigger, allowConcurrent: true, githubReview: { scope: "repositories" as const, repositories: ["example/repo"] } };
+    await triggerRepository.put(configured);
+    const second = await webhooks.generate("bot", "second");
+    const authorization = { triggers: triggerRepository, webhookCredentials: webhooks };
+    const grant = { kind: "webhook" as const, agentName: "bot", triggerId: "webhook", userId: "first", email: "first@example.test", credentialId: first.credentialId };
+    await expect(assertWebhookExecutionGrant(authorization, grant)).resolves.toBeUndefined();
+    await webhooks.revoke("bot", "first");
+    await expect(assertWebhookExecutionGrant(authorization, grant)).rejects.toThrow("no longer authorized");
+    expect(await webhooks.verify("bot", first.token)).toBeNull();
+    expect(await webhooks.verify("bot", second.token)).toMatchObject({ userId: "second" });
+    expect(await triggerRepository.get("bot", "webhook")).toEqual(configured);
+    await webhooks.revoke("bot", "second");
+    expect(await triggerRepository.get("bot", "webhook")).toEqual(configured);
+    await webhooks.generate("bot", "second");
+    expect(await triggerRepository.get("bot", "webhook")).toEqual(configured);
+  });
+
+  it("does not issue a credential when the reserved Webhook settings slot is occupied by another kind", async () => {
+    const key = keys.trigger("bot", "webhook");
+    store.seed([{ ...key, kind: "schedule" }]);
+    await expect(webhooks.generate("bot", "first")).rejects.toMatchObject({ status: 409 });
+    expect(await webhooks.status("bot", "first")).toEqual({ configured: false, canIssue: true });
+    expect(store.rows.get(`${key.PK}\0${key.SK}`)?.kind).toBe("schedule");
+  });
+
+  it("keeps one shared configuration when two different users issue Webhook tokens concurrently", async () => {
+    const [first, second] = await Promise.all([webhooks.generate("bot", "first"), webhooks.generate("bot", "second")]);
+    expect(await webhooks.verify("bot", first.token)).toMatchObject({ userId: "first" });
+    expect(await webhooks.verify("bot", second.token)).toMatchObject({ userId: "second" });
+    expect(await triggerRepository.listByAgent("bot", 10)).toHaveLength(1);
+  });
 
   it("isolates one user's API and Webhook credentials, including rotation and revocation", async () => {
     const apiToken = await api.generate("bot", "first");

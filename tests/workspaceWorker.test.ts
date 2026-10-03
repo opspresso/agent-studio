@@ -298,7 +298,7 @@ describe("durable workspace worker", () => {
     expect((await repository.run(first.workspace.id, first.run.id))?.status).toBe("failed");
   });
   it("refuses a queued Webhook task when its personal credential is revoked", async () => {
-    const webhook: WebhookTrigger = { agentName: "demo", triggerId: "webhook", kind: "webhook", enabled: true,
+    const webhook: WebhookTrigger = { agentName: "demo", triggerId: "webhook", kind: "webhook",
       description: "", allowConcurrent: false, createdAt: new Date(time).toISOString(), updatedAt: new Date(time).toISOString() };
     const identity = webhookCredentialFixture("demo", "fixture-token", owner);
     const grant = { kind: "webhook" as const, agentName: "demo", triggerId: "webhook", ...identity.principal };

@@ -471,6 +471,10 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     const [apiCredential, webhookCredential] = await Promise.all([
       personalApi.generate(agentName, integrationMemberId), personalWebhook.generate(agentName, integrationMemberId),
     ]);
+    const initializedWebhook = await triggerRepository.get(agentName, "webhook");
+    assert.equal(initializedWebhook?.kind, "webhook");
+    assert.equal(initializedWebhook?.allowConcurrent, false);
+    assert.ok(!Object.hasOwn(initializedWebhook!, "enabled"));
     assert.equal(await personalApi.verify(agentName, webhookCredential.token), null);
     assert.equal(await personalWebhook.verify(agentName, apiCredential.token), null);
     const signedBody = '{"event":"integration"}';
@@ -479,6 +483,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     assert.deepEqual(await personalWebhook.verifySignature(agentName, webhookCredential.credentialId, signedBody, signature),
       { userId: integrationMemberId, email: integrationMemberEmail, credentialId: webhookCredential.credentialId });
     await personalWebhook.revoke(agentName, integrationMemberId);
+    assert.deepEqual(await triggerRepository.get(agentName, "webhook"), initializedWebhook);
     assert.equal(await personalWebhook.authorize(agentName, webhookCredential.credentialId, integrationMemberId), null);
     assert.ok(await personalApi.authorize(agentName, apiCredential.credentialId, integrationMemberId));
     await personalApi.revoke(agentName, integrationMemberId);
@@ -1248,9 +1253,9 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
 
     {
       const reviewTrigger = { agentName, triggerId: "webhook", kind: "webhook" as const,
-        description: "PR reviews", enabled: true, allowConcurrent: true, createdAt: now, updatedAt: now,
+        description: "PR reviews", allowConcurrent: true, createdAt: now, updatedAt: now,
         githubReview: { scope: "repositories" as const, repositories: ["example/agent"] } };
-      await triggerRepository.create(reviewTrigger);
+      await triggerRepository.put(reviewTrigger);
       assert.deepEqual((await triggerRepository.get(agentName, "webhook")), reviewTrigger);
       const review = { repository: "example/agent", number: 42, headSha: "a".repeat(40), status: "posted" as const,
         url: "https://github.com/example/agent/pull/42#pullrequestreview-1", workspaceUrl: "https://studio.example.test/chats/review-workspace" };

@@ -17,7 +17,7 @@ export async function assertWebhookExecutionGrant(deps: WebhookAuthorizationDeps
     deps.triggers.get(grant.agentName, grant.triggerId),
     assertCredentialGrant(deps.webhookCredentials, grant),
   ]);
-  if (!trigger?.enabled || trigger.kind !== "webhook" || trigger.agentName !== grant.agentName || trigger.triggerId !== grant.triggerId) {
+  if (trigger?.kind !== "webhook" || trigger.agentName !== grant.agentName || trigger.triggerId !== grant.triggerId) {
     throw new ValidationError("The Webhook caller is no longer authorized");
   }
 }

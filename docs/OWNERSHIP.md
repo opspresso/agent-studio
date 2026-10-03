@@ -233,6 +233,7 @@ Agent 설정은 binding을 소유하며 개인 연결은 Agent 수명과 독립�
 |---|---|---|
 | 개인 credential의 용도·발급 사용자·Agent 범위와 현재 권한 | `application/auth/agentCredentialUseCases.ts`; 저장 포트는 `domain/auth/agentCredential.ts`, 회전·폐기 transaction은 `agentCredentialRepository.ts`. API·Webhook의 지속 검증은 `auth/credentialGrant.ts`를 공유한다. `getExecutionMemberById`를 주입하며 이메일 tier 캐시로 사용자 존재 여부를 대체하지 않는다 | 코드 |
 | 접수한 개인 Webhook 호출의 토큰 회수·현재 계정·설정 재검사 | `application/auth/webhookAuthorization.ts`. 실행·도구·PR 조회/게시·Workspace 큐가 같은 grant를 사용한다 | 구조 |
+| 개인 Webhook 토큰 발급과 공유 설정 초기화 | `agentCredentialRepository.replace`가 같은 transaction에서 기본 설정을 최초 생성한다. `domain/trigger/types.ts`의 `defaultWebhookTrigger`가 기본값을 소유하며 기존 설정·이력은 발급·폐기로 바꾸지 않는다 | 코드 |
 | 아웃바운드 redirect의 출처·횟수·HTTP 메서드 규칙 | `src/infrastructure/net/redirectPolicy.ts` 의 `fetchSameOrigin`. 공개 URL의 DNS 검증·연결 고정은 `publicFetch.ts`가 각 요청에 적용한다 | 구조 |
 | 어떤 응답이 콘솔의 보안 헤더를 받는가. 여기 선언한 헤더는 라우트가 같은 키로 세운 것을 *대체한다* | `next.config.ts` 의 `SECURITY_HEADERS` 와 그 `source` | 구조 |
 | 상수 시간 시크릿 비교 | `src/shared/timingSafe.ts` | 구조 |

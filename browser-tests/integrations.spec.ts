@@ -65,6 +65,7 @@ test.beforeEach(async ({ page }) => {
         credentialEvents.push("generate");
         if (refuseCredential) return route.fulfill({ status: 403, json: { error: "Current Agent access is required" } });
         personalWebhook = true;
+        webhook ??= { agentName, triggerId: "webhook", kind: "webhook", description: "", allowConcurrent: false, createdAt: at, updatedAt: at };
         return route.fulfill({ json: { token: "asw_synthetic-personal-token", credentialId: "personal-selector", masked: "asw_••••", createdAt: at } });
       }
       return route.fulfill({ json: { configured: personalWebhook, canIssue: true,
@@ -87,6 +88,7 @@ test.beforeEach(async ({ page }) => {
     if (path === `${prefix}/triggers/webhook` && route.request().method() === "PUT") {
       const body = route.request().postDataJSON();
       expect(body).not.toHaveProperty("runAsOwner");
+      expect(body).not.toHaveProperty("enabled");
       webhook = { ...webhook!, ...body };
       return route.fulfill({ json: webhook });
     }
@@ -116,16 +118,21 @@ test("personal Webhook tokens issue a caller URL and can be revoked independentl
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
   await page.goto(base);
-  await page.getByRole("button", { name: "Webhook disabled", exact: true }).click();
+  await page.getByRole("button", { name: "Webhook Not configured", exact: true }).click();
   const control = page.getByRole("group", { name: "My Webhook token", exact: true });
   await control.getByRole("button", { name: "Generate", exact: true }).click();
   await expect(control.getByRole("textbox")).toHaveValue("asw_synthetic-personal-token");
   await expect(page.getByText(`${base}/api/webhook/${agentName}?credential=personal-selector`, { exact: true })).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath("personal-webhook.png"), fullPage: true });
+  await expect(page.getByRole("button", { name: "Webhook Configured", exact: true })).toBeVisible();
+  await expect(page.getByRole("switch", { name: "Enabled", exact: true })).toHaveCount(0);
+  await expect(control.getByText("Configured", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("combobox", { name: "Webhook behavior", exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("personal-webhook.png"), fullPage: true, animations: "disabled" });
   await control.getByRole("button", { name: "Revoke", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Revoke", exact: true }).click();
   await expect(control.getByRole("button", { name: "Generate", exact: true })).toBeVisible();
   await expect(control.getByRole("textbox")).toHaveValue("");
+  await expect(page.getByRole("button", { name: "Webhook Not configured", exact: true })).toBeVisible();
   await expect(page.getByText(/\?credential=personal-selector/)).toHaveCount(0);
   expect(credentialEvents).toEqual(["generate", "revoke"]);
   expect(errors).toEqual([]);
@@ -134,7 +141,7 @@ test("personal Webhook tokens issue a caller URL and can be revoked independentl
 test("refused personal credential issuance preserves recovery without creating a caller URL", async ({ page }) => {
   refuseCredential = true;
   await page.goto(base);
-  await page.getByRole("button", { name: "Webhook disabled", exact: true }).click();
+  await page.getByRole("button", { name: "Webhook Not configured", exact: true }).click();
   const control = page.getByRole("group", { name: "My Webhook token", exact: true });
   await control.getByRole("button", { name: "Generate", exact: true }).click();
   await expect(control.getByRole("alert")).toContainText("Current Agent access is required");
@@ -144,7 +151,7 @@ test("refused personal credential issuance preserves recovery without creating a
 
 test("failed PR review history links its exact Workspace and Trace and displays the failure once", async ({ page }, testInfo) => {
   const error = "Review Workspace results were not read; no review was published";
-  webhook = { agentName, triggerId: "webhook", kind: "webhook", description: "", enabled: true, allowConcurrent: false, createdAt: at, updatedAt: at };
+  webhook = { agentName, triggerId: "webhook", kind: "webhook", description: "", allowConcurrent: false, createdAt: at, updatedAt: at };
   runs.webhook = [{ agentName, triggerId: "webhook", runId: "failed-review", status: "failed", startedAt: at,
     traceId: "review-trace", error, review: { repository: "fixture/repo", number: 42, headSha: "a".repeat(40),
       status: "failed", reason: error, workspaceUrl: `${base}/chats/review-workspace` } }];
@@ -219,13 +226,13 @@ test("schedules display their registering user without an owner delegation toggl
 test("a non-owner can manage personal tokens without shared Agent Webhook settings", async ({ page }) => {
   await page.goto(`${base}/?member`);
   await expect(page.getByRole("link", { name: "Integrations", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Webhook", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: /^Webhook (enabled|disabled)$/ })).toHaveCount(0);
-  await page.getByRole("button", { name: "Webhook", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Webhook Not configured", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Webhook Not configured", exact: true }).click();
   await expect(page.getByRole("switch", { name: "Enabled", exact: true })).toHaveCount(0);
   await expect(page.getByRole("combobox", { name: "Webhook behavior", exact: true })).toHaveCount(0);
   await page.getByRole("group", { name: "My Webhook token", exact: true }).getByRole("button", { name: "Generate", exact: true }).click();
   await expect(page.getByText(/\?credential=personal-selector/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Webhook Configured", exact: true })).toBeVisible();
 });
 
 

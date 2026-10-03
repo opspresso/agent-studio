@@ -935,7 +935,7 @@ export const ko: Messages = {
     "Agent의 Integrations에서 Telegram bot token을 저장하고 활성화하면 webhook이 등록된다. 앱 주소가 바뀌면 Register webhook으로 다시 등록한다. Teams는 Azure Bot의 Teams 채널을 활성화하고 application ID·client secret, 단일 tenant 앱이면 tenant ID를 저장한 뒤 표시된 URL을 messaging endpoint로 설정한다. 그룹 멘션을 시험하기 전에 다이렉트 대화에서 확인한다.",
   "guide.integrations.webhook": "웹훅으로 실행하기",
   "guide.integrations.webhookBody":
-    "Agent 연동에서 Webhook을 활성화한다. 일반 발신자는 X-Trigger-Secret을 보내고 GitHub는 같은 Secret으로 X-Hub-Signature-256 서명을 만든다. JSON 본문은 사용자 메시지로 전달된다. HTTP 202는 접수 응답이므로 Trigger 이력에서 실행·건너뜀 결과를 확인한다. 동시 실행을 허용하지 않으면 실행 중 들어온 전달은 건너뛴다.",
+    "Agent 연동에서 개인 Webhook 토큰을 생성하면 호출이 활성화되고, 폐기하면 중지된다. 일반 발신자는 X-Trigger-Secret을 보내고 GitHub는 같은 Secret으로 X-Hub-Signature-256 서명을 만든다. JSON 본문은 사용자 메시지로 전달된다. HTTP 202는 접수 응답이므로 Trigger 이력에서 실행·건너뜀 결과를 확인한다. 동시 실행을 허용하지 않으면 실행 중 들어온 전달은 건너뛴다.",
   "guide.integrations.schedule": "반복 작업 예약하기",
   "guide.integrations.scheduleBody":
     "Agent 연동에서 다섯 필드 cron 식, Asia/Seoul 같은 IANA 시간대, 실행할 메시지를 지정해 스케줄을 추가한다. 필요하면 전송 목적지를 선택하고 활성화한다. 스케줄은 현재 Agent 설정을 사용하며 배포 환경의 외부 티커가 필요하다. 답변 생성은 성공해도 봇 전송이 실패할 수 있으므로 실행 상태와 전달 결과를 함께 확인한다.",
@@ -1039,7 +1039,7 @@ export const ko: Messages = {
   "guide.trouble.tools": "도구·메모리를 사용하지 않음",
   "guide.trouble.toolsBody": "저장된 바인딩·도구 선택·Prompt preview·OAuth 연결·실행 경고를 확인하고 해당 도구가 필요한 요청으로 시험한다. Memory에는 recall을 제공하는 MCP 서버를 명시적으로 연결해야 한다. File은 내장 기능이며 저장소 구성이 필요하고 별도 MCP 연결은 필요하지 않다. 내부 호스트 차단은 운영자에게 확인한다.",
   "guide.trouble.automation": "봇·스케줄이 응답하지 않음",
-  "guide.trouble.automationBody": "Webhook 202는 완료가 아닌 접수 응답이다. status와 Trigger 이력을 확인한다: accepted·duplicate·disabled·busy·no-configuration·ping·ignored. PR 리뷰 모드는 GitHub 서명이 필요하고 일반 모드의 발신자는 X-Trigger-Secret을 사용한다. 스케줄은 ticker, Workspace 승인·CI 재개는 해당 worker가 필요하다.",
+  "guide.trouble.automationBody": "Webhook 202는 완료가 아닌 접수 응답이다. status와 Trigger 이력을 확인한다: accepted·duplicate·busy·no-configuration·ping·ignored. PR 리뷰 모드는 GitHub 서명이 필요하고 일반 모드의 발신자는 X-Trigger-Secret을 사용한다. 스케줄은 ticker, Workspace 승인·CI 재개는 해당 worker가 필요하다.",
   "guide.trouble.files": "첨부·다운로드 실패",
   "guide.trouble.filesBody":
     "파일 형식과 첨부 한도를 먼저 확인한다. 이미지는 이미지 입력 모델이 필요하고 Office 읽기는 내장 엔진이 처리한다. 암호화 파일, OCR이 필요한 스캔본, 지원되지 않는 편집은 다른 작업 방식이 필요하다. File 도구가 없거나 원본이 보관되지 않았다면 관리자에게 저장소 구성을 확인한다. 다운로드 실패는 Artifacts를 다시 열고 저장 경고·접근 모드·공개 주소·연결·보존 기간을 점검한다.",
@@ -1557,7 +1557,7 @@ export const ko: Messages = {
 
   "webhook.section": "Webhook",
   "webhook.personalToken": "내 Webhook 토큰",
-  "webhook.personalTokenHint": "본인의 Studio 계정과 현재 Agent 접근 권한으로 실행됩니다. 일반 발신자는 X-Trigger-Secret에, GitHub는 Secret에 이 토큰을 입력합니다. 재발급·폐기는 본인의 Webhook 호출에만 적용됩니다.",
+  "webhook.personalTokenHint": "토큰을 생성하면 본인의 Webhook이 활성화되고, 삭제하면 해당 호출이 중지됩니다. 본인의 Studio 계정과 현재 Agent 접근 권한으로 실행됩니다. 일반 발신자는 X-Trigger-Secret에, GitHub는 Secret에 이 토큰을 입력합니다. 재발급·폐기는 본인의 Webhook 호출에만 적용됩니다.",
   "webhook.githubHint": "GitHub에서 이 주소를 Payload URL로, Content type을 application/json으로 설정하고 본인 Webhook 토큰을 Secret에 입력하세요. 주소에 토큰 식별자가 포함되어 있으므로 credential을 따로 입력할 필요는 없습니다. 서명된 ping은 Agent 실행 없이 연결만 확인합니다.",
   "webhook.reviewMode": "Webhook 동작",
   "webhook.generic": "Payload로 Agent 실행",
@@ -1570,7 +1570,7 @@ export const ko: Messages = {
   "trigger.registeredBy": "등록자: {email}",
   "trigger.registrationMissing": "등록자 없음 — 스케줄을 새로 등록하세요",
   "webhook.intro":
-    "Agent마다 주소 하나가 있고, 켜기 전까지는 꺼져 있습니다. 외부 시스템은 X-Trigger-Secret 또는 GitHub HMAC-SHA256 서명으로 인증한 JSON을 POST해 실행을 시작합니다. 전달은 즉시 응답되고 결과는 오른쪽 이력에 남습니다. Webhook은 항상 Agent의 현재 설정을 실행합니다.",
+    "Agent마다 주소 하나가 있고, 각 사용자의 개인 Webhook 토큰이 있는 동안 해당 사용자의 호출이 활성화됩니다. 외부 시스템은 X-Trigger-Secret 또는 GitHub HMAC-SHA256 서명으로 인증한 JSON을 POST해 실행을 시작합니다. 전달은 즉시 응답되고 결과는 오른쪽 이력에 남습니다. Webhook은 항상 Agent의 현재 설정을 실행합니다.",
   "schedule.section": "스케줄",
   "schedule.intro":
     "타임존과 함께 지정한 cron 식으로 스스로 발화합니다. 스케줄도 항상 Agent의 현재 설정을 실행하며, 결과는 오른쪽 이력에 표시됩니다.",

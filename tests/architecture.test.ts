@@ -902,6 +902,11 @@ interface SingleOwner {
 
 const SINGLE_OWNERS: SingleOwner[] = [
   {
+    what: "default shared Webhook settings for personal token issuance",
+    pattern: /export function defaultWebhookTrigger\b/,
+    owner: "src/domain/trigger/types.ts",
+  },
+  {
     what: "tool argument elision markers and recognition",
     pattern: /export function (?:elidedToolArgument|isElidedToolArgument)\b/,
     owner: "src/application/llm/toolArgumentElision.ts",

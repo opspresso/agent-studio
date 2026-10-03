@@ -39,7 +39,6 @@ function toTrigger(item: Record<string, unknown>): Trigger {
     agentName: String(item.agentName ?? ""),
     triggerId: String(item.triggerId ?? ""),
     description: String(item.description ?? ""),
-    enabled: Boolean(item.enabled),
     allowConcurrent: Boolean(item.allowConcurrent),
     createdAt: String(item.createdAt ?? ""),
     updatedAt: String(item.updatedAt ?? ""),
@@ -49,6 +48,7 @@ function toTrigger(item: Record<string, unknown>): Trigger {
     return {
       ...base,
       kind: "schedule",
+      enabled: Boolean(item.enabled),
       createdBy: { userId: String(createdBy?.userId ?? ""), email: String(createdBy?.email ?? "") },
       cron: String(item.cron ?? ""),
       timezone: String(item.timezone ?? ""),
@@ -66,7 +66,7 @@ function toTrigger(item: Record<string, unknown>): Trigger {
   };
 }
 
-function triggerItem(trigger: Trigger): Record<string, unknown> {
+export function triggerItem(trigger: Trigger): Record<string, unknown> {
   return {
     ...keys.trigger(trigger.agentName, trigger.triggerId),
     ...trigger,

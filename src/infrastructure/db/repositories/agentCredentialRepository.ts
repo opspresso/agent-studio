@@ -2,6 +2,8 @@ import type { AgentCredential, AgentCredentialPurpose, AgentCredentialRepository
 import { getItem, transact, type Item } from "../store";
 import { keys } from "../keys";
 import { agentIsLive } from "../agentLifecycle";
+import { AGENT_WEBHOOK_ID, defaultWebhookTrigger } from "@/domain/trigger/types";
+import { triggerItem } from "./triggerRepository";
 
 function fromItem(row: Item | null, agentName: string, purpose: AgentCredentialPurpose, tokenId: string): AgentCredential | null {
   if (!row) return null;
@@ -29,6 +31,9 @@ export const agentCredentialRepository: AgentCredentialRepository = {
     const { purpose } = token;
     await transact([
       { kind: "check", key: keys.agent(token.agentName), condition: agentIsLive },
+      ...(purpose === "webhook" ? [{ kind: "update" as const, key: keys.trigger(token.agentName, AGENT_WEBHOOK_ID),
+        condition: (row: Item | null) => row === null || row.kind === "webhook",
+        patch: (row: Item | null) => row ?? triggerItem(defaultWebhookTrigger(token.agentName, token.createdAt)) }] : []),
       { kind: "put", item: { ...keys.agentCredentialUser(token.agentName, purpose, token.userId), entityType: "AGENTCREDENTIALUSER",
         purpose, agentName: token.agentName, userId: token.userId, tokenId: token.id, masked: token.masked, createdAt: token.createdAt },
         condition: row => previousTokenId === null ? row === null : row?.tokenId === previousTokenId },

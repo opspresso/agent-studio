@@ -170,7 +170,7 @@ async function main() {
     await storedAgents.create({ name: agentName, displayName: "PR review check", description: "", ownerEmail: "agent-owner@example.test", createdAt: at, updatedAt: at });
     const issued = await webhookCredentials.generate(agentName, userId);
     const secret = issued.token;
-    await triggers.create({ agentName, triggerId: "webhook", kind: "webhook", description: "", enabled: true,
+    await triggers.put({ agentName, triggerId: "webhook", kind: "webhook", description: "",
       allowConcurrent: true, githubReview: { scope: "repositories", repositories: ["fixture/repo"] }, createdAt: at, updatedAt: at });
     const storedWebhook = await triggers.get(agentName, "webhook");
     assert.equal(storedWebhook?.kind, "webhook");

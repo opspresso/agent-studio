@@ -74,8 +74,6 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
       // does have a webhook would not be — but an agent with no webhook at all
       // is not a secret, and 404 is what a misconfigured URL needs to say.
       return Response.json({ error: "Webhook not found" }, { status: 404 });
-    case "disabled":
-      return Response.json({ ok: true, status: "disabled" }, { status: 202 });
     case "duplicate":
       return Response.json({ ok: true, status: "duplicate" }, { status: 202 });
     case "busy":
