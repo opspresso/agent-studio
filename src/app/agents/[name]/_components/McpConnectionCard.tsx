@@ -208,7 +208,7 @@ export function McpConnectionCard({
   if (!server.auth) {
     return (
       <Text fz="xs" c="dimmed">
-        {t("mcpConn.noAuthNeeded")}
+        {t("mcpConn.noOAuthConfigured")}
       </Text>
     );
   }
