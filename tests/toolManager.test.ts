@@ -55,11 +55,13 @@ interface ServerScript {
   legacy?: boolean;
   /** Session ids a legacy handshake hands out, one per handshake, in order. */
   sessionIds?: string[];
+  /** HTTP refusal returned when releasing a legacy session. */
+  deleteStatus?: number;
   /** The revision a legacy handshake says it agreed to. */
   protocolVersion?: string;
   /**
    * 404 a request that carries a session id, as a server whose session has
-   * expired does — once, or every time (which is the endpoint being gone).
+   * expired does — for its first session, or every session if the endpoint is gone.
    */
   expiredSession?: "once" | "always";
   /** Which method meets the expiry. Every one that carries a session by default. */
@@ -142,8 +144,8 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
   const calls: RecordedCall[] = [];
   /** Handshakes served per URL, so `sessionIds` hands out a fresh one each time. */
   const handshakes = new Map<string, number>();
-  /** URLs whose one-shot expiry has already fired. */
-  const expired = new Set<string>();
+  /** The first expired session per URL; every request carrying it is refused. */
+  const expired = new Map<string, string>();
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : String(input);
     const script = scripts[url];
@@ -187,8 +189,10 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
       return new Promise<Response>(() => {});
     }
     if (body.method === undefined) {
-      // Nothing should arrive without a body: this revision has no standalone
-      // GET stream and no session to DELETE.
+      if (init?.method === "DELETE" && script.deleteStatus !== undefined) {
+        return new Response(null, { status: script.deleteStatus });
+      }
+      // Legacy connections may open a GET stream and release their session with DELETE.
       return bodylessResponse(init?.method);
     }
     if (script.unsupportedVersion) {
@@ -265,12 +269,12 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
       script.expiredSession &&
       sentSession &&
       (script.expireOn === undefined || script.expireOn === body.method) &&
-      (script.expiredSession === "always" || !expired.has(url))
+      (script.expiredSession === "always" || !expired.has(url) || expired.get(url) === sentSession)
     ) {
       // Streamable HTTP answers an unknown session id with 404 and requires a
       // fresh session rather than treating the server as dead. "always" is the
       // other reading of the same status: the endpoint itself is gone.
-      expired.add(url);
+      expired.set(url, sentSession);
       return new Response("Session not found", { status: 404 });
     }
     if (script.callUnauthorized && body.method === "tools/call") {
@@ -974,6 +978,9 @@ describe("ToolManager expired-session recovery", () => {
     ]);
 
     expect(results.map((r) => r.text)).toEqual(["ok", "ok", "ok"]);
+    expect(calls.filter((call) => call.method === "tools/call").map((call) => call.sessionId)).toEqual([
+      "sess-1", "sess-1", "sess-1", "sess-2", "sess-2", "sess-2",
+    ]);
     // Two in total: the original, and exactly one replacement.
     expect(calls.filter((call) => call.method === "initialize")).toHaveLength(2);
   });
@@ -1083,17 +1090,20 @@ describe("ToolManager session release", () => {
 
   it("does not throw when a server rejects the teardown request", async () => {
     // Cleanup runs after the answer is delivered; a run must never fail on it.
-    stubMcpFetch({
+    const calls = stubMcpFetch({
       "https://a.test/mcp": {
         legacy: true,
         sessionIds: ["sess-a"],
-        notFoundAfterHandshake: true,
+        listTools: [{ name: "search" }],
+        deleteStatus: 503,
       },
     });
     const manager = new ToolManager([server("a", "https://a.test/mcp")]);
     await manager.init();
+    expect(manager.tools).toHaveLength(1);
 
     await expect(manager.close()).resolves.toBeUndefined();
+    expect(deletesTo(calls, "https://a.test/mcp")).toHaveLength(1);
   });
 
   it("reports a server that speaks only a revision this client does not", async () => {
@@ -1873,8 +1883,7 @@ describe("MCP request metadata headers", () => {
 
   it("base64-encodes a name that cannot travel as a plain header value", async () => {
     const calls = stubMcpFetch({ "https://a.test/mcp": { callContent: [] } });
-    // Driven through the session directly: the tool manager refuses any name
-    // outside `[A-Za-z0-9_-]`, so no call it dispatches can reach this branch.
+    // Exercise wire encoding directly, independently of provider-facing aliases.
     const session = new McpSession("https://a.test/mcp", {});
 
     await session.callTool("검색", {});
@@ -2331,7 +2340,7 @@ describe("what a failure carries", () => {
     expect(warning).not.toContain("unreachable");
   });
 
-  it("stops talking to the server when the run is cancelled", async () => {
+  it.each([false, true])("cancels the transport request when the run is cancelled (legacy=%s)", async (legacy) => {
     // The SDK forwards a caller's signal to the transport only on a modern
     // per-request stream; on a 2025-era server it rejects the promise and leaves
     // the POST running. The session merges the run's signal into the request so
@@ -2345,11 +2354,19 @@ describe("what a failure carries", () => {
           seen.push(init.signal);
         }
         const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string; id?: number };
+        if (legacy && body.method === "server/discover") return probeMiss(body.id);
+        if (legacy && body.method === "initialize") {
+          return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result: handshakeResult() }), {
+            headers: { "content-type": "application/json" },
+          });
+        }
+        if (legacy && body.method === "notifications/initialized") return accepted();
         const preamble = protocolPreamble(body.method, body.id, init?.method);
         if (preamble) {
           return preamble;
         }
         controller.abort();
+        init?.signal?.throwIfAborted();
         return new Promise<Response>((_, reject) => {
           // What a real fetch does with an aborted signal. A stub that ignored
           // it could not tell a request that was cut from one still running.
