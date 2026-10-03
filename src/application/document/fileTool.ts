@@ -34,6 +34,25 @@ function assertFileContent(value: unknown): void {
   if (isElidedToolArgument(value)) throw new DocumentProcessingError(ELIDED_FILE_CONTENT_ERROR);
 }
 
+function assertCellContent(value: unknown): void {
+  assertFileContent(value);
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    if ("formula" in value) assertFileContent(value.formula);
+    if ("cachedValue" in value) assertFileContent(value.cachedValue);
+  }
+}
+
+/** Inspect content only; the renderer owns sheet structure and size validation. */
+function assertSheetContent(sheets: unknown): void {
+  if (!Array.isArray(sheets)) return;
+  for (const sheet of sheets) {
+    if (!sheet || typeof sheet !== "object" || !Array.isArray(sheet.rows)) continue;
+    for (const row of sheet.rows) {
+      if (Array.isArray(row)) row.forEach(assertCellContent);
+    }
+  }
+}
+
 /** File identities are resolved by trusted storage, never by a model-provided object key or URL. */
 export function buildFileTool(
   deps: FileToolDeps,
@@ -86,6 +105,7 @@ export function buildFileTool(
       }
       if (args.operation === "create") {
         assertFileContent(args.content);
+        assertSheetContent(args.sheets);
         const format = DOCUMENT_FORMATS.find((format) => format === args.format);
         if (!format) throw new DocumentProcessingError(`format must be one of ${DOCUMENT_FORMATS.join(", ")}`);
         const profile = args.profile === undefined ? undefined : DOCUMENT_PROFILES.find((profile) => profile === args.profile);
@@ -158,7 +178,7 @@ export function buildFileTool(
         const edits = args.edits as DocumentEdit[];
         for (const edit of edits) {
           if (edit.operation === "replace_text") assertFileContent(edit.replacement);
-          if (edit.operation === "set_cell") assertFileContent(edit.value);
+          if (edit.operation === "set_cell") assertCellContent(edit.value);
         }
         if (documentKind(file.mimeType, file.name) === "text" || documentKind(file.mimeType, file.name) === "html" || svg) {
           if (file.bytes.byteLength > MAX_SAVED_FILE_BYTES) throw new DocumentProcessingError("This text file exceeds the editing byte limit");

@@ -77,6 +77,20 @@ describe("native File tool", () => {
     expect(create).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { name: "scalar", value: elidedToolArgument(28235) },
+    { name: "formula", value: { formula: elidedToolArgument(28235) } },
+    { name: "cached value", value: { formula: "A1", cachedValue: elidedToolArgument(28235) } },
+  ])("rejects a placeholder $name before creating a spreadsheet", async ({ value }) => {
+    const f = setup();
+    const create = vi.fn(f.deps.documentRenderer.create);
+    const call = buildFileTool({ ...f.deps, documentRenderer: { create } }, "agent", { ...executionIdentity(actor), ancestry: ["agent"] })!;
+    const result = await call({ operation: "create", format: "xlsx", sheets: [{ name: "Sheet", rows: [["Header"], [value]] }] });
+    expect(result.text).toMatch(/^Error:.*history placeholder/);
+    expect(result.files).toBeUndefined();
+    expect(create).not.toHaveBeenCalled();
+  });
+
   it.each(["read", "inspect"])("reports a stored placeholder as missing content during %s", async operation => {
     const f = setup();
     const bytes = Buffer.from("[28235 bytes, elided — the call was made with the whole value]");
@@ -106,17 +120,29 @@ describe("native File tool", () => {
     expect(f.bytes.get("broken.html")).toEqual(bytes);
   });
 
-  it("rejects a placeholder cell value before editing a spreadsheet", async () => {
+  it.each([
+    { name: "scalar", value: elidedToolArgument(28235) },
+    { name: "formula", value: { formula: elidedToolArgument(28235) } },
+    { name: "cached value", value: { formula: "A2", cachedValue: elidedToolArgument(28235) } },
+  ])("rejects a placeholder $name before editing a spreadsheet", async ({ value }) => {
     const f = setup();
-    const created = await f.call({ operation: "create", format: "xlsx", sheets: [{ name: "Sheet", rows: [["original"]] }] });
+    const created = await f.call({ operation: "create", format: "xlsx", sheets: [{ name: "Sheet", rows: [["original"], ["retained"]] }] });
     await f.capture(created);
     const edit = vi.fn(f.deps.documentEditor.edit);
     const call = buildFileTool({ ...f.deps, documentEditor: { ...f.deps.documentEditor, edit } }, "agent", { ...executionIdentity(actor), ancestry: ["agent"] })!;
     const result = await call({ operation: "edit", file_id: created.files![0]!.artifactId,
-      edits: [{ operation: "set_cell", sheet: "Sheet", cell: "A1", value: elidedToolArgument(28235) }] });
+      edits: [{ operation: "set_cell", sheet: "Sheet", cell: "A1", value }] });
     expect(result.text).toMatch(/^Error:.*history placeholder/);
     expect(result.files).toBeUndefined();
     expect(edit).not.toHaveBeenCalled();
+  });
+
+  it("preserves a marker quoted within actual spreadsheet content", async () => {
+    const f = setup();
+    const content = `Example: ${elidedToolArgument(28235)}`;
+    const created = await f.call({ operation: "create", format: "xlsx", sheets: [{ name: "Sheet", rows: [[content]] }] });
+    await f.capture(created);
+    expect((await f.call({ operation: "read", file_id: created.files![0]!.artifactId })).text).toContain(content);
   });
 
   it("reads and inspects HTML that quotes a marker as part of a real report", async () => {
