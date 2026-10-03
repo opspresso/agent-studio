@@ -252,13 +252,13 @@ export const MAX_CONVERSATION_ID_LENGTH = 512;
  * back unchanged. Replacing them with a placeholder instead was tried, and it
  * made every Korean word two underscores: two conversations, one memory.
  *
- * Returns `null` when nothing survives or the encoding runs past the bound —
+ * Returns `null` for empty, malformed Unicode or oversized IDs —
  * no conversation is better than a wrong one, and a caller that needs to say
  * so (the API header) checks the same bound before it gets here.
  */
 export function conversationOf(surface: RunSurface, rawId: string | undefined | null): RunConversation | null {
   const trimmed = rawId?.trim();
-  if (!trimmed) {
+  if (!trimmed || trimmed.length > MAX_CONVERSATION_ID_LENGTH || !trimmed.isWellFormed()) {
     return null;
   }
   const id = encodeConversationId(trimmed);
@@ -267,6 +267,7 @@ export function conversationOf(surface: RunSurface, rawId: string | undefined | 
 
 /** Printable ASCII, minus `%` — what an id may carry as itself. */
 const SAFE_ID_CHAR = /^[\x21-\x24\x26-\x7e]$/;
+const conversationEncoder = new TextEncoder();
 
 /**
  * Percent-encode everything outside {@link SAFE_ID_CHAR}, `%` included so the
@@ -280,7 +281,7 @@ function encodeConversationId(raw: string): string {
       out += char;
       continue;
     }
-    for (const byte of new TextEncoder().encode(char)) {
+    for (const byte of conversationEncoder.encode(char)) {
       out += `%${byte.toString(16).toUpperCase().padStart(2, "0")}`;
     }
   }

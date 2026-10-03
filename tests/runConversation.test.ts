@@ -66,6 +66,11 @@ describe("conversationOf", () => {
     expect(conversationOf("api", "a".repeat(513))).toBeNull();
     expect(conversationOf("api", "회".repeat(60))).toBeNull();
   });
+
+  it.each(["\ud800", "\ud801", "\udfff", "thread-\ud800"])("refuses malformed Unicode IDs instead of merging them with replacement characters", id => {
+    expect(conversationOf("teams", id)).toBeNull();
+    expect(conversationOf("teams", "\ufffd")?.id).toBe("%EF%BF%BD");
+  });
 });
 
 describe("the surfaces' own spellings", () => {
