@@ -43,8 +43,7 @@ import {
 
 const DEFAULT_TTL_MS = 5_000;
 
-// A non-positive TTL would either disable caching entirely or (negative) make
-// every read a cache hit forever, so the floor is 1ms.
+// Keep cache lifetimes positive; invalid configured values use the default.
 const TTL_MS = positiveIntEnv("SETTINGS_CACHE_TTL_MS", DEFAULT_TTL_MS, 1);
 
 let cache: { value: AppSettings | null; fetchedAt: number } | undefined;
@@ -147,9 +146,8 @@ export async function isConfiguredAdmin(email: string): Promise<boolean> {
 }
 
 /**
- * Whether an address may perform admin-gated actions — registry mutations and
- * app settings. An empty list means "no restriction", which is what an unset
- * `ADMIN_EMAILS` has always meant here.
+ * The email-list check for shared-resource administration. An empty list imposes
+ * no email restriction; isEffectiveAdmin separately requires member-or-higher tier.
  *
  * Written on top of {@link isConfiguredAdmin} so the membership test itself has
  * one spelling: the two questions differ *only* in what an empty list means, and

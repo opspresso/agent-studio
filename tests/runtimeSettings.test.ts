@@ -437,10 +437,9 @@ describe("runtime settings precedence", () => {
 
 /**
  * The two admin questions differ only on the unconfigured case, and that
- * difference is load-bearing: `isAdminEmail` gates shared-registry mutations,
- * where "no list" has always meant "no restriction"; `isConfiguredAdmin` gates
- * overriding someone else's agent ownership, where the same reading would
- * hand every signed-in user write access to every agent.
+ * difference is intentional: `isAdminEmail` checks the shared-resource email
+ * restriction; `isConfiguredAdmin` controls explicit admin enrollment and tier
+ * locking. Neither predicate grants access to another user's Agent.
  */
 describe("admin predicates", () => {
   it("both accept an address on the configured list", async () => {
@@ -461,7 +460,7 @@ describe("admin predicates", () => {
     await expect(isConfiguredAdmin("someone@example.com")).resolves.toBe(false);
   });
 
-  it("diverge when no admin list is configured: open for registries, closed for ownership", async () => {
+  it("diverge without a configured list: unrestricted emails, no explicit admin enrollment", async () => {
     stub(null);
     await expect(isAdminEmail("anyone@example.com")).resolves.toBe(true);
     await expect(isConfiguredAdmin("anyone@example.com")).resolves.toBe(false);
