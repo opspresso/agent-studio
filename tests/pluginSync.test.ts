@@ -196,6 +196,7 @@ function makeDeps(opts: {
     skillRepo: skills.repo,
     skills: skills.useCases,
     mcps: mcps.mcps,
+    findBindings: async () => ({ skills: new Map(), mcpServers: new Map() }),
   };
   return { deps, skills, mcps, plugins };
 }
@@ -1211,15 +1212,16 @@ describe("syncPluginsFromSnapshot", () => {
     expect(report.mcpServers.orphaned).toEqual([{ name: "constructor", boundTo: ["bot"] }]);
   });
 
-  it("reports no bindings for constructor-named orphans when no lookup is configured", async () => {
+  it("reports unknown bindings when the lookup fails while preserving the sync result", async () => {
     const { deps } = makeDeps({
       skills: [storedSkill("constructor")],
       servers: [storedServer("constructor")],
     });
+    deps.findBindings = async () => { throw new Error("Agent lookup unavailable"); };
     const result = await syncPluginsFromSnapshot(deps, snapshot([repoPlugin("devops")]), ACTOR);
     const report = section(result, "devops");
-    expect(report.skills.orphaned).toEqual([{ name: "constructor", boundTo: [] }]);
-    expect(report.mcpServers.orphaned).toEqual([{ name: "constructor", boundTo: [] }]);
+    expect(report.skills.orphaned).toEqual([{ name: "constructor", boundTo: null }]);
+    expect(report.mcpServers.orphaned).toEqual([{ name: "constructor", boundTo: null }]);
   });
 
   it("records an adoption in the audit trail", async () => {

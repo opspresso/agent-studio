@@ -1417,6 +1417,7 @@ export const ko: Messages = {
     "Plugin 저장소의 .tar.gz (git archive 또는 체크아웃의 tar) — GitHub 에 닿을 수 없는 배포를 위한 경로입니다.",
   "plugins.archiveSource": "아카이브: {name}",
   "plugins.uploadFailed": "업로드에 실패했습니다",
+  "plugins.bindingsUnavailable": "연결된 Agent 조회 불가 — 삭제 전에 연결을 확인하세요",
   "plugins.syncFromGitHub": "GitHub에서 동기화",
   "plugins.source": "GitHub 원본: {repo} · {branch}",
   "plugins.syncNotConfigured": "Plugin 동기화가 설정되지 않았습니다. 설정에서 저장소와 토큰을 등록하세요.",

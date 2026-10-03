@@ -172,7 +172,9 @@ export function PluginSyncSummary({
                 checked={picked.includes(orphan.name)}
                 onChange={() => setPicked(toggle(picked, orphan.name))}
                 label={
-                  orphan.boundTo.length > 0
+                  orphan.boundTo === null
+                    ? `${orphan.name} — ${t("plugins.bindingsUnavailable")}`
+                    : orphan.boundTo.length > 0
                     ? `${orphan.name} — bound by ${orphan.boundTo.slice(0, 5).join(", ")}${
                         orphan.boundTo.length > 5 ? ` +${orphan.boundTo.length - 5} more` : ""
                       }`

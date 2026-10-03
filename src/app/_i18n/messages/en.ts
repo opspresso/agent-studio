@@ -1476,6 +1476,7 @@ export const en = {
     "A .tar.gz of the plugins repository (git archive or tar of a checkout) — for a deployment that cannot reach GitHub.",
   "plugins.archiveSource": "Archive: {name}",
   "plugins.uploadFailed": "Upload failed",
+  "plugins.bindingsUnavailable": "Agent bindings could not be checked; verify them before deleting",
   "plugins.syncFromGitHub": "Sync from GitHub",
   "plugins.source": "GitHub source: {repo} · {branch}",
   "plugins.syncNotConfigured": "Plugin sync is not configured. Add the repository and token in Settings.",

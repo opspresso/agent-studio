@@ -133,10 +133,10 @@ export interface SyncPluginsDeps {
   managedMcps?: Pick<ManagedMcpUseCases, "remove">;
   /**
    * Which Agents bind the names about to be offered for deletion — the
-   * blast radius next to the delete checkbox. Optional because it needs the
-   * agent store; without it orphans report with no binding info.
+   * blast radius next to the delete checkbox. A failed lookup is reported as
+   * unknown, so it cannot imply that deletion affects no Agents.
    */
-  findBindings?: (skills: string[], mcpServers: string[]) => Promise<OrphanBindings>;
+  findBindings: (skills: string[], mcpServers: string[]) => Promise<OrphanBindings>;
 }
 
 /**
@@ -661,8 +661,8 @@ export async function syncPluginsFromSnapshot(
 
   // The delete checkbox gets its blast radius: which Agents bind each
   // orphan. One batched lookup, only when there is an orphan to annotate.
-  let bindings: OrphanBindings = { skills: new Map(), mcpServers: new Map() };
-  if (deps.findBindings && (orphanSkills.length > 0 || orphanServers.length > 0)) {
+  let bindings: OrphanBindings | undefined;
+  if (orphanSkills.length > 0 || orphanServers.length > 0) {
     try {
       bindings = await deps.findBindings(
         orphanSkills.map((entry) => entry.skill.name),
@@ -674,10 +674,10 @@ export async function syncPluginsFromSnapshot(
     }
   }
   for (const { skill, report } of orphanSkills) {
-    report.orphaned.push({ name: skill.name, boundTo: bindings.skills.get(skill.name) ?? [] });
+    report.orphaned.push({ name: skill.name, boundTo: bindings ? bindings.skills.get(skill.name) ?? [] : null });
   }
   for (const { server, report } of orphanServers) {
-    report.orphaned.push({ name: server.name, boundTo: bindings.mcpServers.get(server.name) ?? [] });
+    report.orphaned.push({ name: server.name, boundTo: bindings ? bindings.mcpServers.get(server.name) ?? [] : null });
   }
 
   // Plugin rows the snapshot no longer carries. Removing one does not cascade:
