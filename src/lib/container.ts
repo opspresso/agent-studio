@@ -145,7 +145,7 @@ import {
 import { runSlotRepository } from "@/infrastructure/db/repositories/runSlotRepository";
 import { triggerRepository } from "@/infrastructure/db/repositories/triggerRepository";
 import { telegramDestinationRepository } from "@/infrastructure/db/repositories/telegramDestinationRepository";
-import { dbReachable, llmReachable } from "@/infrastructure/health/probes";
+import { dbReachable } from "@/infrastructure/health/probes";
 import { checkReadiness } from "@/application/health/readiness";
 import { createMcpUseCases } from "@/application/mcp/mcpUseCases";
 import { createManagedMcpUseCases } from "@/application/mcp/managedMcpUseCases";
@@ -881,12 +881,8 @@ export const traceUseCases = createTraceUseCases({
   agents: agentRepository,
 });
 
-/** Readiness snapshot for the /api/ready probe (database + LLM channel). */
-export const readinessReport = () =>
-  checkReadiness({ checkDb: dbReachable, checkLlm: async () => {
-    const model = await getDefaultModel();
-    if (model) await llmReachable(() => resolveTarget(model));
-  } });
+/** Core readiness stays independent of model-provider availability. */
+export const readinessReport = () => checkReadiness({ checkDb: dbReachable });
 
 /** All execution sources spend the current Studio account's personal limits. */
 const userLimitsResolver = async (user: RunIdentity["user"]): Promise<TierLimits> => {

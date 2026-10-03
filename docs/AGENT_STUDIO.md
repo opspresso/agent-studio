@@ -215,7 +215,7 @@ schedule scan, 오디오 파일 정리는 audio worker, Sandbox 정리는 Worksp
 [SECURITY](SECURITY.md)가 이 경계와 예외를 소유한다.
 
 Usage는 비용, Trace는 실행 구조·시간·상태, Audit은 민감 작업의 행위자와 대상을 기록한다.
-`/api/health`는 liveness, `/api/ready`는 하류 연결과 draining, `/api/metrics`는 프로세스 지표다.
+`/api/health`는 liveness, `/api/ready`는 PostgreSQL 연결과 draining, `/api/metrics`는 프로세스 지표다.
 종료 시 readiness가 내려가며 실제 트래픽 차단과 drain 시간은 배포 설정과 서버 런타임에 달려 있다.
 [OPERATIONS](OPERATIONS.md)에서 프로브·보존·릴리스·장애 대응을 확인한다.
 

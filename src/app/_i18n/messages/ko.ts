@@ -1009,7 +1009,7 @@ export const ko: Messages = {
   "guide.operations.body":
     "배포 담당자가 모니터링·주기 호출·백업·rollout을 구성한다. 콘솔 설정을 저장하면 외부 인프라까지 자동으로 시작된다고 가정하지 않는다.",
   "guide.operations.health": "상태 점검과 모델 실행 구분",
-  "guide.operations.healthBody": "GET /api/health는 프로세스 생존을 확인한다. GET /api/ready는 DB와 선택된 기본 모델의 프로바이더 도달 가능성을 검사하며, 기본 모델이 없으면 프로바이더 검사를 생략한다. 검사 실패나 draining 중에는 503을 반환한다. models 엔드포인트의 401·404도 HTTP 응답이므로 도달 검사를 통과할 수 있다. 추론과 자격 증명은 짧은 Agent 실행으로 검증한다.",
+  "guide.operations.healthBody": "GET /api/health는 프로세스 생존을 확인한다. GET /api/ready는 DB 연결·자격 증명·스키마를 검사하며 검사 실패나 draining 중에는 503을 반환한다. 모델 프로바이더를 호출하지 않으므로 모델 장애 중에도 로그인·Settings·콘솔을 사용할 수 있다. 모델 자격 증명과 추론은 짧은 Agent 실행으로 검증한다.",
   "guide.operations.ticker": "외부 티커 구성",
   "guide.operations.tickerBody":
     "SCHEDULE_SCAN_TOKEN을 설정하고 외부 스케줄러가 최소 매분 한 번 X-Scan-Token 헤더로 POST /api/triggers/scan을 호출하도록 구성한다. 토큰 설정만으로 주기 작업이 시작되지는 않는다. 이 호출이 스케줄과 만료 DB 행 정리를 수행한다. 배포 토큰 미설정은 503, 요청 토큰 누락·불일치는 401이다. 활성화 후 scan 결과와 트리거 이력을 확인하며 장시간 중단 시 놓친 모든 발생분이 재실행되지는 않는다.",

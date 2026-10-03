@@ -1037,7 +1037,7 @@ export const en = {
   "guide.operations.body":
     "The deployment operator owns monitoring, scheduled calls, backups, and rollouts. Configure these alongside the application rather than assuming that saving a console setting starts background infrastructure.",
   "guide.operations.health": "Health is not a successful model run",
-  "guide.operations.healthBody": "GET /api/health checks process liveness. GET /api/ready checks the database and, when a default model is selected, its provider reachability. It returns 503 when a check fails or the process is draining. An HTTP response, including 401 or 404 from the models endpoint, can pass the reachability check. Verify inference and credentials with a short Agent run.",
+  "guide.operations.healthBody": "GET /api/health checks process liveness. GET /api/ready checks database connectivity, credentials and schema, returning 503 on a failed check or while draining. It does not contact model providers, so provider outages leave sign-in, Settings and the console available. Verify model credentials and inference with a short Agent run.",
   "guide.operations.ticker": "Run the external ticker",
   "guide.operations.tickerBody":
     "Set SCHEDULE_SCAN_TOKEN and configure an external scheduler to POST /api/triggers/scan with X-Scan-Token at least once per minute. Setting the token alone starts nothing. This call drives schedules and expired database-row cleanup. A missing deployment token returns 503; an absent or incorrect request token returns 401. Check scan results and trigger histories after enabling it; long outages do not replay every missed occurrence.",

@@ -1804,16 +1804,17 @@ UI의 추가 버튼은 조회한 facts를 즉시 저장한다. 공개 모델은 
 
 ```
 GET /api/health   → 200 (static)
-GET /api/ready    → 200 { ready: true, checks: { db, llm } }
+GET /api/ready    → 200 { ready: true, checks: { db } }
                   | 503 { ready: false, draining: true }          (after SIGTERM)
-                  | 503 { ready: false, checks: { db, llm } }     ("ok" | "unreachable" each)
+                  | 503 { ready: false, checks: { db } }     (db: "ok" | "unreachable")
 GET /api/metrics  → 200 text/plain; version=0.0.4
 ```
 
 `/api/health` 는 liveness 다. "프로세스가 서빙하고 있는가"에 답하는 정적 200 이고, 의존성이
-없어서 하류의 순간적인 문제가 재시작을 유발하지 않는다. `/api/ready` 는 readiness 다. PostgreSQL 과
-LLM 채널을 찔러 보고 (짧은 타임아웃, 상세는 드러내지 않는다), 하류에 닿을 수 없거나 인스턴스가
-SIGTERM 이후 draining 중이면 503 을 돌려준다.
+없어서 하류의 순간적인 문제가 재시작을 유발하지 않는다. `/api/ready`는 PostgreSQL 연결·자격 증명·
+스키마를 짧은 타임아웃으로 검사한다. DB 검사 실패 또는 SIGTERM 이후 draining 중이면 503을
+반환하며 오류 상세는 노출하지 않는다. 모델 프로바이더를 호출하지 않으므로 모델 장애 중에도
+로그인·설정·콘솔을 사용할 수 있다.
 
 `/api/metrics` 는 Prometheus scrape 이고 `agent_studio_active_runs`,
 `agent_studio_oldest_active_run_seconds`, `agent_studio_build_info`,
