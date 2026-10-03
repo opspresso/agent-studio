@@ -61,6 +61,28 @@ test("a vertical merge takes the rows it covers with it", () => {
   assert.equal(text, "| A | B | C |\n| --- | --- | --- |\n|  | D | E |");
 });
 
+test("vertical merge origins stay separate across columns, restarts and gaps", () => {
+  const restart = '<w:vMerge w:val="restart"/>';
+  const wide = '<w:gridSpan w:val="2"/>';
+  const continued = '<w:vMerge/>';
+  const row = (cells: string) => `<w:tr>${cells}</w:tr>`;
+  const xml = '<w:tbl>' +
+    row(tc(restart + wide, "A") + tc(restart, "B")) +
+    row(tc(continued + wide, "") + tc(continued, "")) +
+    row(tc(restart, "C") + tc(restart, "D") + tc(continued, "")) +
+    row(tc(continued, "") + tc(continued, "") + tc(continued, "")) +
+    row("") +
+    row(tc(continued, "") + tc(continued, "") + tc(continued, "")) +
+    '</w:tbl>';
+  const table = documentXmlToBlocks(xml).blocks[0];
+  assert.ok(table?.kind === "table");
+  assert.deepEqual(table.rows[0]!.cells.map(cell => ({ colspan: cell.colspan, rowspan: cell.rowspan })), [
+    { colspan: 2, rowspan: 2 }, { colspan: undefined, rowspan: 4 },
+  ]);
+  assert.deepEqual(table.rows[2]!.cells.map(cell => cell.rowspan), [2, 2]);
+  assert.equal(table.totalRows, 6);
+});
+
 test("a table inside a skipped subtree leaves the real one standing", () => {
   // `open` did not push inside an annotation and `close` popped anyway, so the
   // outer table was finished early and every cell after it had nowhere to go.

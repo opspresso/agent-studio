@@ -305,21 +305,23 @@ interface Emphasis {
  * same column and the lower one must not be handed the upper one's rows.
  */
 function growVerticalMerges(table: Building): void {
+  const nearest = new Map<number, { row: number; cell: ReadCell }>();
+  let nextRow = 0;
   for (const { row, column } of table.continued) {
-    for (let above = row - 1; above >= 0; above -= 1) {
-      const found = table.starts[above]?.find(
-        ({ cell, start }) => column >= start && column < start + (cell.colspan ?? 1),
-      );
-      if (!found) {
-        continue;
+    // Index each preceding cell once instead of rescanning the whole merge for every row.
+    while (nextRow < row) {
+      for (const { cell, start } of table.starts[nextRow] ?? []) {
+        const origin = { row: nextRow, cell };
+        for (let at = start; at < start + (cell.colspan ?? 1); at += 1) nearest.set(at, origin);
       }
-      const covered = found.cell.rowspan ?? 1;
-      // Only the merge this row actually continues: one that already stops
-      // above this row is a different merge in the same column.
-      if (above + covered === row) {
-        found.cell.rowspan = covered + 1;
-      }
-      break;
+      nextRow += 1;
+    }
+    const found = nearest.get(column);
+    if (!found) continue;
+    const covered = found.cell.rowspan ?? 1;
+    // A gap ends the merge even when no newer cell occupies that column.
+    if (found.row + covered === row) {
+      found.cell.rowspan = covered + 1;
     }
   }
 }
