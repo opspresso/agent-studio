@@ -25,6 +25,22 @@ describe("markdownToTelegramHtml", () => {
     expect(markdownToTelegramHtml("`**not bold**`")).toBe("<code>**not bold**</code>");
   });
 
+  it("preserves Markdown markers in link destinations while formatting the label and surrounding text", () => {
+    expect(markdownToTelegramHtml('**[see `x` and _docs_](https://example.com/__path__/~~value~~?q=`x`&n="v")**')).toBe(
+      '<b><a href="https://example.com/__path__/~~value~~?q=`x`&amp;n=&quot;v&quot;">see <code>x</code> and <i>docs</i></a></b>',
+    );
+  });
+
+  it("does not mistake literal control characters for internal code placeholders", () => {
+    expect(markdownToTelegramHtml("literal \0" + "0\0 and `code`")).toBe("literal \0" + "0\0 and <code>code</code>");
+  });
+
+  it("escapes a quoted fence language inside the HTML attribute", () => {
+    expect(markdownToTelegramHtml('```ts" data-x="y\ncode\n```')).toBe(
+      '<pre><code class="language-ts&quot; data-x=&quot;y">code</code></pre>',
+    );
+  });
+
   it("renders fenced code as pre, with the language when named, and closes an unfinished fence", () => {
     expect(markdownToTelegramHtml("before\n```ts\nconst a = 1 < 2;\n```\nafter")).toBe(
       'before\n<pre><code class="language-ts">const a = 1 &lt; 2;</code></pre>\nafter',
