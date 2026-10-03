@@ -53,6 +53,7 @@ const personal = (text: string, over: Record<string, unknown> = {}) => ({
   type: "message",
   id: "act-9",
   serviceUrl: "https://smba.trafficmanager.net/emea/",
+  channelId: "msteams",
   from: { id: "29:u", name: "Bruce" },
   recipient: { id: "28:bot" },
   conversation: { id: "a:1", conversationType: "personal" },
@@ -92,6 +93,8 @@ describe("the Teams messaging endpoint", () => {
     personal("hi", { serviceUrl: 42 }),
     personal("hi", { entities: "not entities" }),
     personal("hi", { attachments: "not attachments" }),
+    personal("hi", { channelId: "webchat" }),
+    personal("hi", { channelId: undefined }),
   ])("refuses a malformed activity before claiming it: %j", async (payload) => {
     const res = await handleTeamsActivityRequest(request(payload), BINDING);
     expect(res.status).toBe(400);

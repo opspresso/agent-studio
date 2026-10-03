@@ -231,6 +231,15 @@ async function verifyBearer(
   if (!key) {
     return { ok: false, reason: "unknown signing key" };
   }
+  // Bot Framework keys without endorsements are unrestricted. A nonempty
+  // list limits the channels the key may authenticate (as in the official SDK).
+  if (key.endorsements !== undefined && (
+    !Array.isArray(key.endorsements) ||
+    !key.endorsements.every((endorsement) => typeof endorsement === "string") ||
+    (key.endorsements.length > 0 && !key.endorsements.includes("msteams"))
+  )) {
+    return { ok: false, reason: "signing key is not endorsed for Teams" };
+  }
   try {
     const verified = verifySignature(
       "RSA-SHA256",

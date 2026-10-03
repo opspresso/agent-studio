@@ -85,6 +85,26 @@ afterEach(() => {
 });
 
 describe("verifying a Bot Framework token", () => {
+  it.each([
+    { endorsements: ["webchat"], accepted: false },
+    { endorsements: "msteams", accepted: false },
+    { endorsements: ["webchat", "msteams"], accepted: true },
+    { endorsements: [], accepted: true },
+    { endorsements: undefined, accepted: true },
+  ])("honors the signing key's channel restriction: $endorsements", async ({ endorsements, accepted }) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => jsonResponse(url.includes("openidconfiguration")
+      ? { jwks_uri: "https://login.botframework.com/keys" }
+      : { keys: [{ ...JWK, endorsements }] })));
+    try {
+      const verdict = await teamsClient.verifyRequest(`Bearer ${sign(goodClaims())}`, { appId: APP, serviceUrl: SERVICE });
+      expect(verdict).toEqual(accepted ? { ok: true } : { ok: false, reason: "signing key is not endorsed for Teams" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("does not trust expired cached keys while a failed refresh is paced", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));

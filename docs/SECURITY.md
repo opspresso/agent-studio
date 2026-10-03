@@ -302,7 +302,8 @@ ACK 후 실행하는 과정과 외부 도구 효과를 하나의 transaction으�
 end-to-end exactly-once를 보장하지 않는다. 플랫폼이 재전달하지 않으면 유실 이벤트를
 스스로 복구하는 worker도 없다. Agent webhook의 멱등 계약은 [Trigger 설계](design/triggers.md)를 따른다.
 
-Teams signing metadata는 HTTP 성공 응답만 사용한다. 조회 실패도 재시도 간격에 포함하며
+Teams activity는 `channelId: msteams`만 받으며, 서명 키의 비어 있지 않은 endorsements에
+`msteams`가 없으면 인증을 거부한다. Teams signing metadata는 HTTP 성공 응답만 사용한다. 조회 실패도 재시도 간격에 포함하며
 만료된 키를 장애 중 인증에 사용하지 않는다. 조회·캐시의 현재 계약은 [Teams 설계](design/teams.md)를 따른다.
 
 ## 인바운드 요청 크기

@@ -17,12 +17,14 @@ masked·빈 client secret은 기존 값을 유지한다. 저장은 Microsoft를 
 | 경계 | 검사 |
 |---|---|
 | 서명 | RS256, Bot Framework discovery가 제공한 JWKS의 키 |
+| 채널 | activity의 channelId는 `msteams`. 서명 키에 비어 있지 않은 endorsements가 있으면 `msteams`를 포함해야 함 |
 | issuer·audience | `https://api.botframework.com`, 이 봇의 App ID(GUID 대소문자 무관) |
 | 시간 | 유한한 exp와 선택적 nbf, 5분 skew |
 | 답변 주소 | token의 serviceurl과 activity의 serviceUrl 정규화 값이 같아야 함 |
 
 Emulator token은 받지 않는다. 서명 키는 하루 캐시하며 조회 시도는 실패해도 최소 1분 간격으로
 제한한다. 동시 호출은 같은 조회를 기다리며 metadata HTTP 실패와 만료된 캐시 키는 인증에 쓰지 않는다.
+endorsements가 없거나 빈 키는 [공식 SDK의 규칙](https://github.com/microsoft/botbuilder-js/blob/main/libraries/botframework-connector/src/auth/jwtTokenExtractor.ts)에 따라 채널 제한이 없는 키로 취급한다.
 
 app token은 지정한 tenant 또는 기본 `botframework.com` tenant에서 받는다.
 캐시는 App ID·tenant·secret hash로 구분하고 만료 1분 전에 폐기한다.
