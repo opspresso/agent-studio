@@ -120,6 +120,26 @@ async function collectText(source: AsyncGenerator<EngineChunk>): Promise<string>
 }
 
 describe("PiiFilter", () => {
+  it("preserves complete email matches at local-part and Unicode boundaries", () => {
+    const filter = new PiiFilter();
+    const addresses = ["tag.user+box%test_1-name@example.co", "UPPER@EXAMPLE.COM", "user2@example.test"];
+    const input = `(${addresses[0]}) 😀${addresses[1]} /${addresses[2]}`;
+    const masked = filter.mask(input);
+    expect(filter.snapshot().map(([original]) => original)).toEqual(addresses);
+    expect(filter.restore(masked)).toBe(input);
+    for (const address of addresses) expect(masked).not.toContain(address);
+  });
+
+  it("leaves long non-address words intact and still masks an address after them", () => {
+    const filter = new PiiFilter();
+    const prefix = "a".repeat(16_000);
+    const input = `${prefix} actual@example.test`;
+    const masked = filter.mask(input);
+    expect(masked.startsWith(`${prefix} [[PII:`)).toBe(true);
+    expect(filter.snapshot().map(([original]) => original)).toEqual(["actual@example.test"]);
+    expect(filter.restore(masked)).toBe(input);
+  });
+
   it("replaces email and phone values while preserving their format", () => {
     const filter = new PiiFilter();
     const original = "user.12@example.com / +82 10-1234-5678";

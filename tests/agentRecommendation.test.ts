@@ -1,6 +1,16 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createAgentRecommendationUseCases } from "@/application/llm/agentRecommendation";
 import type { DecisionModel } from "@/domain/llm/decision";
+
+const entropy = vi.hoisted(() => ({ seed: 0x12345678 }));
+vi.mock("node:crypto", async original => ({
+  ...await original<typeof import("node:crypto")>(),
+  randomInt: (max: number) => {
+    entropy.seed = (Math.imul(entropy.seed, 1664525) + 1013904223) >>> 0;
+    return Math.floor(entropy.seed / 0x1_0000_0000 * max);
+  },
+}));
+beforeEach(() => { entropy.seed = 0x12345678; });
 
 const candidates = [
   { name: "writer", displayName: "Writer", description: "Drafts articles" },
@@ -22,6 +32,26 @@ describe("Agent recommendation", () => {
       model: "router/jev", state: "Please fix this code",
       criteria: { agent_0: "Writer: Drafts articles", agent_1: "Coder: Changes code", none: expect.any(String) },
     }));
+  });
+
+  it("keeps Unicode characters intact at candidate description limits", async () => {
+    const choose = vi.fn<DecisionModel["choose"]>().mockResolvedValue({ choice: "agent_0", confidence: 1, probabilities: {} });
+    const useCases = createAgentRecommendationUseCases({ decision: { choose }, quota, selectedModel: async () => "router/jev",
+      candidates: async () => [{ name: "writer", displayName: "a".repeat(99) + "😀tail", description: "b".repeat(199) + "😀tail" }],
+    });
+    await useCases.recommend("chat", "person@example.test", "Write this");
+    expect(choose.mock.calls[0]![0].criteria.agent_0).toBe(`${"a".repeat(99)}: ${"b".repeat(199)}`);
+  });
+
+  it("masks complete PII before a candidate preview cuts through it", async () => {
+    const choose = vi.fn<DecisionModel["choose"]>().mockResolvedValue({ choice: "agent_0", confidence: 1, probabilities: {} });
+    const useCases = createAgentRecommendationUseCases({ decision: { choose }, quota, selectedModel: async () => "router/jev",
+      candidates: async () => [{ name: "support", displayName: "x".repeat(95) + " alice@example.com", description: "x".repeat(193) + " 010-1234-5678" }],
+    });
+    await useCases.recommend("chat", "person@example.test", "Help");
+    const sent = choose.mock.calls[0]![0].criteria.agent_0;
+    expect(sent).not.toContain("alic");
+    expect(sent).not.toContain("010-");
   });
 
   it("does not call the provider without a selected model or candidates", async () => {
