@@ -1804,9 +1804,9 @@ UI의 추가 버튼은 조회한 facts를 즉시 저장한다. 공개 모델은 
 
 ```
 GET /api/health   → 200 (static)
-GET /api/ready    → 200 { ready: true, checks: { db } }
+GET /api/ready    → 200 { ready: true, checks: { db: "ok" } }
                   | 503 { ready: false, draining: true }          (after SIGTERM)
-                  | 503 { ready: false, checks: { db } }     (db: "ok" | "unreachable")
+                  | 503 { ready: false, checks: { db: "unreachable" } }
 GET /api/metrics  → 200 text/plain; version=0.0.4
 ```
 

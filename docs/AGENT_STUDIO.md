@@ -176,26 +176,30 @@ Artifact metadata는 DB에, bytes는 S3 호환 저장소에 둔다. URL 발급�
 
 Workspace는 파일·Git·native CLI Session의 영속 공간이고 Sandbox는 작업을 실행하는 격리 자원이다.
 `parameters.workspaceTools`, Agent 정책, 사용자 권한과 배포 설정이 함께 충족되어야 Agent에
-도구가 제공된다. worker의 GitHub API와 Git 전송은 해당 Agent의 GitHub MCP 인증을 사용하며,
-저장소 정책도 별도로 검사한다. Settings → Plugins의 토큰은 Plugin 다운로드에만 사용한다.
+도구가 제공된다. worker의 GitHub API와 Git 전송은 해당 Agent에 바인딩한 GitHub MCP에 대한
+호출자의 개인 OAuth 권한을 사용하며 저장소 정책도 검사한다.
+Settings → Plugins의 토큰은 Plugin 다운로드에만 사용한다.
 
-별도 Workspace worker가 실행·관찰·검사·체크포인트·만료 정리를 담당한다. 커밋·푸시·PR·main 반영은
-검토한 Git 상태에 대한 단계별 승인으로 실행한다. 결과와 CI 대기는 연결된 원래 Chat에 전달할 수 있다.
+별도 Workspace worker가 실행·관찰·검사·체크포인트·만료 정리를 담당한다.
+커밋·작업 브랜치 푸시·PR 생성은 코딩 요청에 포함된 권한으로 실행한다. main 반영·태그·릴리스·배포에는
+검토한 변경에 대한 별도 확인이 필요하다. 결과와 CI 대기는 연결된 원래 Chat에 전달할 수 있다.
 불확실한 작업은 자동 재실행하지 않는다. [Workspace 설계](design/workspaces.md)를 보라.
 
 ## 외부 실행과 연동
 
-Predict·OpenAI 호환 Chat Completions·Agent SSE는 Agent 실행 API다. Agent token은
-해당 Agent의 실행 credential이며 사용자 Session이나 Workspace 권한을 만들지 않는다.
-로그인 사용자로 실행하더라도 stateless API에는 영속 Chat 승인 화면이 없다.
+Predict·OpenAI 호환 Chat Completions·Agent SSE는 Agent 실행 API다. 개인 Agent token은
+발급한 Studio 사용자의 현재 권한으로 해당 Agent를 실행한다. Workspace 도구와 Git 승인에도
+같은 사용자와 Agent 정책을 적용한다. 토큰은 브라우저 Session을 만들지 않으며,
+stateless API에는 영속 Chat 승인 화면이 없다.
 
 Slack·Telegram·Teams는 Agent별 bot으로 같은 메시징 파이프라인을 사용한다. 인증과 참여 판단,
 첨부 수신·응답 렌더링은 플랫폼별 adapter가 담당한다. Slack은 플랫폼 thread를 읽고,
 Telegram·Teams는 앱이 한정된 transcript를 보관한다. 중복 delivery를 막지만 실행 중 급사한
 비멱등 작업을 자동 재생하지 않는다. [메시징 설계](design/messaging.md)를 보라.
 
-Webhook은 인증한 이벤트를 접수하고 현재 Agent 설정을 백그라운드 실행한다. Schedule은 외부 ticker가
-scan API를 호출해야 진행된다. 각 표면의 권한·이력은 서로 독립적이다.
+Webhook은 개인 토큰의 발급 사용자로 이벤트를 실행하고, Schedule은 등록한 사용자로 실행한다.
+Schedule은 외부 ticker가 scan API를 호출해야 진행된다. 각 창구의 인증·이력은 별도이며,
+실행 전에는 같은 Studio 계정의 현재 권한을 검사한다.
 정확한 요청·상태·응답은 [API](API.md), 자동화 동작은 [Trigger 설계](design/triggers.md)에 있다.
 
 ## 저장·보안·운영
