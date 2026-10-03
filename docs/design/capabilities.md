@@ -136,7 +136,7 @@ MCP 후보는 tool hit와 server hit를 서버 이름으로 합치고 더 높은
 tool hit가 있으면 그 도구들로 binding을 좁히고 server hit만 있으면 서버를 연결한 뒤 목록을 읽는다.
 후보를 넉넉하게 읽어 삭제됐거나 연결 권한이 없는 후보가 유효한 슬롯을 차지하지 않게 한다.
 
-OAuth 서버는 해당 Agent의 `connected` 연결이 있을 때만 자동 추가한다.
+OAuth 서버는 호출자의 Studio 사용자 ID에 속한 `connected` 연결이 있을 때만 자동 추가한다.
 선택한 추가 목록은 이름순으로 정렬해 alias 배정과 프롬프트 배치가 query 점수에 따라 흔들리지 않게 한다.
 새 capability는 `discovered`로 반환하며 손실인 warning과 구분한다.
 실행은 로그, preview는 별도 목록으로 표시한다.

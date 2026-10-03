@@ -275,7 +275,7 @@ describe("capability discovery", () => {
     ]);
   });
 
-  it("refuses an OAuth server this agent has not connected", async () => {
+  it("refuses an OAuth server the caller has not connected", async () => {
     const { deps, opened } = harness({
       catalog: fakeCatalog({ mcpTool: [found("slack", "post")] }),
       servers: [server("slack", OAUTH)],
@@ -286,10 +286,7 @@ describe("capability discovery", () => {
   });
 
   it("offers an OAuth server the caller has connected", async () => {
-    // Authorizing a server in the console says this agent may use it, and
-    // discovery has no business being the one caller that ignores that. The
-    // connection rows answer by being read — resolving the credential would
-    // refresh tokens and make discovery a writer.
+    // Discovery reads the caller's grants without refreshing credentials.
     const { deps, opened } = harness({
       catalog: fakeCatalog({ mcpTool: [found("slack", "post")] }),
       servers: [server("slack", OAUTH)],
