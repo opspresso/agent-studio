@@ -51,6 +51,11 @@ docker compose up -d postgres minio minio-init # PostgreSQL 18 + MinIO + bucket
 pnpm dev                             # http://localhost:3000 — 스키마는 부팅 때 앱이 만든다
 ```
 
+로컬 브라우저는 `localhost` 또는 `127.0.0.1`로 접속한다. 개발용 WebSocket도 같은 호스트를
+사용한다. `next.config.ts`의 추가 개발 출처는 호스트 이름만 받으며 포트를 포함하지 않는다.
+다른 개발 도메인이 필요하면 정확한 호스트를 추가한다
+([Next.js allowedDevOrigins](https://nextjs.org/docs/app/api-reference/config/next-config-js/allowedDevOrigins)).
+
 `.env.example` 의 `DATABASE_URL`(`postgres://agent_studio:agent_studio@localhost:5432/agent_studio`)
 이 이 컨테이너를 가리킨다. 빈 DB의 현재 스키마는 `src/infrastructure/db/migrations.ts` 가
 부팅 때 advisory lock 아래에서 만든다. pgvector 확장도 거기서 만든다. 기존 DB는 기준선 버전
