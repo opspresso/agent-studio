@@ -307,8 +307,8 @@ function ToolSelector({
   onChange: (tools: string[]) => void;
   load: () => Promise<McpTool[]>;
   /**
-   * Bumped when the agent's connection to this server changes. An OAuth
-   * server answers `401` until the agent has authorized, and the connection
+   * Bumped when the caller's connection to this server changes. An OAuth
+   * server refuses tool discovery until that caller has authorized, and the connection
    * card that authorizes it is in the same dialog as this list — so without a
    * signal the reader authorizes, watches the card go green, and the tools
    * above it stay on the failure they were loaded with.
@@ -323,7 +323,7 @@ function ToolSelector({
     let cancelled = false;
     // Back to loading, not "keep the old answer until the new one lands": a
     // stale error is what this reload exists to clear, and a stale *list* would
-    // be the tools of the credentials the agent no longer uses.
+    // be the tools of the credentials the caller no longer uses.
     setTools(null);
     setError(null);
     load().then(
