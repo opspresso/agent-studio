@@ -229,7 +229,7 @@ export async function recallMemories(input: {
   const answers = await Promise.all(
     targets.map(async ({ server, alias }) => {
       try {
-        const result = await settleWithin(callMcpTool(alias, { query }), input.signal);
+        const result = await settleWithin(() => callMcpTool(alias, { query }), input.signal);
         return { server, text: result.text.trim() };
       } catch (error) {
         // A run cancelled mid-recall is not a memory server that failed; the
@@ -287,7 +287,7 @@ export async function recallMemories(input: {
  * honours the run's signal itself — only stopped being waited for, and both of
  * its outcomes are handled so a late answer is never an unhandled rejection.
  */
-async function settleWithin<T>(pending: Promise<T>, signal?: AbortSignal): Promise<T> {
+async function settleWithin<T>(call: () => Promise<T>, signal?: AbortSignal): Promise<T> {
   // Already cancelled: nothing to wait for. Checked before a listener is
   // registered, since `abort` will not fire again.
   signal?.throwIfAborted();
@@ -306,7 +306,12 @@ async function settleWithin<T>(pending: Promise<T>, signal?: AbortSignal): Promi
     }, RECALL_TIMEOUT_MS);
     unrefTimer(timer);
     signal?.addEventListener("abort", onAbort, { once: true });
-    pending.then(
+    // Start only after cancellation and rejection handlers are installed. The
+    // call itself may synchronously abort the signal or throw.
+    Promise.resolve().then(() => {
+      signal?.throwIfAborted();
+      return call();
+    }).then(
       (value) => {
         settle();
         resolve(value);
