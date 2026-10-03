@@ -28,7 +28,11 @@ export const mcpOAuthStateRepository: McpOAuthStateRepository = {
     if (!item || isExpired(item.expiresAt, Date.now())) {
       return null;
     }
-    if (typeof item.issuer !== "string" || typeof item.userId !== "string" || !item.userId) {
+    if (typeof item.issuer !== "string" || !item.issuer || typeof item.userId !== "string" || !item.userId ||
+        typeof item.redirectUri !== "string" || !item.redirectUri ||
+        typeof item.clientId !== "string" || !item.clientId ||
+        typeof item.resource !== "string" || !item.resource ||
+        !Array.isArray(item.scopes) || !item.scopes.every(scope => typeof scope === "string")) {
       return null;
     }
     return {
@@ -38,12 +42,11 @@ export const mcpOAuthStateRepository: McpOAuthStateRepository = {
       codeVerifier: item.codeVerifier as string,
       userEmail: item.userEmail as string,
       userId: item.userId,
-      ...(typeof item.redirectUri === "string" ? { redirectUri: item.redirectUri } : {}),
-      ...(typeof item.clientId === "string" ? { clientId: item.clientId } : {}),
+      redirectUri: item.redirectUri,
+      clientId: item.clientId,
       ...(item.clientFromRegistry === true ? { clientFromRegistry: true } : {}),
-      ...(typeof item.resource === "string" ? { resource: item.resource } : {}),
-      ...(Array.isArray(item.scopes) && item.scopes.every((scope) => typeof scope === "string")
-        ? { scopes: item.scopes as string[] } : {}),
+      resource: item.resource,
+      scopes: item.scopes as string[],
       issuer: item.issuer,
       issParameterSupported: item.issParameterSupported === true,
       createdAt: item.createdAt as string,

@@ -164,6 +164,8 @@ fingerprint에 묶이며 설정 변경 후 이전 계정 표시를 재사용하�
 Client ID가 달라지면 기존 grant를 거절한다. 개별 등록 client secret은 해당 connection에 남는다.
 Client ID·Secret 수동 입력은 관리자 공용 앱 설정에만 제공한다. 개인 연결 응답에는
 client Secret을 포함하지 않는다. issuer·resource가 달라진 grant는 실행에 사용하지 않는다.
+승인 대기 상태에는 요청 당시의 client ID·resource·redirect URI·scopes를 필수로 저장한다.
+누락된 상태는 현재 설정으로 보완하지 않고 토큰 교환 전에 거절하며, 사용자가 연결을 다시 시작해야 한다.
 
 credential 선택은 기존 client, 사용할 수 있는 Client ID Metadata Document,
 dynamic registration 순서다. 설치 공용 metadata URL은 설정한 공개 base로만 만든다.
