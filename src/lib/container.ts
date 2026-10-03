@@ -155,10 +155,10 @@ import { createMcpAuthProvider } from "@/application/mcp/mcpAuthProvider";
 import { createSkillUseCases } from "@/application/skill/skillUseCases";
 import { createPluginUseCases } from "@/application/plugin/pluginUseCases";
 import { createCapabilityVisibility } from "@/application/plugin/capabilityVisibility";
-import { syncPluginsFromSnapshot } from "@/application/plugin/syncPlugins";
+import { createPluginSyncUseCases, type PluginSyncOptions } from "@/application/plugin/pluginSyncUseCases";
 import { findRegistryBindings } from "@/application/plugin/bindingIndex";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
-import { isArchiveSync, type PluginsRepoSnapshot, type PluginSyncSelection } from "@/domain/plugin/sync";
+import type { PluginSyncSelection } from "@/domain/plugin/sync";
 import { pluginRepository } from "@/infrastructure/db/repositories/pluginRepository";
 import {
   pluginSyncLock,
@@ -188,7 +188,6 @@ import type { CatalogSearchDeps } from "@/application/catalog/searchCatalog";
 import { cacheQueryEmbeddings } from "@/application/catalog/queryCache";
 import { probeCapabilityReranker } from "@/application/catalog/probeReranker";
 import { log } from "@/shared/logger";
-import { startSequentialPoll } from "@/shared/sequentialPoll";
 import { openAiEmbeddings } from "@/infrastructure/llm/embeddings";
 import { createReranker } from "@/infrastructure/llm/reranker";
 import { createPgVectorStore } from "@/infrastructure/vector/pgVectorStore";
@@ -632,102 +631,21 @@ export const modelSelectionUseCases = createModelSelectionUseCases({
     : {}),
 });
 
-/**
- * Pull the Agent Plugins repo and sync every plugin's skills and MCP servers.
- * Assembled here so the route never holds a repository — it only decides how
- * failures map to status codes. The caller passes the config it already
- * resolved: reading it again here would be a second settings load, and one
- * that can straddle the cache TTL and pick a different repo than the caller's
- * own guard checked. Servers go through `mcpUseCases` so a synced entry faces
- * the same URL guard a typed one does.
- */
-/** How long a crashed sync may hold the door shut. Syncs finish in seconds. */
-const PLUGIN_SYNC_LEASE_MS = 5 * 60_000;
-interface PluginSyncOptions { automatic?: boolean }
-
-/**
- * What both entry points share: the lease, the deps bag, the persisted report
- * and the reindex. Only how the snapshot is obtained differs, and keeping that
- * the single variable is what lets the archive path stay the same sync.
- */
-const runPluginSync = async (
-  repo: string,
-  loadSnapshot: () => Promise<PluginsRepoSnapshot>,
-  actorEmail: string,
-  selection?: PluginSyncSelection,
-  options: PluginSyncOptions = {},
-) => {
-  // One sync per repo at a time: a second one would double every GitHub read
-  // and leave two contradicting reports.
-  const lease = await pluginSyncLock.acquire(repo, PLUGIN_SYNC_LEASE_MS);
-  if (!lease) {
-    throw new ConflictError("A plugins sync is already running; wait for it to finish.");
-  }
-  let ownershipFailure: unknown;
-  let renewal: Promise<void> = Promise.resolve();
-  const assertOwnership = async () => {
-    if (ownershipFailure !== undefined) throw ownershipFailure;
-    try {
-      if (!await pluginSyncLock.renew(repo, lease, PLUGIN_SYNC_LEASE_MS)) {
-        throw new ConflictError("Plugin sync lost its execution lease; its remaining changes were not applied.");
-      }
-    } catch (error) { ownershipFailure = error; throw error; }
-  };
-  const stopHeartbeat = startSequentialPoll({
-    intervalMs: PLUGIN_SYNC_LEASE_MS / 3,
-    poll: async () => { renewal = assertOwnership(); await renewal; },
-    onError: () => stopHeartbeat(),
-  });
-  try {
-    const result = await pluginSyncLock.withOwnership(repo, lease, async () => {
-      // The report may change while a tick reads GitHub or waits for its background callback.
-      if (options.automatic) {
-        const last = await pluginSyncReportRepository.get(repo);
-        if (last && isArchiveSync(last.report.commitSha)) {
-          throw new ConflictError("Automatic plugin sync is held by an uploaded archive; run a manual sync to replace it.");
-        }
-      }
-      const snapshot = await loadSnapshot();
-      await assertOwnership();
-      const report = await syncPluginsFromSnapshot(
-        {
-          assertOwnership,
-          plugins: pluginRepository,
-          pluginRows: syncPluginUseCases,
-          skillRepo: skillRepository,
-          skills: syncSkillUseCases,
-          mcps: syncMcpUseCases,
-          ...(managedMcpUseCases ? { managedMcps: managedMcpUseCases } : {}),
-          findBindings: (skills, mcpServers) =>
-            findRegistryBindings(
-              { agents: agentRepository },
-              skills,
-              mcpServers,
-            ),
-        },
-        snapshot,
-        actorEmail,
-        selection,
-      );
-      // Publication shares the lease check with its actual item write.
-      await assertOwnership();
-      await pluginSyncReportRepository.put({
-        repo,
-        report,
-        actorEmail,
-        finishedAt: new Date().toISOString(),
-      });
-      return report;
-    });
-    // Deferred reindex work must not inherit a lease that is about to be released.
-    reindexAfterSync();
-    return result;
-  } finally {
-    stopHeartbeat();
-    await renewal.catch(() => {});
-    await pluginSyncLock.release(repo, lease);
-  }
-};
+/** Both source adapters share the application-owned sync admission and publication flow. */
+const pluginSyncUseCases = createPluginSyncUseCases({
+  lock: pluginSyncLock,
+  reports: pluginSyncReportRepository,
+  sync: {
+    plugins: pluginRepository,
+    pluginRows: syncPluginUseCases,
+    skillRepo: skillRepository,
+    skills: syncSkillUseCases,
+    mcps: syncMcpUseCases,
+    ...(managedMcpUseCases ? { managedMcps: managedMcpUseCases } : {}),
+    findBindings: (skills, mcpServers) => findRegistryBindings({ agents: agentRepository }, skills, mcpServers),
+  },
+  scheduleReindex: () => reindexAfterSync(),
+});
 
 export const syncPluginsFromRepo = async (
   repoConfig: Awaited<ReturnType<typeof getPluginsRepoConfig>>,
@@ -735,7 +653,7 @@ export const syncPluginsFromRepo = async (
   selection?: PluginSyncSelection,
   options?: PluginSyncOptions,
 ) =>
-  runPluginSync(
+  pluginSyncUseCases.run(
     repoConfig.repo ?? "",
     async () =>
       (await import("@/infrastructure/github/pluginsRepoClient")).fetchPluginsRepoSnapshot(repoConfig),
@@ -757,7 +675,7 @@ export const syncPluginsFromArchive = async (
   actorEmail: string,
   selection?: PluginSyncSelection,
 ) =>
-  runPluginSync(
+  pluginSyncUseCases.run(
     repo,
     async () => {
       const { snapshotFromArchive, TarArchiveError } = await import(

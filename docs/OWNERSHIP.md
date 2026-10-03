@@ -214,6 +214,7 @@ Agent 설정은 binding을 소유하며 개인 연결은 Agent 수명과 독립�
 | Agent Plugins 이름 규칙 | `src/domain/plugin/types.ts` 의 `isPluginName` | 구조 |
 | 마크다운 frontmatter 블록의 파싱 | `src/domain/plugin/frontmatter.ts` | 구조 |
 | repo 소유 컴포넌트의 provenance 문자열(`github:<repo>#<plugin>`) | `src/domain/plugin/types.ts` 의 `pluginSourcePrefix`(sync 가 `startsWith`/`slice` 로 기대는 쪽)·`pluginSource`·`parsePluginSource` | 구조 |
+| Plugin 동기화의 lease·아카이브 우선권·결과 저장 순서 | `src/application/plugin/pluginSyncUseCases.ts`; 조립 지점은 snapshot loader와 저장소·재색인 예약을 주입한다 | 코드 |
 | catalog 재색인 중 동시에 probe할 MCP 서버 수 | `src/application/catalog/reindexCatalog.ts` 의 `MAX_CONCURRENT_CATALOG_PROBES` | 구조 |
 | query embedding의 캐시 key·LRU·잘못된 벡터 응답 처리 | `src/application/catalog/queryCache.ts` | 코드 |
 | builtin 도구의 wire 이름과 예약 집합 | `src/domain/llm/toolNames.ts` — 엔진, MCP alias 할당, 클라이언트 표시가 함께 사용한다 | 구조 |

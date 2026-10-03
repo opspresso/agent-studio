@@ -17,6 +17,7 @@ Skill을 교체하면 참고 파일 묶음도 교체하며 생략된 파일은 �
 ### Plugin 동기화
 
 `syncPluginsFromSnapshot`은 GitHub 저장소와 업로드 아카이브의 같은 snapshot을 사용한다.
+`pluginSyncUseCases`가 저장소별 lease와 아카이브 우선권을 확인하고 동기화 결과를 저장한 뒤 재색인을 예약한다.
 `infrastructure/plugin/snapshot.ts`가 Plugin·Skill·확장 문서를 찾고
 `domain/plugin/types.ts`가 manifest를 해석한다.
 
