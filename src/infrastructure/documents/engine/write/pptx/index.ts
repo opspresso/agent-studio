@@ -18,11 +18,10 @@ import type { DocumentStyleOptions } from "@/domain/document/processor";
 import { buildZip } from "../../zip";
 import type { MarkdownDocument } from "../../markdown";
 import { part } from "./ooxml";
+import { appPropertiesXml, corePropertiesXml } from "../properties";
 import {
   LAYOUT_COUNT,
-  appPropertiesXml,
   contentTypesXml,
-  corePropertiesXml,
   packageRelsXml,
   presPropsXml,
   presentationRelsXml,

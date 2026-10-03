@@ -156,6 +156,7 @@
 | Office 읽기의 명시적 목록 번호와 Markdown 목록 병합 | `engine/read/blocks.ts`의 `ReadListBuilder`; 각 reader는 형식별 번호와 depth를 전달한다 | 코드 |
 | 문서 목적·브랜드·layout의 wire 선택과 기본값, 폰트 이름·허용 색 역할 | `src/domain/document/processor.ts`; 실제 팔레트·지면·활자와 색 대비는 `engine/write/theme.ts`, 스킬 배포용 투영은 `engine/write/catalog.ts`가 소유한다 | 코드 |
 | PDF 문자 줄바꿈·PPTX/HWPX 전각 폭 추정의 CJK 범위 | `engine/write/semantics.ts`의 `CJK_CHARACTER` | 코드 |
+| DOCX·PPTX·XLSX의 제목·생성 시각·생성기 메타데이터 XML | `engine/write/properties.ts`; 각 형식은 반환된 XML을 자기 패키지에 넣는다 | 코드 |
 | 첨부된 문서가 턴 안에서 어떻게 감싸이는가 | `src/application/llm/documentParts.ts` | 구조 |
 | 모든 행 키 문자열. 아이템 테이블의 `PK`/`SK`/GSI 주소 (파티션 키 전부, 그리고 어댑터 밖으로 나가지 않는 정렬 키. 아티팩트 목록의 정렬 키만 예외, 위 `artifactCursor`) | `src/infrastructure/db/keys.ts` | 코드 |
 | tool 의 파일이 실려 다니는 이름과 media type | `src/infrastructure/mcp/toolManager.ts` 의 `safeFileName`/`baseMediaType` | 코드 |
