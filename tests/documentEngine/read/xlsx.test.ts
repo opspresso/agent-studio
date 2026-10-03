@@ -340,6 +340,7 @@ test.each([
   ['<!-- <workbookPr date1904="1"/> --><workbookPr date1904="0"/>', "1900-01-01"],
   ['<workbookPr note="date1904=\'1\'" date1904="0"/>', "1900-01-01"],
   ['<workbookPr date1904="&#49;"/>', "1904-01-02"],
+  ['<workbookPr date1904=" true "/>', "1904-01-02"],
 ])("date conversion uses the actual workbook property: %s", (properties, expected) => {
   const bytes = buildZip({
     "xl/workbook.xml": utf8(workbook("Sheet1").replace("<workbook>", `<workbook>${properties}`)),
@@ -420,6 +421,20 @@ test("only an unambiguous format is read as a date", () => {
     [...dateStylesOf('<styleSheet><cellXfs><xf numFmtId="14" applyNumberFormat="0"/></cellXfs></styleSheet>')],
     [],
   );
+});
+
+test.each([
+  ["0", "45123"], ["false", "45123"], [" false ", "45123"],
+  ["1", "2023-07-16"], ["true", "2023-07-16"],
+])("date styles honor XML boolean applyNumberFormat=%s", (applies, expected) => {
+  const bytes = buildZip({
+    "xl/workbook.xml": utf8(workbook("Sheet1")),
+    "xl/_rels/workbook.xml.rels": utf8(RELS),
+    "xl/styles.xml": utf8(`<styleSheet><cellXfs><xf numFmtId="14" applyNumberFormat="${applies}"/></cellXfs></styleSheet>`),
+    "xl/worksheets/sheet1.xml": utf8(sheet('<row><c s="0"><v>45123</v></c></row>')),
+  });
+  assert.equal(read(bytes).text, `## Sheet1\n${expected}`);
+  assert.equal(inspectXlsx(bytes).sheets[0]!.cells[0]!.value, expected);
 });
 
 test("a cell that states no address lands in the next column, not in the first", () => {

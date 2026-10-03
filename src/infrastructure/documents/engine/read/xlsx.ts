@@ -72,7 +72,8 @@ export function dateStylesOf(xml: string): Set<number> {
           const code = attributeOf(attributes, "formatCode");
           if (Number.isInteger(id) && code !== undefined) custom.set(id, code);
         } else if (local === "xf" && parents[1] === "cellXfs") {
-          styles.push({ id, applies: attributeOf(attributes, "applyNumberFormat") !== "0" });
+          const applies = attributeOf(attributes, "applyNumberFormat")?.trim();
+          styles.push({ id, applies: applies !== "0" && applies !== "false" });
         }
       }
       if (!selfClosing) parents.push(local);
@@ -100,7 +101,7 @@ function uses1904Epoch(xml: string): boolean {
     open(name, attributes, selfClosing) {
       const local = localName(name);
       if (local === "workbookPr" && parents.length === 1 && parents[0] === "workbook") {
-        const value = attributeOf(attributes, "date1904");
+        const value = attributeOf(attributes, "date1904")?.trim();
         epoch1904 = value === "1" || value === "true";
       }
       if (!selfClosing) parents.push(local);
