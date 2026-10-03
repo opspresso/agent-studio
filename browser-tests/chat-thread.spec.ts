@@ -157,3 +157,41 @@ test("retains streamed content and its error while a failed tail read retries", 
   await expect(page.getByRole("alert")).toContainText("Provider failed");
   expect(reads).toEqual(["", "?sinceSeq=0", "?sinceSeq=0"]);
 });
+
+test("reports a refused Stop and lets the reader retry without dropping the reply", async ({ page }) => {
+  await page.addInitScript(() => {
+    const original = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+      if (String(input) === "/api/chats/chat-1/messages" && init?.method === "POST") {
+        return Promise.resolve(new Response(new ReadableStream({ start(controller) {
+          const frames = [{ runId: "run-1", userSeq: 1 }, { delta: { content: "Answer still streaming" } }];
+          controller.enqueue(new TextEncoder().encode(frames.map(frame => `data: ${JSON.stringify(frame)}\n\n`).join("")));
+        } }), { headers: { "Content-Type": "text/event-stream" } }));
+      }
+      return original(input, init);
+    };
+  });
+  await page.route("**/api/chats/chat-1", route => route.fulfill({ json: THREAD }));
+  let stops = 0;
+  await page.route("**/api/chats/chat-1/runs/run-1", route => {
+    expect(route.request().method()).toBe("DELETE");
+    stops += 1;
+    return stops === 1
+      ? route.fulfill({ status: 503, json: { error: "Cancellation unavailable" } })
+      : route.fulfill({ json: { cancelled: true } });
+  });
+  await page.goto(base);
+  await expect(page.getByText("Existing message", { exact: true })).toBeVisible();
+  await page.getByRole("textbox", { name: "Message", exact: true }).fill("Next message");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.getByText("Answer still streaming", { exact: true })).toBeVisible();
+  const stop = page.getByRole("button", { name: "Stop", exact: true });
+  await stop.click();
+  await expect(page.getByRole("alert")).toContainText("Cancellation unavailable");
+  await expect(stop).toBeVisible();
+  await stop.click();
+  await expect.poll(() => stops).toBe(2);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.getByText("Answer still streaming", { exact: true })).toBeVisible();
+  await expect(stop).toBeVisible();
+});

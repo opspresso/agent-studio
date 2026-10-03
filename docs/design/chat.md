@@ -67,6 +67,8 @@ Chat 삭제는 Session tombstone을 먼저 남겨 늦게 끝난 실행이 모델
 `AbortController`를 넘기지 않는다. 서버 프로세스 자체의 급사까지 복구하는 영속 worker는 아니다.
 
 Stop은 `DELETE /api/chats/{chatId}/runs/{runId}`로 `cancelRequestedAt`을 기록한다.
+브라우저는 중지 요청 실패를 표시하고 재시도를 허용한다. 중지 요청의 성공만으로 스트림을 끝내지 않으며,
+늦게 도착한 실패는 해당 Chat의 현재 실행이 진행 중일 때만 반영한다.
 실행 측은 모델 출력이 없는 동안에도 `watchChatCancel`로 상태를 순차 조회한다.
 다른 인스턴스가 받은 취소도 전달되며 사용자 중지와 실행 claim 교체를 구분해 기록한다.
 

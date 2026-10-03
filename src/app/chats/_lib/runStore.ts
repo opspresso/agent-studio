@@ -25,6 +25,7 @@ import { isTopLevelChunk } from "@/domain/llm/types";
 import { unrefTimer } from "@/shared/unrefTimer";
 import { toRequestImages, type Attachment } from "@/app/_lib/imageAttachments";
 import { commitDelayFor } from "@/app/_lib/textPacer";
+import { assertOk } from "@/app/_lib/httpClient";
 import { redirectApiUnauthorized } from "@/app/_lib/authRedirect";
 import type { DocumentAttachment } from "@/app/_lib/documentAttachments";
 import { readSse } from "./sseClient";
@@ -88,6 +89,8 @@ export interface RunEntry {
   /** Absent when this tab attached to a run it did not start. */
   readonly pendingUser?: PendingUser;
   readonly error?: string;
+  /** A failed Stop request does not end the run or replace its execution error. */
+  readonly cancelError?: string;
   readonly chat?: Chat;
 }
 
@@ -205,6 +208,7 @@ export function createRunStore(): RunStore {
   /** Placeholder key → chat id, once a new chat learns its own. */
   const alias = new Map<string, string>();
   const controllers = new Map<string, AbortController>();
+  const cancelling = new Set<number>();
   const evictions = new Map<string, ReturnType<typeof setTimeout>>();
   const listeners = new Set<() => void>();
   /** The open frame-collection window, if one is running. */
@@ -680,15 +684,25 @@ export function createRunStore(): RunStore {
 
     cancelRun(key) {
       const entry = entries.get(canonical(key));
-      if (!entry?.chatId || !entry.runId) {
+      if (!entry?.chatId || !entry.runId || entry.status !== "streaming" || cancelling.has(entry.id)) {
         return;
       }
-      // Fire and forget: the run answers the stop by ending its own stream,
-      // which this store is already watching. A failed request leaves the run
-      // going, which the reader can see for themselves.
-      void fetch(`/api/chats/${entry.chatId}/runs/${entry.runId}`, { method: "DELETE" }).catch(
-        () => undefined,
-      );
+      cancelling.add(entry.id);
+      if (entry.cancelError) update(key, prev => ({ ...prev, cancelError: undefined }));
+      // Keep reading until the run announces its own end. A refused Stop is
+      // reported separately, only while this exact entry still owns the run.
+      void (async () => {
+        try {
+          await assertOk(await fetch(`/api/chats/${entry.chatId}/runs/${entry.runId}`, { method: "DELETE" }));
+        } catch (error) {
+          const current = entries.get(canonical(key));
+          if (current?.id === entry.id && current.status === "streaming") {
+            update(key, prev => ({ ...prev, cancelError: error instanceof Error ? error.message : "Failed to request cancellation" }));
+          }
+        } finally {
+          cancelling.delete(entry.id);
+        }
+      })();
     },
   };
 

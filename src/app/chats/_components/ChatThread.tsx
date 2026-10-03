@@ -414,7 +414,7 @@ export function ChatThread({ chatId }: { chatId: string }) {
     shown?.pendingUser && !messages.some((message) => message.seq === shown.userSeq)
       ? shown.pendingUser
       : null;
-  const banner = shown?.error ?? error;
+  const banner = shown?.cancelError ?? shown?.error ?? error;
 
   return (
     <Flex direction="column" h="100%">
