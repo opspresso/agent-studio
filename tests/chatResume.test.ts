@@ -162,6 +162,23 @@ describe("openRunLogReplay", () => {
     expect(seen).toEqual([]);
   });
 
+  it.each([null, { runId: "run-2", expiresAtSeconds: LIVE_LEASE }])("drains the final log when the claim changes after an empty read: %j", async active => {
+    const { deps, entries } = makeDeps({});
+    const claim = vi.spyOn(deps.chats, "getActiveRun").mockImplementation(async () => {
+      entries.push(...Array.from({ length: 205 }, (_, seq) => frame(seq, String(seq))));
+      entries.push({ seq: 205, payload: "[]", terminal: true, error: "Final failure" });
+      return active;
+    });
+    const seen = await collect(await openRunLogReplay(deps, {
+      chatId: "c1", runId: "run-1", userEmail: "owner@x.com",
+    }));
+    expect(seen).toHaveLength(206);
+    expect(seen[0]).toEqual({ delta: { content: "0" } });
+    expect(seen[204]).toEqual({ delta: { content: "204" } });
+    expect(seen[205]).toEqual({ error: "Final failure" });
+    expect(claim).toHaveBeenCalledTimes(1);
+  });
+
   it("ends when the claim has moved on to another run", async () => {
     const { deps } = makeDeps({
       active: { runId: "run-2", expiresAtSeconds: LIVE_LEASE },
