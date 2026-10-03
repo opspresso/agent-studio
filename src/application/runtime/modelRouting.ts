@@ -7,6 +7,7 @@ import type { EngineDeps, RunAgentInput } from "./types";
 import type { RuntimeTurn } from "./types";
 import type { RuntimeEmitter } from "./output";
 import { conversationMessages } from "./messages";
+import { authorizeRuntimeEffect } from "./policy";
 
 /** Default for automatically routed primary turns; explicit Agent maxTokens takes precedence. */
 const PRIMARY_OUTPUT_TOKENS = 8_192;
@@ -20,7 +21,7 @@ export function createRuntimeRouter(
   return createCallModelRouter({ ...deps.callRouting, decision: {
     choose: request => withGenerationSpan(async generation => {
       generation.spanData.model = request.model;
-      await deps.authorizeExecution?.();
+      await authorizeRuntimeEffect(deps, request.signal);
       const decision = await deps.callRouting!.decision.choose(request);
       if (decision.usage) generation.spanData.usage = {
         input_tokens: decision.usage.inputTokens, output_tokens: decision.usage.outputTokens, cost_usd: decision.usage.costUsd,

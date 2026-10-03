@@ -4,6 +4,15 @@ import { messageText, type ChatMessageInput } from "@/domain/llm/types";
 import { toAgentInput, restoreValues } from "./messages";
 import type { PiiFilter } from "@/application/llm/pii";
 
+/** Authorization may wait on storage; a cancelled run cannot start an effect afterwards. */
+export async function authorizeRuntimeEffect(
+  deps: { authorizeExecution?: () => Promise<void> }, signal?: AbortSignal,
+): Promise<void> {
+  signal?.throwIfAborted();
+  await deps.authorizeExecution?.();
+  signal?.throwIfAborted();
+}
+
 export function inputGuardrails(messages: ChatMessageInput[], policy?: RuntimePolicy, filter?: PiiFilter): InputGuardrail[] {
   const limit = policy?.maxInputChars;
   if (!limit) return [];

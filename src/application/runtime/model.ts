@@ -12,6 +12,7 @@ import { conversationMessages } from "./messages";
 import { boundCompletedToolArguments, boundToolArgumentTextPair } from "./arguments";
 import type { EngineDeps, RunAgentInput, RuntimeTurn } from "./types";
 import type { RuntimeEmitter } from "./output";
+import { authorizeRuntimeEffect } from "./policy";
 
 export interface RuntimeCallIds {
   prefix?: string;
@@ -184,7 +185,7 @@ export function createRunModel(
       begin(request, model);
       let response: ModelResponse;
       let prepared = prepare(request, model);
-      await deps.authorizeExecution?.();
+      await authorizeRuntimeEffect(deps, request.signal);
       try { response = await (await deps.channel.getModel(model)).getResponse(prepared); }
       catch (error) {
         request.signal?.throwIfAborted();
@@ -194,7 +195,7 @@ export function createRunModel(
         model = routed?.model ?? fallback;
         beginFallbackBudget(request, model);
         prepared = prepare(request, model);
-        await deps.authorizeExecution?.();
+        await authorizeRuntimeEffect(deps, request.signal);
         response = await (await deps.channel.getModel(model)).getResponse(prepared);
       }
       turn.model = model;
@@ -265,7 +266,7 @@ export function createRunModel(
         }
       };
       try {
-        await deps.authorizeExecution?.();
+        await authorizeRuntimeEffect(deps, request.signal);
         try { yield* consume(primaryModel); }
         catch (error) {
           request.signal?.throwIfAborted();
@@ -274,7 +275,7 @@ export function createRunModel(
           routed = await routePrimaryModel(deps, input, turn, request, emit, fallback);
           const model = routed?.model ?? fallback;
           beginFallbackBudget(request, model);
-          await deps.authorizeExecution?.();
+          await authorizeRuntimeEffect(deps, request.signal);
           yield* consume(model);
         }
       } finally { flush(); }

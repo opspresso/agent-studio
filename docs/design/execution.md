@@ -45,6 +45,7 @@ Agent의 비용 정책은 [지출 가드](../OPERATIONS.md#지출-가드와-부�
 
 권한 검사는 각 모델 요청과 도구 실행 직전에 반복한다. 스트리밍·일반 응답·fallback·ModelTask와
 라우팅 결정 모델도 같은 검사를 거친다. 앱의 권한·한도 거절은 다른 모델로 재시도하지 않는다.
+권한 조회 전후에 실행 signal도 확인하므로 조회 중 취소된 실행은 새 효과를 시작하지 않는다.
 
 이 앱은 Agent 운영 Control Plane이며 OpenAI Agents SDK가 기본 Agent Runtime이다.
 앱은 현재 설정·바인딩·권한·자격 증명·한도·저장을 준비하고, SDK의 `Agent`와 `Runner`가

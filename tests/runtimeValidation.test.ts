@@ -24,6 +24,27 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("SDK runtime validation boundaries", () => {
+  it("does not dispatch a tool cancelled while its authorization read is pending", async () => {
+    const f = runtimeSessionFixture();
+    const controller = new AbortController();
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const effect = vi.fn(async () => ({ text: "side effect" }));
+    let authorizations = 0;
+    const authorizeExecution = async () => {
+      if (++authorizations === 2) { entered.resolve(); await release.promise; }
+    };
+    const channel = new FakeChannel([[toolCallChunk(0, "lookup", "lookup", "{}")]]);
+    const execution = f.run(channel, "Call lookup", undefined, { authorizeExecution, callMcpTool: effect }, {
+      signal: controller.signal, mcpTools: [{ type: "function", function: { name: "lookup", parameters: { type: "object" } } }],
+    }).catch(error => error);
+    await entered.promise;
+    controller.abort(new Error("User stopped the run"));
+    release.resolve();
+    await expect(execution).resolves.toMatchObject({ message: "User stopped the run" });
+    expect(effect).not.toHaveBeenCalled();
+  });
+
   it("does not start a serialized tool that waited across caller cancellation", async () => {
     const f = runtimeSessionFixture();
     const controller = new AbortController();

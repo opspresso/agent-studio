@@ -21,7 +21,7 @@ import { boundToolArgsPair } from "./arguments";
 import { writeToolResult, type RuntimeEmitter } from "./output";
 import { createSdkMcp, type McpCapability, type ToolCallDetails } from "./mcp";
 import type { ToolSchemaValidator } from "@/domain/llm/toolSchema";
-import { toolInputGuardrail } from "./policy";
+import { authorizeRuntimeEffect, toolInputGuardrail } from "./policy";
 
 type CapabilityOutput = McpToolResult & { bounded?: boolean };
 
@@ -40,7 +40,7 @@ export function createRuntimeTools(
   const serverByTool = new Map((input.mcpServers ?? []).flatMap((server) => server.toolNames.map((name) => [name, server.name] as const)));
 
   async function invoke(name: string, args: Record<string, unknown>, display: Record<string, unknown>, callId: string): Promise<CapabilityOutput> {
-    await deps.authorizeExecution?.();
+    await authorizeRuntimeEffect(deps, input.signal);
     const builtin = assembly.builtinNames.has(name);
     if (!builtin) return deps.callMcpTool ? deps.callMcpTool(name, display) : { text: `Error: Tool '${name}' cannot be executed in this context.` };
     if (name === MODEL_TASK_TOOL_NAME) return modelTask!(args);
