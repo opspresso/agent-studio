@@ -143,7 +143,7 @@ function countArg(args: Record<string, unknown>, name: string): number {
   if (!Number.isFinite(parsed) || parsed <= 0) {
     return DEFAULT_MESSAGES;
   }
-  return Math.min(Math.floor(parsed), MAX_MESSAGES);
+  return Math.max(1, Math.min(Math.floor(parsed), MAX_MESSAGES));
 }
 
 /**

@@ -122,6 +122,12 @@ const TS_A = "1750000000.000100";
 const TS_B = "1750000600.000200";
 
 describe("reading a channel", () => {
+  it.each(["SlackHistory", "SlackThread"])("keeps a positive fractional %s limit from becoming a zero-message read", async (tool) => {
+    const { read, calls } = makeSlackFake();
+    await read(tool, { channel: "C1", thread_ts: TS_A, limit: 0.5 });
+    expect(calls[0]?.args).toMatchObject({ limit: 1 });
+  });
+
   it("renders a transcript oldest first, with speakers named", async () => {
     // Slack returns a channel newest-first. A model handed that reversed reports
     // the conclusion as the question.
