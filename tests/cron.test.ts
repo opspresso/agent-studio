@@ -119,14 +119,27 @@ describe("dueSlots", () => {
     expect(slots(expr, "UTC", "2026-08-11T23:59:00Z", "2026-08-12T00:01:00Z")).toEqual([]);
   });
 
-  it("requires both day fields only when just one is restricted", () => {
+  it("requires both day fields when one is a wildcard", () => {
     // Day-of-month alone: Fridays do not fire.
     expect(slots("0 0 13 * *", "UTC", "2026-08-13T23:59:00Z", "2026-08-14T00:01:00Z")).toEqual([]);
     // Day-of-week alone: the 13th does not fire.
     expect(slots("0 0 * * 5", "UTC", "2026-08-12T23:59:00Z", "2026-08-13T00:01:00Z")).toEqual([]);
   });
 
-  it("reads a full-range day field as unrestricted, not as the OR quirk's trigger", () => {
+  it("requires both day matches for wildcard steps", () => {
+    // Odd month-days that are Fridays: an odd Thursday and an even Friday do not match.
+    expect(slots("0 0 */2 * 5", "UTC", "2026-08-12T23:59:00Z", "2026-08-13T00:01:00Z")).toEqual([]);
+    expect(slots("0 0 */2 * 5", "UTC", "2026-08-13T23:59:00Z", "2026-08-14T00:01:00Z")).toEqual([]);
+    expect(slots("0 0 */2 * 5", "UTC", "2026-08-20T23:59:00Z", "2026-08-21T00:01:00Z")).toEqual(["2026-08-21T00:00:00.000Z"]);
+    expect(slots("0 0 13 * */2", "UTC", "2026-08-14T23:59:00Z", "2026-08-15T00:01:00Z")).toEqual([]);
+  });
+
+  it("preserves OR semantics for explicit full ranges", () => {
+    expect(slots("0 0 1-31 * 5", "UTC", "2026-08-12T23:59:00Z", "2026-08-13T00:01:00Z")).toEqual(["2026-08-13T00:00:00.000Z"]);
+    expect(slots("0 0 13 * 0-7", "UTC", "2026-08-13T23:59:00Z", "2026-08-14T00:01:00Z")).toEqual(["2026-08-14T00:00:00.000Z"]);
+  });
+
+  it("preserves the wildcard day rule for */1", () => {
     // `*/1` in day-of-week covers every weekday; treated as restricted it would
     // turn "the 1st of the month" into "every day" — ~30x the intended runs.
     expect(slots("0 0 1 * */1", "UTC", "2026-08-01T23:59:00Z", "2026-08-03T00:01:00Z")).toEqual(
@@ -140,7 +153,7 @@ describe("dueSlots", () => {
     expect(slots("0 9 */1 * 1-5", "UTC", "2026-08-01T08:59:00Z", "2026-08-01T09:01:00Z")).toEqual(
       [],
     );
-    // `0-7` in day-of-week is every day too, once 7 folds into Sunday.
+    // Explicit day ranges use OR, including a range covering every weekday.
     expect(slots("0 0 13 * 0-7", "UTC", "2026-08-12T23:59:00Z", "2026-08-13T00:01:00Z")).toEqual([
       "2026-08-13T00:00:00.000Z",
     ]);
