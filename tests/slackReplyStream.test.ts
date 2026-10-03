@@ -735,6 +735,61 @@ describe("a checklist that would grow past reading", () => {
  * Stream close flushes owed text and progress rows within the opened stream mode.
  */
 describe("closing a stream that still owes both text and rows", () => {
+  it("separates a warning from an answer already flushed in full", async () => {
+    const { slack, appended } = makeStreamingChannelFake();
+    const sink = createReplySink(slack, "tok", CHANNEL);
+    await sink.push("answer");
+    await sink.finish("answer", ":warning: missing source");
+    expect(appended.join("")).toBe("answer\n\n:warning: missing source");
+  });
+
+  it.each(["unopened", "failed-close", "dm-continuation"])("bounds ordinary posts after %s without losing the final text", async (path) => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { slack, appended, stopped, posted } = makeStreamingChannelFake();
+    const originalPost = slack.postMessage;
+    slack.postMessage = async (token, args) => {
+      if (args.text.length > 2800) throw new Error("Slack chat.postMessage failed: msg_too_long");
+      return originalPost(token, args);
+    };
+    const text = "answer ".repeat(4500);
+    const suffix = ":warning: details " + "x".repeat(4000);
+    const sink = createReplySink(slack, "tok", path === "dm-continuation" ? DM : CHANNEL);
+    if (path !== "unopened") await sink.push(text);
+    if (path === "failed-close") slack.stopStream = async () => { throw new Error("close refused"); };
+
+    await sink.finish(text, suffix);
+
+    expect(posted.length).toBeGreaterThan(1);
+    expect(posted.every((piece) => piece.length <= 2800)).toBe(true);
+    expect([...appended, ...stopped.map((item) => item.markdown_text ?? ""), ...posted].join("")).toBe(`${text}\n\n${suffix}`);
+  });
+
+  it("resumes a partly posted final suffix without repeating its successful prefix", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { slack, posted } = makeChannelFake({ refuseOver: 2800, refusePost: 2 });
+    const sink = createReplySink(slack, "tok", DM);
+    const text = "prefix ".repeat(250);
+    const suffix = "detail ".repeat(1000);
+    await sink.finish(text, suffix);
+    expect(posted.join("")).toBe(`${text}\n\n${suffix}`);
+  });
+
+  it("reopens a code fence when a DM stream continues as ordinary messages", async () => {
+    const { slack, posted } = makeStreamingChannelFake();
+    const sink = createReplySink(slack, "tok", DM);
+    const code = `\`\`\`js\n${"const value = 1;\n".repeat(2000)}\`\`\`\n`;
+    await sink.push(code);
+    await sink.finish(code, "");
+    expect(posted.length).toBeGreaterThan(1);
+    for (const piece of posted) {
+      expect(piece.length).toBeLessThanOrEqual(2800);
+      expect(piece.startsWith("```js\n")).toBe(true);
+      expect(piece.match(/```/g)).toHaveLength(2);
+    }
+  });
+
+
   it("delivers the answer", async () => {
     const { slack, appended, stopped, posted, chunks } = makeStreamingChannelFake();
     const sink = createReplySink(slack, "tok", CHANNEL);
