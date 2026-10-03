@@ -164,6 +164,14 @@ test("a paragraph that wraps carries one lineseg per estimated line", () => {
   assert.match(section, /<hp:lineseg textpos="[1-9]\d*"/);
 });
 
+test.each(["\ua4d0", "\ue000"])("non-CJK %s uses half-width line estimates", character => {
+  const text = character.repeat(90);
+  const bytes = build(text);
+  const section = partOf(bytes, "Contents/section0.xml");
+  assert.equal((section.match(/<hp:lineseg /g) ?? []).length, 2);
+  assert.equal(hwpxToText(bytes).text, text);
+});
+
 test("line segments never start inside an emoji surrogate pair", () => {
   for (const text of ["a".repeat(79) + "😀b", "a".repeat(35) + "😀" + "a".repeat(5)]) {
     const section = partOf(build(text), "Contents/section0.xml");

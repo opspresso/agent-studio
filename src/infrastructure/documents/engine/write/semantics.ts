@@ -108,7 +108,7 @@ export const ASSET_SCHEME = "asset://";
  */
 export const HANGUL = /[가-힣ㄱ-ㅎㅏ-ㅣ]/;
 
-/** Scripts used for PDF character breaks and PPTX full-width estimates. */
+/** Scripts used for PDF character breaks and PPTX/HWPX full-width estimates. */
 export const CJK_CHARACTER =
   /[ᄀ-ᇿ⺀-〿぀-ヿ㄰-㆏㐀-䶿一-鿿ꥠ-꥿가-퟿\uf900-\ufaff︰-﹏＀-｠￠-￦]/;
 

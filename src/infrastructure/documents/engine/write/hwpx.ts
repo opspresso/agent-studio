@@ -31,7 +31,7 @@ import { escapeXml } from "../xml";
 import { buildZip, stored } from "../zip";
 import type { Block, MarkdownDocument, Run } from "../markdown";
 import { columnShares } from "./table";
-import { HANGUL, pageStructureOf, tocEntriesOf, type Cover } from "./semantics";
+import { CJK_CHARACTER, HANGUL, pageStructureOf, tocEntriesOf, type Cover } from "./semantics";
 import {
   DOC,
   DOCUMENT_FONT,
@@ -427,16 +427,6 @@ function sectionProperties(design: DesignProfile): string {
 }
 
 /**
- * Characters that take a full em; everything else is counted as half.
- *
- * The same approximation the PPTX renderer packs slides with, restated here
- * because the two units differ — a glyph at `size` centi-points is about
- * `size` HWPUNIT wide, which is what makes the arithmetic below one line.
- */
-const WIDE =
-  /[ᄀ-ᇿ⺀-〿぀-ヿ㄰-㆏㐀-䶿一-鿿ꥠ-꥿가-퟿豈-﫿︰-﹏＀-｠￠-￦]/;
-
-/**
  * How much of the stated width the estimator lets a line claim.
  *
  * The half-width approximation runs a few percent narrow of the selected prose font's real
@@ -491,7 +481,7 @@ function lineSegments(text: string, size: number, width: number, leading: number
   for (let index = 0; index < text.length; ) {
     const character = String.fromCodePoint(text.codePointAt(index)!);
     characters += 1;
-    const advance = character === "\t" ? size * 2 : WIDE.test(character) ? size : size / 2;
+    const advance = character === "\t" ? size * 2 : CJK_CHARACTER.test(character) ? size : size / 2;
     if (used + advance > usable && used > 0) {
       starts.push(index);
       used = 0;
