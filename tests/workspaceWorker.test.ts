@@ -420,6 +420,39 @@ describe("durable workspace worker", () => {
     expect((await repository.run(workspace.id, run.id))?.status).toBe("cancelled");
   });
 
+  it.each([
+    ["runtime", "cancel"], ["runtime", "close"], ["runtime", "deadline"],
+    ["checks", "cancel"], ["checks", "close"], ["checks", "deadline"],
+  ] as const)("honors %s %s received during the final authorization check", async (phase, action) => {
+    policy.checks = [{ name: "test", command: "true" }];
+    const { api, workspace, run } = await start();
+    const operation = provider.operation;
+    let authorization = 0;
+    provider.operation = vi.fn(async (...args: Parameters<SandboxProvider["operation"]>) => {
+      const result = await operation(...args);
+      if (result.status === "not-started" && args[1] === (phase === "runtime" ? run.id : `${run.id}-check-0`)) authorization = 1;
+      return result;
+    });
+    deps.authorize = async () => {
+      if (!authorization || authorization++ !== 2) return;
+      if (action === "deadline") { time += deps.runTimeoutMs; vi.setSystemTime(time); }
+      else await api[action](workspace.id, owner);
+    };
+    await processWorkspace(deps, workspace.id);
+    expect(provider.start).toHaveBeenCalledTimes(phase === "runtime" ? 0 : 1);
+    expect((await repository.run(workspace.id, run.id))?.status).toBe(action === "deadline" ? "failed" : "cancelled");
+  });
+
+  it("subtracts runtime preparation time from the dispatched command deadline", async () => {
+    const { workspace } = await start("codex");
+    deps.runtime = async (kind, context) => {
+      if (context) { time += 4_000; vi.setSystemTime(time); }
+      return createWorkspaceRuntimeAdapter(kind);
+    };
+    await processWorkspace(deps, workspace.id);
+    expect(vi.mocked(provider.start).mock.calls[0]![2].timeoutMs).toBe(6_000);
+  });
+
   it("deletes retained state when the owner deletes an already finished Workspace chat", async () => {
     const { api, workspace } = await start();
     await processWorkspace(deps, workspace.id);
