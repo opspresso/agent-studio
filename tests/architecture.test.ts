@@ -1393,9 +1393,8 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/domain/naming.ts",
   },
   {
-    // The stricter sibling: a slug that must also be a DNS label, because it
-    // names a Docker container and an SSM parameter path. The create route,
-    // both provisioners and the console form each spelled it out.
+    // Managed workloads use DNS-label names. The route, lifecycle, Docker
+    // adapter and console must use the same syntax.
     what: "the managed-workload name rule",
     pattern: /\[a-z0-9\]\[a-z0-9-\]\{0,62\}/,
     owner: "src/domain/naming.ts",
@@ -1433,9 +1432,8 @@ const SINGLE_OWNERS: SingleOwner[] = [
     ],
   },
   {
-    // The wrapper a model reads around an attachment. A chat replays a stored
-    // document by rebuilding it, so a second spelling would make a replayed turn
-    // differ from the one that was sent.
+    // Surfaces frame extracted attachments consistently before SDK Session
+    // stores model input. Replay uses that stored input, not display rows.
     what: "how an attached document is framed in a turn",
     pattern: /\[Attached file /,
     owner: "src/application/llm/documentParts.ts",
@@ -1560,13 +1558,8 @@ const SINGLE_OWNERS: SingleOwner[] = [
     pattern: /export function parseSlackCommand/,
     owner: "src/application/slack/engagement.ts",
   },  {
-    // What a tool result has to do, and the order it has to happen in: mask,
-    // charge, show the restored text, store the masked one. Eleven branches of
-    // the dispatch loop spelled it out and five of them skipped the charge. A
-    // branch that stored the *restored* text would put back exactly what
-    // `piiFiltering` removed, for one tool, silently. Scoped to the engine
-    // because chat replay legitimately builds `role: "tool"` messages from
-    // stored rows — that is reconstruction, not dispatch.
+    // Runtime output masks model context, charges budgets and restores display
+    // text in one owner. Display rows never rebuild the SDK's tool history.
     what: "what a tool result has to do, and in what order",
     pattern: /function writeToolResult\(/,
     owner: "src/application/runtime/output.ts",
@@ -1590,7 +1583,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/shared/signInError.ts",
   },
   {
-    // A 401 asks for something no other MCP failure does — the *agent* must
+    // A 401 asks for something no other MCP failure does — the caller must
     // reconnect, rather than an operator going to look at the server — and three
     // places have to tell them apart: discovery, a tool call made against a
     // session the discovery cache let through uninitialized, and the registry's
