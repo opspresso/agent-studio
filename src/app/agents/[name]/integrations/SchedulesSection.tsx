@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { ConfigurationFields } from "../_components/ConfigurationFields";
 import { useConfirm } from "@/app/_components/useConfirm";
 import { Alert, Badge, Button, Group, Paper, Select, Stack, Switch, Text, TextInput } from "@mantine/core";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
@@ -188,7 +189,7 @@ export function SchedulesSection({
         {slackChannelsTruncated && <Alert color="yellow">{t("slack.channelsTruncated")}</Alert>}
         {telegramChatsError && <Alert color="red">{telegramChatsError}</Alert>}
 
-        <Stack gap="sm">
+        <ConfigurationFields disabled={busy || loading} gap="sm">
           <Group align="flex-end" gap="sm">
             <TextInput
               label={t("trigger.newId")}
@@ -248,7 +249,7 @@ export function SchedulesSection({
             value={newMessage}
             onChange={(e) => setNewMessage(e.currentTarget.value)}
           />
-        </Stack>
+        </ConfigurationFields>
 
         {schedules.map((schedule) => (
           <Paper key={schedule.triggerId} withBorder radius="md" p="md">

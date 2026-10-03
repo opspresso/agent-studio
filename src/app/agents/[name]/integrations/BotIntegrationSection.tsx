@@ -1,6 +1,7 @@
 "use client";
 
 import { Alert, Anchor, Badge, Button, Stack, Text } from "@mantine/core";
+import { ConfigurationFields } from "../_components/ConfigurationFields";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { LoadingText } from "@/app/_components/PageState";
 import { stateColor } from "@/app/_components/badgeColors";
@@ -14,6 +15,7 @@ export function BotIntegrationSection({
   onRetry,
   onSelect,
   selected,
+  busy = false,
   children,
 }: {
   title: string;
@@ -22,6 +24,7 @@ export function BotIntegrationSection({
   onRetry: () => void;
   onSelect?: () => void;
   selected?: boolean;
+  busy?: boolean;
   children?: React.ReactNode;
 }) {
   const t = useT();
@@ -37,7 +40,7 @@ export function BotIntegrationSection({
     {view ? <Stack gap="md">
       <Text size="sm" c="dimmed">{t("integrations.callerAuthenticationHint")}</Text>
       <Anchor href="/profile/messaging">{t("messaging.identity.title")}</Anchor>
-      {children}
+      <ConfigurationFields disabled={busy}>{children}</ConfigurationFields>
     </Stack> : error ? <Alert color="red"><Stack gap="xs" align="flex-start">
       <Text size="sm">{error}</Text>
       <Button size="xs" variant="light" onClick={onRetry}>{t("error.retry")}</Button>

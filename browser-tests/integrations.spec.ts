@@ -246,3 +246,57 @@ test("MCP settings accept a constructor server name without inherited header row
   await expect(page.getByRole("dialog").getByText("Header overrides", { exact: true })).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+
+for (const [kind, label, field] of [
+  ["slack", "Slack bot", "Signing secret"],
+  ["telegram", "Telegram bot", "Bot token"],
+  ["teams", "Microsoft Teams bot", "Microsoft App ID"],
+] as const) {
+  test(`${label} locks the submitted draft until its save resolves`, async ({ page }) => {
+    const requested = Promise.withResolvers<void>();
+    const finish = Promise.withResolvers<void>();
+    await page.route(`**/api/agents/${agentName}/${kind}`, async route => {
+      if (route.request().method() !== "PUT") return route.fallback();
+      requested.resolve();
+      await finish.promise;
+      return route.fallback();
+    });
+    await page.goto(base);
+    await page.getByRole("button", { name: `${label} Not connected`, exact: true }).click();
+    const region = page.getByRole("region", { name: `${label} Not connected`, exact: true });
+    const input = region.getByLabel(field, { exact: true });
+    await input.fill("synthetic-draft");
+    await region.getByRole("button", { name: "Save", exact: true }).click();
+    await requested.promise;
+    try { await expect(input).toBeDisabled(); }
+    finally { finish.resolve(); }
+    await expect.poll(() => botSettingsUpdates.length).toBe(1);
+    await expect(page.getByLabel(field).first()).toBeEnabled();
+  });
+}
+
+test("schedule creation locks fields until completion and then allows the next draft", async ({ page }) => {
+  const requested = Promise.withResolvers<void>();
+  const finish = Promise.withResolvers<void>();
+  await page.route(`**/api/agents/${agentName}/triggers`, async route => {
+    if (route.request().method() !== "POST") return route.fallback();
+    requested.resolve();
+    await finish.promise;
+    return route.fulfill({ status: 201, json: { ...route.request().postDataJSON(), agentName, createdAt: at, updatedAt: at } });
+  });
+  await page.goto(base);
+  await page.getByRole("button", { name: "Schedules 2", exact: true }).click();
+  const region = page.getByRole("region", { name: "Schedules 2", exact: true });
+  await region.getByLabel("New schedule id", { exact: true }).fill("next-schedule");
+  await region.getByLabel("Cron", { exact: true }).first().fill("0 10 * * *");
+  await region.getByRole("button", { name: "Create", exact: true }).click();
+  await requested.promise;
+  try {
+    for (const label of ["New schedule id", "Cron", "Timezone", "Message"]) {
+      await expect(region.getByLabel(label, { exact: true }).first()).toBeDisabled();
+    }
+  } finally { finish.resolve(); }
+  await expect(region.getByLabel("New schedule id", { exact: true })).toHaveValue("");
+  await expect(region.getByLabel("New schedule id", { exact: true })).toBeEnabled();
+});
