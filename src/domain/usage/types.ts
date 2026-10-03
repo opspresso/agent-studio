@@ -28,33 +28,14 @@ export interface UsageRow {
  * and the dashboard would pay for every caller on every read whether it wanted
  * them or not. Splitting keeps both reads exactly as wide as their question.
  */
-export interface ActorUsageRow {
-  userId: string;
-  agentName: string;
-  /** yyyy-MM-dd */
-  date: string;
+export interface ActorUsageRow extends MemberUsageRow {
   /** `kind:id` — see `actorKey` in `domain/execution/actor.ts`. */
   actor: string;
-  calls: Record<string, number>;
-  inputTokens: Record<string, number>;
-  outputTokens: Record<string, number>;
-  /** See {@link UsageRow.cachedTokens}. */
-  cachedTokens?: Record<string, number>;
-  costUsd: Record<string, number>;
 }
 
 /** One Studio account cross-source spend on one Agent for one UTC day. */
-export interface MemberUsageRow {
+export interface MemberUsageRow extends UsageRow {
   userId: string;
-  agentName: string;
-  /** yyyy-MM-dd */
-  date: string;
-  calls: Record<string, number>;
-  inputTokens: Record<string, number>;
-  outputTokens: Record<string, number>;
-  /** See {@link UsageRow.cachedTokens}. */
-  cachedTokens?: Record<string, number>;
-  costUsd: Record<string, number>;
 }
 
 export interface UsageDelta {

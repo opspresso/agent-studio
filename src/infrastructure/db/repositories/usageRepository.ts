@@ -189,14 +189,8 @@ export class PostgresUsageRepository implements UsageRepository {
       notExpiredAt: Math.floor(Date.now() / 1000),
     });
     return items.map((item) => ({
+      ...toUsageRow(item),
       userId: String(item.userId ?? userId),
-      agentName: String(item.agentName ?? ""),
-      date: String(item.date ?? ""),
-      calls: (item.calls as Record<string, number>) ?? {},
-      inputTokens: (item.inputTokens as Record<string, number>) ?? {},
-      outputTokens: (item.outputTokens as Record<string, number>) ?? {},
-      cachedTokens: (item.cachedTokens as Record<string, number>) ?? {},
-      costUsd: (item.costUsd as Record<string, number>) ?? {},
     }));
   }
 
