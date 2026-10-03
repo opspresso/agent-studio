@@ -29,6 +29,8 @@ import type { AgentSlackResponse } from "@/app/api/agents/[name]/slack/route";
 import type { SlackChannelsResponse } from "@/app/api/agents/[name]/slack/channels/route";
 import type { AgentTelegramResponse } from "@/app/api/agents/[name]/telegram/route";
 import type { AgentTeamsResponse } from "@/app/api/agents/[name]/teams/route";
+import type { AgentTelegramChatsResponse } from "@/app/api/agents/[name]/telegram/chats/route";
+import type { AgentTracesResponse } from "@/app/api/agents/[name]/traces/route";
 import type { PromptPreview } from "@/application/execution/deps";
 import type { AgentCredentialStatus, IssuedAgentCredential } from "@/application/auth/agentCredentialUseCases";
 import type {
@@ -110,7 +112,7 @@ export function listTraces(
   name: string,
   range?: { from?: string; to?: string; actorKind?: import("@/domain/execution/actor").RunActorKind },
   signal?: AbortSignal,
-): Promise<{ traces: Trace[] }> {
+): Promise<AgentTracesResponse> {
   const query = new URLSearchParams();
   if (range?.from) {
     query.set("from", range.from);
@@ -123,7 +125,7 @@ export function listTraces(
   }
   const qs = query.toString();
   return fetch(`/api/agents/${name}/traces${qs ? `?${qs}` : ""}`, { signal }).then((r) =>
-    readJson<{ traces: Trace[] }>(r),
+    readJson<AgentTracesResponse>(r),
   );
 }
 
@@ -214,7 +216,7 @@ export async function streamAgent(
 
 export type { ActorUsageView };
 
-/** Who spent this agent's budget. Owner/admin only, like traces. */
+/** Who spent this agent's budget. Agent owner only, like traces. */
 export async function usageActors(
   name: string,
   from: string,
@@ -279,8 +281,8 @@ export type { TelegramDestination };
 
 export async function listAgentTelegramChats(
   name: string,
-): Promise<{ chats: TelegramDestination[] }> {
-  return readJson<{ chats: TelegramDestination[] }>(
+): Promise<AgentTelegramChatsResponse> {
+  return readJson<AgentTelegramChatsResponse>(
     await fetch(`/api/agents/${name}/telegram/chats`),
   );
 }
