@@ -33,18 +33,15 @@ const TIER_CACHE_TTL_MS = 30_000;
 const TIER_CACHE_MAX_ENTRIES = 1000;
 
 const tierCache = new Map<string, { tier: MemberTier | null; expiresAt: number }>();
-const tierCacheGenerations = new Map<string, number>();
+/** One epoch fences pending reads without retaining an invalidation record per email. */
 let tierCacheGeneration = 0;
 
 export function invalidateMemberTierCache(email?: string): void {
+  tierCacheGeneration += 1;
   if (email === undefined) {
-    tierCacheGeneration += 1;
-    tierCacheGenerations.clear();
     tierCache.clear();
   } else {
-    const key = email.toLowerCase();
-    tierCacheGenerations.set(key, (tierCacheGenerations.get(key) ?? 0) + 1);
-    tierCache.delete(key);
+    tierCache.delete(email.toLowerCase());
   }
 }
 
@@ -62,7 +59,6 @@ export async function getMemberTier(email: string): Promise<MemberTier | null> {
     return resolved(cached.tier);
   }
   const generation = tierCacheGeneration;
-  const keyGeneration = tierCacheGenerations.get(key) ?? 0;
   let tier: MemberTier | null;
   try {
     tier = (await memberRepository.getByEmail(email))?.tier ?? null;
@@ -72,12 +68,11 @@ export async function getMemberTier(email: string): Promise<MemberTier | null> {
       cause: error,
     });
   }
-  if (generation !== tierCacheGeneration || keyGeneration !== (tierCacheGenerations.get(key) ?? 0)) {
+  if (generation !== tierCacheGeneration) {
     return resolved(tier);
   }
   if (tierCache.size >= TIER_CACHE_MAX_ENTRIES) {
     tierCacheGeneration += 1;
-    tierCacheGenerations.clear();
     tierCache.clear();
   }
   tierCache.set(key, { tier, expiresAt: now + TIER_CACHE_TTL_MS });
