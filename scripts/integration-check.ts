@@ -278,7 +278,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
   const integrationMemberEmail = `${integrationMemberId}@example.com`;
   const vectorTable = `it_vectors_${suffix}`;
   const registerChat = (chatId: string) => cleanup(async () => {
-    // A failed create may not have written META; delete also fences partial rows.
+    // Delete only owned fixture chats that were created; deletion fences late writes.
     if (await getItem(dbKeys.chat(chatId))) await chatRepository.delete(chatId);
   });
 
@@ -1264,7 +1264,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
         url: "https://github.com/example/agent/pull/42#pullrequestreview-1", workspaceUrl: "https://studio.example.test/chats/review-workspace" };
       await triggerRepository.finishRun({ ...recentRun, status: "succeeded", endedAt: now, review });
       assert.deepEqual((await triggerRepository.listRuns(agentName, triggerId, 1))[0]?.review, review);
-      pass("PR review scope, Webhook execution grant and publication receipt persist through PostgreSQL");
+      pass("PR review scope and publication receipt persist through PostgreSQL");
     }
 
     // ---------- queued schedule ownership and atomic dispatch ----------
@@ -1335,9 +1335,8 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     pass("audit append + day-partition listing");
 
     // ---------- artifacts (both indexes, and the sparse one staying sparse) ----------
-    // The two indexes are the point: a Slack run names no email, so the agent
-    // index is the only way its output is ever listed or deleted. Mocked doc
-    // clients cannot show that a sparse GSI2 really omits the row.
+    // Rows without a resolved owner email remain visible only in the Agent
+    // index. Real PostgreSQL verifies that the sparse owner index omits them.
     const artifactIds = [`it-art-img-${suffix}`, `it-art-doc-${suffix}`, `it-art-slack-${suffix}`];
     const artifactRows = [
       {
@@ -1395,7 +1394,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     assert.deepEqual(
       byOwner.filter((a) => a.artifactId.endsWith(suffix)).map((a) => a.artifactId),
       [artifactIds[1], artifactIds[0]],
-      "the owner index omits the Slack run, whose actor names no mailbox",
+      "the owner index omits the fixture row with no resolved owner email",
     );
 
     const images = await artifactRepository.listByAgent(agentName, { kind: "image" });
