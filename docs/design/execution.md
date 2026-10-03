@@ -232,7 +232,7 @@ Agent-as-Tool은 SDK가 별도 실행을 관리한다. 후자의 요청에는 �
 필요한 로컬 Handoff와 이미지 도구는 자식에도 제공할 수 있다. 자식 실패는 부모의 오류
 도구 결과와 경고가 되고, 부모는 남은 정보로 답할 수 있다.
 
-`BoundAgent`는 SDK identity를 유지하면서 동시 호출의 모델·도구·Guardrail 자원을 분리한다.
+`BoundAgent`는 SDK identity를 유지하면서 동시 호출의 모델·도구·Guardrail·출력 형식·턴 한도를 분리한다.
 각 위임 호출의 tool-call ID 공간도 분리한다. 승인 체크포인트를 읽을 때는 저장된 위임과
 Handoff 선언을 먼저 복원하고, 승인된 SDK 객체를 실제 재개에도 사용한다.
 
