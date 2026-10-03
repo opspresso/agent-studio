@@ -463,9 +463,8 @@ GET /api/audits?from=2026-08-01&to=2026-08-03&limit=50&cursor=<opaque>
 - 결과는 최신순으로 한 번에 최대 50건이다. `limit`의 기본값과 상한은 50이다.
   `nextCursor`가 있으면 같은 날짜 범위와 함께 다음 요청의 `cursor`로 전달한다.
   cursor가 잘못됐거나 요청 범위 밖이면 `400`이다. 날짜가 바뀌면 cursor 없이 첫 페이지부터 읽는다.
-  `action` 은 `secret.reveal` | `secret.rotate` | `secret.revoke` |
-  `agent.admin-override` | `settings.update` | `agent.delete` | `catalog.install` |
-  `catalog.remove` | `registry.delete` |
+  현재 기록하는 `action`은 `secret.reveal` | `secret.rotate` | `secret.revoke` |
+  `settings.update` | `agent.delete` | `registry.delete` |
   `registry.adopt` (plugins sync 가 다른 출처가 만든 항목을 넘겨받는 것) |
   `artifact.delete` (다른 사람의 artifact) | `member.set-tier` 중 하나다. `target` 은
   `kind:name` 이다.
