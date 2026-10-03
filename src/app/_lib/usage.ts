@@ -1,5 +1,6 @@
 import type { UsageRow } from "@/domain/usage/types";
-import { daysBetween } from "@/shared/date";
+import { daySpan, daysBetween, isUtcDay } from "@/shared/date";
+import { MAX_USAGE_RANGE_DAYS } from "@/shared/usageRange";
 
 export type { UsageRow };
 
@@ -222,6 +223,11 @@ export function buildDailySeries(
   to: string,
   departments?: ReadonlyMap<string, string>,
 ): CostSeries {
+  // Date inputs render before the API can reject them. Bound allocation here;
+  // the requesting page owns the query error shown to the reader.
+  if (!isUtcDay(from) || !isUtcDay(to) || from > to || daySpan(from, to) > MAX_USAGE_RANGE_DAYS) {
+    return { data: [], keys: [] };
+  }
   const totals = new Map<string, number>();
   const byDate = new Map<string, Map<string, number>>();
   const add = (date: string, key: string, cost: number) => {

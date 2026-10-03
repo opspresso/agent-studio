@@ -109,6 +109,22 @@ describe("groupUsage", () => {
 });
 
 describe("buildDailySeries", () => {
+  it.each([
+    ["2026-01-01", "2026-07-04"],
+    ["0001-01-01", "9999-12-31"],
+    ["2026-02-31", "2026-03-05"],
+  ])("does not enumerate dates rejected by the query contract: %s .. %s", (from, to) => {
+    expect(summaryQuerySchema.safeParse({ from, to }).success).toBe(false);
+    expect(buildDailySeries(rows, "agent", from, to).data).toEqual([]);
+  });
+
+  it("renders the complete maximum query window", () => {
+    const series = buildDailySeries(rows, "agent", "2026-01-01", "2026-07-03");
+    expect(series.data).toHaveLength(184);
+    expect(series.data.at(-1)?.date).toBe("2026-07-03");
+    expect(series.data[0]?.values).toEqual([1.2, 1]);
+  });
+
   it("buckets cost per day and groups by agent", () => {
     const series = buildDailySeries(rows, "agent", "2026-01-01", "2026-01-02");
     expect(series.keys).toEqual(["beta", "alpha"]);

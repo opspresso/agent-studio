@@ -305,6 +305,7 @@ Agent 설정은 binding을 소유하며 개인 연결은 Agent 수명과 독립�
 | chunk 가 top-level 인지 여부 | `src/domain/llm/types.ts` 의 `isTopLevelChunk()` | 코드 |
 | 현재 Agent 설정의 접근·저장·실행 시점 snapshot | `src/application/agent/configurationUseCases.ts`; Agent repository의 META CAS와 runtime Session fingerprint 검사 | 코드 |
 | 행의 `expiresAt`. 보존 창과 그것을 초로 바꾸는 헬퍼 | `src/infrastructure/db/ttl.ts` | 코드 |
+| usage 질의와 차트가 처리할 날짜 범위 | `src/shared/usageRange.ts`의 `MAX_USAGE_RANGE_DAYS`; API와 차트는 날짜 순회 전에 적용한다 | 코드 |
 | usage 행의 키가 되는 UTC 날짜 | `src/shared/date.ts` 의 `utcDay` | 코드 |
 | repo sync 가 무엇을 했고, 무엇을 사람에게 남겼는가 | `src/domain/sync/types.ts` | 코드 |
 | 브랜드 팔레트와 컴포넌트 기본값 | `src/app/theme.ts` | 코드 |

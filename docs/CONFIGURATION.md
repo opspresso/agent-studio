@@ -554,7 +554,7 @@ Members의 선택 목록과 Profile은 같은 유효 등급 설정을 읽는다.
 | Teams 메시지 하나 (더 긴 답변은 다음 메시지로 이어진다) / inline 그림 (Teams 가 문서화한 상한) | `20,000` 자 / `1 MiB` | `src/application/teams/replyChannel.ts` |
 | Teams 답변 편집 주기 / typing 갱신 | `2s` / `3s` | `src/application/teams/replyChannel.ts` |
 | Telegram·Teams 대화의 턴을 유지하는 기간 | `7` 일 | `src/infrastructure/db/ttl.ts` |
-| usage 요약 질의 범위 | `184` 일 | `src/app/api/usages/summary/validation.ts` |
+| usage 요약·차트 기간 | `184` 일 | `src/shared/usageRange.ts` |
 | Agent 호출자 usage 한 요청의 원시 행 / 반환·Slack 프로필 해석 수 | `10,000` / `100` | `src/application/usage/listActors.ts` |
 | schedule 따라잡기 창 (장애가 한 번에 발화시킬 수 있는 양에 한계를 둔다) | `10` 분 | `src/application/trigger/scanSchedules.ts` |
 | scan tick 하나가 동시에 굴리는 schedule 발화 수 | `8` | `src/application/trigger/scanSchedules.ts` |
