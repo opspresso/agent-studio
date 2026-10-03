@@ -12,6 +12,7 @@ import { DEFAULT_CALL_ROUTING_POLICY, type CallRoutingPolicy } from "@/domain/ll
 import { assertCallRoutingPolicy } from "./callRoutingPolicy";
 
 export interface ModelRoutingView { policy: CallRoutingPolicy; configured: boolean; decisionModel: string | null }
+export interface RegisteredModelStatus { available: boolean }
 
 function routingView(settings: AppSettings | null): ModelRoutingView {
   return { policy: structuredClone(settings?.modelRouting ?? DEFAULT_CALL_ROUTING_POLICY), configured: settings?.modelRouting !== undefined, decisionModel: settings?.decisionModel ?? null };
@@ -55,6 +56,12 @@ export function createModelRegistryUseCases(deps: ModelRegistryDeps) {
     await deps.changed();
     await recordAudit({ actorEmail, action: "settings.update", target: auditTarget("settings", "models"), detail });
   }
+  async function discover(name: string) {
+    const provider = (await deps.providers()).find((item) => item.name === name);
+    if (!provider) throw new NotFoundError("Provider is not registered");
+    try { return await deps.discovery.list(provider); }
+    catch (error) { throw new UpstreamError(error instanceof Error ? error.message : "Provider discovery failed"); }
+  }
   return {
     async getRouting(): Promise<ModelRoutingView> {
       return routingView(await deps.repository.get());
@@ -80,11 +87,12 @@ export function createModelRegistryUseCases(deps: ModelRegistryDeps) {
     async list(): Promise<RegisteredModelView[]> {
       return views((await deps.repository.get())?.registeredModels ?? [], await deps.providers());
     },
-    async discover(name: string) {
-      const provider = (await deps.providers()).find((item) => item.name === name);
-      if (!provider) throw new NotFoundError("Provider is not registered");
-      try { return await deps.discovery.list(provider); }
-      catch (error) { throw new UpstreamError(error instanceof Error ? error.message : "Provider discovery failed"); }
+    discover,
+    async status(id: string): Promise<RegisteredModelStatus> {
+      const model = (await deps.repository.get())?.registeredModels?.find(model => model.id === id);
+      if (!model) throw new NotFoundError("Model is not registered");
+      const models = await discover(model.provider);
+      return { available: models.some(candidate => candidate.wireId === model.wireId) };
     },
     async save(input: RegisteredModel, actorEmail: string): Promise<RegisteredModelView[]> {
       const providers = await deps.providers();

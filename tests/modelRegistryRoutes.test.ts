@@ -3,7 +3,7 @@ import { ConflictError } from "@/application/errors";
 import { DEFAULT_CALL_ROUTING_POLICY } from "@/domain/llm/callRouting";
 
 const { useCases, role, getDefaultModel, getDecisionModelSelection } = vi.hoisted(() => ({
-  useCases: { list: vi.fn(), save: vi.fn(), remove: vi.fn(), discover: vi.fn(), selectDefault: vi.fn(), selectDecision: vi.fn(), getRouting: vi.fn(), saveRouting: vi.fn() },
+  useCases: { list: vi.fn(), status: vi.fn(), save: vi.fn(), remove: vi.fn(), discover: vi.fn(), selectDefault: vi.fn(), selectDecision: vi.fn(), getRouting: vi.fn(), saveRouting: vi.fn() },
   role: { admin: true, authenticated: true }, getDefaultModel: vi.fn(), getDecisionModelSelection: vi.fn(),
 }));
 vi.mock("@/lib/container", () => ({ modelRegistryUseCases: useCases }));
@@ -18,11 +18,24 @@ const discovery = await import("@/app/api/models/discover/route");
 const defaults = await import("@/app/api/models/default/route");
 const decisions = await import("@/app/api/models/decision/route");
 const routing = await import("@/app/api/models/routing/route");
+const availability = await import("@/app/api/models/status/route");
 const model = { id: "office/model", provider: "office", wireId: "model", displayName: "Model", type: "decision", contextWindow: 0, maxTokens: 0, capabilities: { tools: false, structuredOutput: true, imageInput: false, reasoning: false } };
 const request = (method: string, path = "registry", body?: unknown) => new Request(`https://studio.example.test/api/models/${path}`, { method, ...(body === undefined ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }) });
 
 beforeEach(() => { vi.clearAllMocks(); role.admin = true; role.authenticated = true; });
 describe("model registry routes", () => {
+  it("gates availability checks as admin operations and delegates only a validated model ID", async () => {
+    useCases.status.mockResolvedValue({ available: true });
+    role.admin = false;
+    expect((await availability.GET(request("GET", "status?id=office%2Fmodel"))).status).toBe(403);
+    expect(useCases.status).not.toHaveBeenCalled();
+    role.admin = true;
+    expect((await availability.GET(request("GET", "status"))).status).toBe(400);
+    expect(useCases.status).not.toHaveBeenCalled();
+    expect(await (await availability.GET(request("GET", "status?id=office%2Fmodel"))).json()).toEqual({ available: true });
+    expect(useCases.status).toHaveBeenCalledWith("office/model");
+  });
+
   it("allows authenticated routing summaries but restricts policy writes to admins", async () => {
     const view = { policy: DEFAULT_CALL_ROUTING_POLICY, configured: false, decisionModel: null };
     useCases.getRouting.mockResolvedValue(view);
