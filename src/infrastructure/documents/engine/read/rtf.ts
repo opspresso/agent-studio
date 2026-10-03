@@ -31,7 +31,7 @@ import iconv from "iconv-lite";
 import { MAX_TEXT_CHARS } from "../limits";
 import type { Align, Run } from "../markdown";
 import { DocumentError } from "../errors";
-import { drawnMarker, type ReadBlock, type ReadCell, type ReadRow } from "./blocks";
+import { drawnMarker, ReadListBuilder, type ReadBlock, type ReadCell, type ReadRow } from "./blocks";
 import { collapseRuns } from "./lines";
 import { blocksToMarkdown } from "./serialize";
 import { assertTableGeometry } from "./tableBudget";
@@ -170,6 +170,7 @@ function toggle(parameter: string | undefined): boolean {
 
 class Reader {
   private readonly blocks: ReadBlock[] = [];
+  private readonly lists = new ReadListBuilder(this.blocks);
   private runs: Run[] = [];
   private pending = "";
   private emphasis: Emphasis = {};
@@ -325,18 +326,8 @@ class Reader {
     // be the plausible-but-wrong failure the whole reader is built to avoid.
     const drawn = marker === undefined ? undefined : drawnMarker([{ text: `${marker.trim()} ` }]);
     if (drawn) {
-      const last = this.blocks[this.blocks.length - 1];
       const item = { runs, depth: 0 };
-      if (last?.kind === "list" && last.ordered === drawn.ordered) {
-        last.items.push(item);
-        return;
-      }
-      this.blocks.push({
-        kind: "list",
-        ordered: drawn.ordered,
-        items: [item],
-        ...(drawn.start !== undefined && drawn.start !== 1 ? { marks: { start: drawn.start } } : {}),
-      });
+      this.lists.append(drawn.ordered, item, drawn.start);
       return;
     }
     this.blocks.push({ kind: "paragraph", runs });

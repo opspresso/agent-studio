@@ -7,6 +7,7 @@ import { strict as assert } from "node:assert";
 import { test, vi } from "vitest";
 import { parseInline, parseMarkdown, plainTextOf } from "@/infrastructure/documents/engine/markdown";
 import { documentXmlToBlocks, documentXmlToText } from "@/infrastructure/documents/engine/read/docx";
+import { sectionXmlToText } from "@/infrastructure/documents/engine/read/hwpx";
 import { contentXmlToBlocks } from "@/infrastructure/documents/engine/read/odf";
 import { slideXmlToBlocks } from "@/infrastructure/documents/engine/read/pptx";
 import { rtfToText } from "@/infrastructure/documents/engine/read/rtf";
@@ -20,6 +21,22 @@ const rtf = (body: string) => new TextEncoder().encode(`{\\rtf1\\ansi ${body}}`)
 const cell = (text: string) => `<table:table-cell><text:p>${text}</text:p></table:table-cell>`;
 const tc = (properties: string, text: string) =>
   `<w:tc><w:tcPr>${properties}</w:tcPr><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:tc>`;
+
+for (const reader of [
+  { name: "DOCX", read: (numbers: number[]) => documentXmlToText(numbers.map((number, i) =>
+    `<w:p><w:pPr><w:ind w:left="360" w:hanging="360"/></w:pPr><w:r><w:t>${number}. item${i}</w:t></w:r></w:p>`).join("")).text },
+  { name: "HWPX", read: (numbers: number[]) => sectionXmlToText(numbers.map((number, i) =>
+    `<hp:p paraPrIDRef="1"><hp:run><hp:t>${number}. item${i}</hp:t></hp:run></hp:p>`).join(""),
+    '<hh:head><hh:paraPr id="1"><hc:intent value="-360"/></hh:paraPr></hh:head>') },
+  { name: "PPTX", read: (numbers: number[]) => md(slideXmlToBlocks(shape(numbers.map((number, i) =>
+    `<a:p><a:pPr><a:buNone/></a:pPr><a:r><a:t>${number}. item${i}</a:t></a:r></a:p>`).join("")))) },
+  { name: "RTF", read: (numbers: number[]) => rtfToText(rtf(numbers.map((number, i) =>
+    `\\pard{\\listtext ${number}.\\tab}item${i}\\par`).join(""))).text },
+]) {
+  test(`${reader.name} retains drawn list starts and discontinuities`, () => {
+    assert.equal(reader.read([3, 4, 7, 8]), "3. item0\n4. item1\n\n7. item2\n8. item3");
+  });
+}
 
 test("a link ends with the run that declared it", () => {
   // `a:hlinkClick` is self-closing in every deck — this repository's own writer

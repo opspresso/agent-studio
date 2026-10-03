@@ -35,7 +35,7 @@ import type { Align, Run } from "../markdown";
 import { attributeOf, attributesOf, localName, walkXml, type XmlHandler } from "../xml";
 import { openZip } from "../zip";
 import { DocumentError } from "../errors";
-import { drawnMarker, type ReadBlock, type ReadCell, type ReadRow } from "./blocks";
+import { drawnMarker, ReadListBuilder, type ReadBlock, type ReadCell, type ReadRow } from "./blocks";
 import { collapseRuns } from "./lines";
 import { blocksToMarkdown } from "./serialize";
 import { assertTableGeometry, tableCellSpan } from "./tableBudget";
@@ -365,6 +365,7 @@ class Extractor implements XmlHandler {
   private readonly alternatives: Array<{ selected: boolean }> = [];
   private alternateSkipDepth = 0;
   private readonly blocks: ReadBlock[] = [];
+  private readonly lists = new ReadListBuilder(this.blocks);
   private runs: Run[] = [];
   private pending = "";
   private emphasis: Emphasis = {};
@@ -473,7 +474,7 @@ class Extractor implements XmlHandler {
    * The step comes from the document's own `w:hanging` rather than a constant,
    * so a template that indents by something else still nests correctly.
    */
-  private literalMarker(runs: Run[]): { ordered: boolean; depth: number } | undefined {
+  private literalMarker(runs: Run[]): { ordered: boolean; depth: number; start?: number } | undefined {
     if (this.indentHanging <= 0) {
       return undefined;
     }
@@ -482,11 +483,11 @@ class Extractor implements XmlHandler {
       return undefined;
     }
     const steps = Math.round(this.indentLeft / this.indentHanging);
-    return { ordered: marker.ordered, depth: Math.max(0, steps - 1) };
+    return { ...marker, depth: Math.max(0, steps - 1) };
   }
 
   /** Whether this paragraph is a list item, and whether that list counts. */
-  private listing(): { ordered: boolean; depth: number } | undefined {
+  private listing(): { ordered: boolean; depth: number; start?: number } | undefined {
     // Numbering may live on the style rather than on the paragraph, and a list
     // where only some items carry `w:numPr` is the ordinary shape.
     const fromStyle = this.styleId === undefined ? undefined : this.styles.get(this.styleId)?.numId;
@@ -523,13 +524,8 @@ class Extractor implements XmlHandler {
       return;
     }
     if (listing) {
-      const last = this.blocks[this.blocks.length - 1];
       const item = { runs, depth: Math.min(depth, 4) };
-      if (last?.kind === "list" && last.ordered === listing.ordered) {
-        last.items.push(item);
-        return;
-      }
-      this.blocks.push({ kind: "list", ordered: listing.ordered, items: [item] });
+      this.lists.append(listing.ordered, item, listing.start);
       return;
     }
     this.blocks.push({ kind: "paragraph", runs, ...marks });

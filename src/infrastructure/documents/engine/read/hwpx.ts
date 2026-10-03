@@ -31,7 +31,7 @@ import type { Align, Run } from "../markdown";
 import { attributeOf, localName, walkXml, type XmlHandler } from "../xml";
 import { openZip, type ZipEntry } from "../zip";
 import { DocumentError } from "../errors";
-import { drawnMarker, type ReadBlock, type ReadCell, type ReadRow } from "./blocks";
+import { drawnMarker, ReadListBuilder, type ReadBlock, type ReadCell, type ReadRow } from "./blocks";
 import { collapseRuns } from "./lines";
 import { blocksToMarkdown } from "./serialize";
 import { assertTableGeometry, tableCellSpan } from "./tableBudget";
@@ -178,6 +178,7 @@ interface Building {
 
 class Extractor implements XmlHandler {
   private readonly blocks: ReadBlock[] = [];
+  private readonly lists = new ReadListBuilder(this.blocks);
   private runs: Run[] = [];
   private pending = "";
   private emphasis: { bold?: boolean; italic?: boolean } = {};
@@ -235,13 +236,8 @@ class Extractor implements XmlHandler {
     }
     if (heading !== undefined || drawn !== undefined) {
       const ordered = drawn?.ordered ?? heading?.type === "NUMBER";
-      const last = this.blocks[this.blocks.length - 1];
       const item = { runs, depth: Math.min(heading?.level ?? 0, 4) };
-      if (last?.kind === "list" && last.ordered === ordered) {
-        last.items.push(item);
-        return;
-      }
-      this.blocks.push({ kind: "list", ordered, items: [item] });
+      this.lists.append(ordered, item, drawn?.start);
       return;
     }
     this.blocks.push({ kind: "paragraph", runs, ...marks });
