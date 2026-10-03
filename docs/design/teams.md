@@ -66,7 +66,8 @@ ACK 후 유실을 자동 재실행하지 않으며 외부 효과의 exactly-once
 
 앱은 Bot Framework에서 과거 activity를 조회하지 않는다. `runRememberedTurn`이 Telegram과
 같은 [transcript 계약](telegram.md#히스토리)으로 질문·답과 파일만 전달한 턴을 기록한다.
-읽기 실패·문맥 생략은 warning, 기록 실패는 로그로 확인한다.
+읽기 실패·문맥 생략은 warning으로 알린다. 기록 실패는 답변 뒤 별도 warning과 로그로 알리며,
+warning 전송 실패로 완료한 실행을 다시 처리하지 않는다.
 
 conversation은 `teams:{conversation.id}`다. actor와 화자 식별은 aadObjectId를 우선하고
 없으면 from.id를 사용한다. tenant ID도 필수이며

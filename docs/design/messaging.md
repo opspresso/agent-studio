@@ -77,6 +77,9 @@ ACK 후 실행은 해당 웹 프로세스의 background 작업이다. 실패·�
 후속 질문용 참조는 대화·actor별로 보관한다. bytes·서명 URL을 모델 이력에 기록하지 않는다.
 권한·원본 보관·참조 한도는 [문서 설계](documents.md#채널-간-파일-참조)를 따른다.
 
+Telegram·Teams의 질문·답 이력은 답변 전달 뒤 저장한다. 저장 실패는 후속 문맥 누락 warning으로
+한 번 알리며, 이 warning을 전송하지 못해도 완료한 Agent 실행을 다시 처리하지 않는다.
+
 ## Port와 플랫폼 경계
 
 Port는 `domain/messaging/`에 두어 파이프라인과 adapter가 서로를 import하지 않게 한다.

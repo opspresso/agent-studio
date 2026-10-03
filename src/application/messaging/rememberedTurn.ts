@@ -5,7 +5,7 @@ import type { InboundAttachment } from "@/domain/messaging/inbound";
 import type { ReplyChannel } from "@/domain/messaging/reply";
 import type { ConversationTranscriptRepository } from "@/domain/messaging/transcript";
 import type { Agent, AgentConfiguration } from "@/domain/agent/types";
-import type { LogScope } from "@/shared/logger";
+import { log, type LogScope } from "@/shared/logger";
 import { handleTurn, type MessagingDeps, type TurnOutcome } from "./handleTurn";
 import {
   answerNote,
@@ -119,7 +119,7 @@ export async function runRememberedTurn(
   // what it carried, and an answer that had none as what it delivered, so the
   // exchange keeps its shape.
   const askedAt = input.arrivedAt.toISOString();
-  await rememberTurn(
+  const questionSaved = await rememberTurn(
     deps.transcripts,
     agent.name,
     key,
@@ -133,7 +133,7 @@ export async function runRememberedTurn(
     },
     scope,
   );
-  await rememberTurn(
+  const answerSaved = await rememberTurn(
     deps.transcripts,
     agent.name,
     key,
@@ -144,5 +144,14 @@ export async function runRememberedTurn(
     },
     scope,
   );
+  if (!questionSaved || !answerSaved) {
+    const warning = "Conversation history could not be fully saved; future replies may lack this exchange.";
+    outcome.warnings.push(warning);
+    try { await reply.say(reply.warningLine(warning)); }
+    catch (error) {
+      // The answer was delivered; a failed warning must not make the event replayable.
+      log.error(scope, "conversation history warning could not be delivered", error);
+    }
+  }
   return outcome;
 }
