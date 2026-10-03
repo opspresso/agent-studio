@@ -1,5 +1,6 @@
 "use client";
 
+import { ConfigurationFields } from "@/app/_components/ConfigurationFields";
 import { SectionHeading } from "@/app/_components/SectionHeading";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -62,6 +63,7 @@ export default function SettingsPage() {
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
+    if (saving) return;
     setSaving(true);
     setError(null);
     setSaved(false);
@@ -132,7 +134,7 @@ export default function SettingsPage() {
       <Stack gap="lg" className={columns.primary}>
         <SectionHeading title={t("agent.tab.settings")} />
       <form onSubmit={save}>
-        <Stack gap="md">
+        <ConfigurationFields disabled={saving}>
           {error && (
             <Alert color="red" variant="light">
               {error}
@@ -141,12 +143,12 @@ export default function SettingsPage() {
           <TextInput
             label={t("agents.displayName")}
             value={displayName}
-            onChange={(e) => setDisplayName(e.currentTarget.value)}
+            onChange={(e) => { setDisplayName(e.currentTarget.value); setSaved(false); }}
           />
           <Textarea
             label={t("registry.description")}
             value={description}
-            onChange={(e) => setDescription(e.currentTarget.value)}
+            onChange={(e) => { setDescription(e.currentTarget.value); setSaved(false); }}
             autosize
             minRows={4}
             maxRows={20}
@@ -156,7 +158,7 @@ export default function SettingsPage() {
           <TextInput
             label={t("agents.departmentCode")}
             value={departmentCode}
-            onChange={(e) => setDepartmentCode(e.currentTarget.value)}
+            onChange={(e) => { setDepartmentCode(e.currentTarget.value); setSaved(false); }}
             description={t("agents.departmentHint")}
           />
           <Group gap="sm">
@@ -169,7 +171,7 @@ export default function SettingsPage() {
               </Text>
             )}
           </Group>
-        </Stack>
+        </ConfigurationFields>
       </form>
 
       <VisibilitySection key={`visibility:${name}`} agentName={name} agent={agent} />

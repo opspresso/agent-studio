@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { ConfigurationFields } from "../_components/ConfigurationFields";
+import { ConfigurationFields } from "@/app/_components/ConfigurationFields";
 import { useConfirm } from "@/app/_components/useConfirm";
 import { Alert, Badge, Button, Group, Paper, Select, Stack, Switch, Text, TextInput } from "@mantine/core";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";

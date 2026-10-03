@@ -1,5 +1,6 @@
 "use client";
 
+import { ConfigurationFields } from "@/app/_components/ConfigurationFields";
 import { PageHeader } from "@/app/_components/PageHeader";
 import { IconBook2 } from "@tabler/icons-react";
 import Link from "next/link";
@@ -233,6 +234,7 @@ function EditSkillForm({
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (submitting) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -247,7 +249,7 @@ function EditSkillForm({
 
   return (
     <form onSubmit={submit}>
-      <Stack gap="md">
+      <ConfigurationFields disabled={submitting}>
         <TextInput
           label={t("registry.description")}
           value={description}
@@ -282,7 +284,7 @@ function EditSkillForm({
             {t("common.save")}
           </Button>
         </Group>
-      </Stack>
+      </ConfigurationFields>
     </form>
   );
 }

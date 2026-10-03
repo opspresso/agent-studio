@@ -1,7 +1,7 @@
 import { Stack, type StackProps } from "@mantine/core";
-import classes from "../Playground.module.css";
+import classes from "./ConfigurationFields.module.css";
 
-/** Disable shared configuration controls independently of personal connection actions. */
+/** Keep form controls readable while a shared write or permission rule disables edits. */
 export function ConfigurationFields({ disabled, gap = "md", children }: {
   disabled: boolean;
   gap?: StackProps["gap"];

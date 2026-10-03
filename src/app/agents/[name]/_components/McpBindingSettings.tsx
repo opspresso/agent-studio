@@ -10,7 +10,7 @@
 import { Button, Group, Modal, Stack, Text } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
 import { McpConnectionCard } from "./McpConnectionCard";
-import { ConfigurationFields } from "./ConfigurationFields";
+import { ConfigurationFields } from "@/app/_components/ConfigurationFields";
 
 /**
  * The page's own configuration save, handed down so the two configuration sections

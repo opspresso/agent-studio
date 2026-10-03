@@ -1,7 +1,7 @@
 "use client";
 
 import { Alert, Anchor, Badge, Button, Stack, Text } from "@mantine/core";
-import { ConfigurationFields } from "../_components/ConfigurationFields";
+import { ConfigurationFields } from "@/app/_components/ConfigurationFields";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { LoadingText } from "@/app/_components/PageState";
 import { stateColor } from "@/app/_components/badgeColors";

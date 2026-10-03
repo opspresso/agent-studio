@@ -1,5 +1,6 @@
 "use client";
 
+import { ConfigurationFields } from "@/app/_components/ConfigurationFields";
 import { useEffect, useState } from "react";
 import { Alert, Badge, Button, Group, NumberInput, Select, Stack, Text, TextInput } from "@mantine/core";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
@@ -67,7 +68,8 @@ export function CostLimitsSection({
     MessageDestinationKind[]
   >([]);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [savedDraft, setSavedDraft] = useState<string | null>(null);
+  const draftKey = JSON.stringify([alertUsd, blockUsd, monthlyAlertUsd, monthlyBlockUsd, destinations]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -116,9 +118,10 @@ export function CostLimitsSection({
   }, [agentName, agent.slack?.configured, agent.slack?.enabled, agent.telegram?.configured, agent.telegram?.enabled, agent.teams?.configured, agent.teams?.enabled]);
 
   async function save() {
+    if (saving) return;
     setSaving(true);
     setError(null);
-    setSaved(false);
+    setSavedDraft(null);
     const limits: CostLimits = {
       ...(alertUsd === "" ? {} : { alertThresholdUsd: alertUsd }),
       ...(blockUsd === "" ? {} : { blockThresholdUsd: blockUsd }),
@@ -130,7 +133,7 @@ export function CostLimitsSection({
       // Destinations may be chosen before a threshold. Clear the stored object
       // only when both the thresholds and their future delivery targets are gone.
       await updateAgent(agentName, { costLimits: costLimitsForSave(limits) });
-      setSaved(true);
+      setSavedDraft(draftKey);
     } catch (e) {
       setError(reportError(e, "Failed to save cost limits"));
     } finally {
@@ -212,7 +215,7 @@ export function CostLimitsSection({
       title={t("pset.costLimits")}
       badge={<Badge color={stateColor(configured)} radius="xl">{configured ? summary : t("common.none")}</Badge>}
     >
-      <Stack gap="md">
+      <ConfigurationFields disabled={saving}>
         {slackChannelsTruncated && <Alert color="yellow">{t("slack.channelsTruncated")}</Alert>}
         <Text fz="sm" c="dimmed">
           {t("pset.costLimitsHint")}
@@ -419,13 +422,13 @@ export function CostLimitsSection({
           <Button onClick={save} loading={saving} disabled={!destinationsValid}>
             {t("pset.saveCostLimits")}
           </Button>
-          {saved && (
+          {savedDraft === draftKey && (
             <Text fz="sm" c="teal">
               {t("common.saved")}
             </Text>
           )}
         </Group>
-      </Stack>
+      </ConfigurationFields>
     </CollapsibleSection>
   );
 }

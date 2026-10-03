@@ -26,7 +26,7 @@ import { McpBindingSettings, type ConfigurationSave } from "./McpBindingSettings
 import { SourceMappings } from "./SourceMappings";
 import { HeaderRowsEditor } from "@/app/_components/HeaderRows";
 import { canRunAgents, useViewer } from "@/app/_lib/useViewer";
-import { ConfigurationFields } from "./ConfigurationFields";
+import { ConfigurationFields } from "@/app/_components/ConfigurationFields";
 
 /**
  * A named group of controls.

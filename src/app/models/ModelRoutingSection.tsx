@@ -1,5 +1,6 @@
 "use client";
 
+import { ConfigurationFields } from "@/app/_components/ConfigurationFields";
 import { useEffect, useState } from "react";
 import { Alert, Button, Stack } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
@@ -36,7 +37,7 @@ export function ModelRoutingSection({ models }: { models: SelectableModel[] }) {
     <Stack gap="sm">
       {error && <Alert color="red">{error}</Alert>}
       {policy && <>
-        <ModelRoutingPolicyEditor value={policy} models={models} onChange={setPolicy} />
+        <ConfigurationFields disabled={busy}><ModelRoutingPolicyEditor value={policy} models={models} onChange={setPolicy} /></ConfigurationFields>
         <Button loading={busy} disabled={busy || saved === JSON.stringify(policy)} onClick={() => void save()}>{t("routing.saveShared")}</Button>
       </>}
     </Stack>
