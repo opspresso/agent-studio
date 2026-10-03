@@ -5,9 +5,17 @@ import { runAgent } from "@/application/runtime";
 import { pendingRuntimeApproval, readRuntimeSession } from "@/application/runtime/session";
 import { randomUUID } from "node:crypto";
 
-vi.mock("node:crypto", async importOriginal => ({ ...await importOriginal<typeof import("node:crypto")>(), randomUUID: vi.fn() }));
+const entropy = vi.hoisted(() => ({ seed: 0x12345678 }));
+vi.mock("node:crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("node:crypto")>(), randomUUID: vi.fn(),
+  randomInt: (max: number) => {
+    entropy.seed = (Math.imul(entropy.seed, 1664525) + 1013904223) >>> 0;
+    return Math.floor(entropy.seed / 0x1_0000_0000 * max);
+  },
+}));
 
 beforeEach(() => {
+  entropy.seed = 0x12345678;
   let id = 0;
   vi.mocked(randomUUID).mockImplementation(() => `00000000-0000-4000-8000-${String(++id).padStart(12, "0")}`);
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -120,6 +128,38 @@ describe("SDK runtime validation boundaries", () => {
       expect(JSON.stringify(next.seenParams)).not.toContain("person@example.com");
     }
     expect(effect).toHaveBeenCalledExactlyOnceWith("lookup", { email: "person@example.com" });
+  });
+
+  it.each(["image", "image_url"])("restores PII in ordinary tool arguments named %s before validation and dispatch", async key => {
+    const f = runtimeSessionFixture();
+    const email = "asset-owner@example.com";
+    const effect = vi.fn(async () => ({ text: "found" }));
+    const channel = new FakeChannel([
+      [toolCallChunk(0, "asset", "lookup", JSON.stringify({ [key]: email }))], [contentChunk("done")],
+    ]);
+    const chunks = await f.run(channel, email, undefined, { callMcpTool: effect }, {
+      mcpTools: [{ type: "function", function: { name: "lookup", parameters: {
+        type: "object", properties: { [key]: { type: "string", format: "email" } }, required: [key],
+      } } }],
+    });
+    expect(effect).toHaveBeenCalledExactlyOnceWith("lookup", { [key]: email });
+    expect(chunks.some(chunk => chunk.error)).toBe(false);
+    expect(JSON.stringify(channel.seenParams)).not.toContain(email);
+  });
+
+  it("restores PII in dictionary keys before dispatching tool arguments", async () => {
+    const f = runtimeSessionFixture();
+    const email = "recipient@example.com";
+    const args = { recipients: { [email]: "note" } };
+    const effect = vi.fn(async () => ({ text: "sent" }));
+    const channel = new FakeChannel([[toolCallChunk(0, "recipients", "lookup", JSON.stringify(args))], [contentChunk("done")]]);
+    await f.run(channel, email, undefined, { callMcpTool: effect }, {
+      mcpTools: [{ type: "function", function: { name: "lookup", parameters: {
+        type: "object", properties: { recipients: { type: "object", additionalProperties: { type: "string" } } }, required: ["recipients"],
+      } } }],
+    });
+    expect(effect).toHaveBeenCalledExactlyOnceWith("lookup", args);
+    expect(JSON.stringify(channel.seenParams)).not.toContain(email);
   });
 
   it("bounds rejected tool arguments before the next model call without dispatching them", async () => {
