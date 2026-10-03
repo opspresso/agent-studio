@@ -25,8 +25,7 @@ function recorder() {
   vi.setSystemTime(new Date("2026-09-13T00:00:00Z"));
   const saved: Trace[] = [];
   const recorder = new TraceRecorder({ put: async (trace) => { saved.push(trace); } } as TraceRepository,
-    { agentName: "agent", model: "openai/gpt-5-mini", messageCount: 1 });
-  recorder.useSdkRuntime();
+    { agentName: "agent" });
   return { recorder, saved };
 }
 

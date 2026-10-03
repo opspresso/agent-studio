@@ -231,7 +231,7 @@ export async function* executeAgent(
   const usage = createUsageAggregator(deps.usage, input);
   const bracket = await openRun(deps, input.agent, input.configuration, input);
   const recorder = deps.traces
-    ? createTraceRecorder(deps.traces, input.agent, input.configuration, input.messages.length, origin)
+    ? createTraceRecorder(deps.traces, input.agent, origin)
     : undefined;
   let failure: unknown;
   let completed = false;
@@ -341,7 +341,6 @@ export async function* executeAgent(
     );
     const { skills, subagents, mcp, warnings, discovered } = prepared.resolved;
     const agentDeps: engine.AgentDeps = { ...prepared.agentDeps, onSdkSpan: recorder ? (span) => recorder.observeSdkSpan(span) : undefined };
-    recorder?.useSdkRuntime();
     warnings.push(...memory.warnings.filter((warning) => !warnings.includes(warning)));
     // Logged rather than yielded: a capability *found* is a gain, and the
     // warning channel is where a reader looks for what a run lost. What the run
