@@ -63,7 +63,9 @@ export function CostLimitsSection({
   const [telegramChats, setTelegramChats] = useState<TelegramDestination[]>([]);
   const [slackChannelsUnavailable, setSlackChannelsUnavailable] = useState(false);
   const [slackChannelsTruncated, setSlackChannelsTruncated] = useState(false);
-  const [slackChannelsLoading, setSlackChannelsLoading] = useState(true);
+  const [destinationsLoading, setDestinationsLoading] = useState(true);
+  const [destinationErrors, setDestinationErrors] = useState<string[]>([]);
+  const [destinationRevision, setDestinationRevision] = useState(0);
   const [availableDestinations, setAvailableDestinations] = useState<
     MessageDestinationKind[]
   >([]);
@@ -74,6 +76,7 @@ export function CostLimitsSection({
 
   useEffect(() => {
     let cancelled = false;
+    setDestinationsLoading(true);
     async function load() {
       // The agent's own integration summaries say which surfaces exist, so
       // only those are asked anything further — an unconnected bot's channel
@@ -88,6 +91,11 @@ export function CostLimitsSection({
       if (cancelled) {
         return;
       }
+      setDestinationErrors(([["Slack", slack], ["Telegram", telegramDestinations]] as const).flatMap(([platform, result]) => {
+        if (result.status === "fulfilled") return [];
+        const reason: unknown = result.reason;
+        return [`${platform} destinations: ${reason instanceof Error ? reason.message : String(reason)}`];
+      }));
       const channels = slack.status === "fulfilled" ? slack.value.channels : [];
       setSlackChannels(channels);
       setSlackChannelsTruncated(slack.status === "fulfilled" && slack.value.truncated);
@@ -104,18 +112,18 @@ export function CostLimitsSection({
     void load()
       .catch((e: unknown) => {
         if (!cancelled) {
-          setError(e instanceof Error ? e.message : "Failed to load cost limits");
+          setDestinationErrors([e instanceof Error ? e.message : "Failed to load notification destinations"]);
         }
       })
       .finally(() => {
         if (!cancelled) {
-          setSlackChannelsLoading(false);
+          setDestinationsLoading(false);
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [agentName, agent.slack?.configured, agent.slack?.enabled, agent.telegram?.configured, agent.telegram?.enabled, agent.teams?.configured, agent.teams?.enabled]);
+  }, [destinationRevision, agentName, agent.slack?.configured, agent.slack?.enabled, agent.telegram?.configured, agent.telegram?.enabled, agent.teams?.configured, agent.teams?.enabled]);
 
   async function save() {
     if (saving) return;
@@ -272,6 +280,14 @@ export function CostLimitsSection({
           <Text fz="xs" c="dimmed">
             {t("pset.notificationDestinationsHint")}
           </Text>
+          {destinationErrors.length > 0 && <Alert color="red">
+            <Stack gap="xs" align="flex-start">
+              {destinationErrors.map((message, index) => <Text key={index} size="sm">{message}</Text>)}
+              <Button size="xs" variant="light" loading={destinationsLoading} onClick={() => setDestinationRevision(value => value + 1)}>
+                {t("error.retry")}
+              </Button>
+            </Stack>
+          </Alert>}
           {destinationKinds.length > 0 && (
             <Select
               label={t("trigger.addDestination")}
@@ -310,7 +326,7 @@ export function CostLimitsSection({
                     )
                   }
                   searchable
-                  disabled={slackChannelsLoading || slackChannelsUnavailable}
+                  disabled={destinationsLoading || slackChannelsUnavailable}
                   style={{ flex: 1 }}
                 />
               )}
@@ -347,7 +363,7 @@ export function CostLimitsSection({
                       }
                     }}
                     searchable
-                    disabled={telegramChats.length === 0}
+                    disabled={destinationsLoading || telegramChats.length === 0}
                   />
                   <Group grow align="flex-start" gap="sm">
                     <NumberInput

@@ -143,3 +143,35 @@ for (const [kind, endpoint] of [["skill", "skills"], ["mcp", "mcps"]] as const) 
     await expect(description).toHaveValue("Keep this edit");
   });
 }
+
+test("cost destinations report failed reads and retry without changing saved targets or draft limits", async ({ page }) => {
+  let fail = true;
+  const reads = { slack: 0, telegram: 0 };
+  await page.route("**/api/agents/fixture", route => route.fulfill({ json: {
+    ...agent, slack: { enabled: true, configured: true }, telegram: { enabled: true, configured: true },
+    costLimits: { blockThresholdUsd: 10, alertDestinations: [{ kind: "slack", channelId: "C1" }, { kind: "telegram", chatId: -100 }] },
+  } }));
+  await page.route("**/api/agents/fixture/slack/channels", route => {
+    reads.slack += 1;
+    return fail ? route.fulfill({ status: 503, json: { error: "Slack destinations unavailable" } })
+      : route.fulfill({ json: { channels: [{ id: "C1", name: "alerts" }], truncated: false } });
+  });
+  await page.route("**/api/agents/fixture/telegram/chats", route => {
+    reads.telegram += 1;
+    return fail ? route.fulfill({ status: 503, json: { error: "Telegram destinations unavailable" } })
+      : route.fulfill({ json: { chats: [{ chatId: -100, title: "Alerts" }] } });
+  });
+  await page.goto(base);
+  await page.getByRole("button", { name: new RegExp(t("pset.costLimits")) }).click();
+  await expect(page.getByText(/Slack destinations unavailable/)).toBeVisible();
+  await expect(page.getByText(/Telegram destinations unavailable/)).toBeVisible();
+  const limit = page.getByLabel(t("pset.blockThreshold"), { exact: true });
+  await limit.fill("12");
+  fail = false;
+  await page.getByRole("button", { name: t("error.retry"), exact: true }).click();
+  await expect.poll(() => reads).toEqual({ slack: 2, telegram: 2 });
+  await expect(page.getByText(/destinations unavailable/)).toHaveCount(0);
+  await expect(page.getByRole("combobox", { name: t("pset.slackChannel"), exact: true })).toHaveValue("#alerts");
+  await expect(page.getByLabel(t("trigger.telegramChatId"), { exact: true })).toHaveValue("-100");
+  await expect(limit).toHaveValue("12");
+});
