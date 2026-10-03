@@ -289,9 +289,8 @@ agent token 의 표시용 마스크는 생성 시점에 계산돼 암호문 옆�
 skill 과 MCP 서버. 를 모두 쓴다. 저장소가 선언한 이름을 채택하고 provenance 를 그것으로 다시
 쓴다. 그것은 프로브가 아니라 쓰기 자격 증명으로 범위를 잡고 회전시켜라.
 
-trigger 시크릿은 활성화 플래그를 읽기 **전에** 비교된다. 비활성 trigger 가 틀린 시크릿에 활성
-trigger 와 다르게 답할 수 없게 하기 위해서다. 그 차이는 어떤 trigger 가 존재하는지에 대한
-오라클이다.
+Webhook 설정을 찾은 뒤 개인 credential을 검증하고 전달 ID·이벤트·중복·실행 조건을 검사한다.
+공용 활성화 플래그는 없으며 각 사용자는 본인 토큰 발급·폐기로 호출을 제어한다.
 
 상수 시간 비교는 소유자가 하나, `src/shared/timingSafe.ts` 이고
 `tests/architecture.test.ts` 가 고정한다.
@@ -713,7 +712,7 @@ GitHub 브랜치 규칙을 따르며 권한·보호 규칙을 우회하는 옵�
 태그는 검토한 원격 main, 릴리즈는 검토한 기존 태그의 정확한 commit을 사용한다. 태그를 덮어쓰지 않으며
 GitHub의 저장소 범위 contents 쓰기 권한으로 실행하고 생성 응답과 릴리즈 태그를 검증한다.
 `/api/workspaces/github/webhook`은 서명과 delivery ID로 PR 메타데이터만 갱신하며 승인 권한이 없다.
-Agent Trigger인 `/api/webhook/{agent}`는 별도 Agent 시크릿으로 실행을 시작한다.
+Agent Trigger인 `/api/webhook/{agent}`는 개인 Webhook 토큰 발급자의 권한으로 실행을 시작한다.
 관리자가 `githubReview`를 활성화하면 서명된 PR 이벤트에 대해 해당 Agent의 GitHub MCP 연결로 리뷰 댓글을
 게시할 수 있다. 자동 리뷰 게시 설정은 관리자만 변경하며, 접근 가능한 저장소 전체 또는
 명시적 저장소 목록으로 한정한다. PR의 본문·URL이 게시 목적지를 결정하지 않는다. 공급자 API가
