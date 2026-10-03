@@ -9,7 +9,8 @@ interface DialogueInput {
 
 function literal(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    .replace(/([\\`*_{}\[\]()#!|])/g, "\\$1");
+    .replace(/([\\`*_{}\[\]()#!|+~\-])/g, "\\$1")
+    .replace(/^([ \t]*\d{1,9})\./gm, "$1\\.");
 }
 function quote(text: string): string { return text.split(/\r?\n/).map((line) => `> ${literal(line)}`).join("\n"); }
 function time(seconds: number): string {
