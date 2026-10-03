@@ -40,9 +40,10 @@
   변경(수정/삭제, Agent 설정 저장, Slack·Telegram 설정)은 공개 범위와 무관하게
   `member` 이상인 소유자만 할 수 있고, 그 외에는
   `403 { "error": "Only the owner can manage agent \"…\"" }` 이다.
-  다른 사용자의 런타임 데이터나 마스킹된 secret 을 드러내는 agent 하위 리소스. 트레이스,
-  Slack·Telegram 설정, API 토큰, trigger, 호출자별 사용량, MCP 연결. 은
-  *읽기*도 소유자로 제한된다. Chat 은 소유자에게만 비공개다 (소유자가 아닌 읽기·변경은
+  트레이스·Slack/Telegram/Teams 설정·trigger·호출자별 사용량은 읽기도 Agent 소유자로 제한된다.
+  개인 API/Webhook 토큰과 MCP OAuth 연결은 각 사용자가 본인 것을 관리한다.
+  Agent 소유자도 다른 사용자의 개인 토큰·연결을 조회할 수 없다.
+  Chat은 소유자에게만 비공개다 (소유자가 아닌 읽기·변경은
   모두 404 를 돌려준다 — 403 은 chatId 의 존재를 알려 주는 답이다). MCP/skill/plugin 레지스트리와 모델 카탈로그(`/api/models/catalog`)는
   **guest를 포함한 모든 로그인 사용자**에게 읽기가 공유된다 (`withAuth`).
   guest는 member와 같은 메뉴를 보지만 Agent·레지스트리·즐겨찾기 변경과 Artifact 삭제는 할 수 없다.
