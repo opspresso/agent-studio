@@ -67,6 +67,19 @@ describe("resolveFileUrl", () => {
 });
 
 describe("resolveMessageFiles", () => {
+  it("omits retired artifact references on reload without signing their deleted objects", async () => {
+    const signer = vi.fn(signed);
+    const messages = [assistantWith([
+      { artifactId: "old", key: "old-key", name: "report.html", mimeType: "text/html" },
+      { artifactId: "final", key: "new-key", name: "report.html", mimeType: "text/html", replacedArtifactIds: ["old"] },
+    ])];
+    const resolved = await resolveMessageFiles(messages, signer, 60, {
+      get: async id => id === "final" ? { artifactId: id } as never : null,
+    });
+    expect(signer).toHaveBeenCalledExactlyOnceWith("new-key", 60, { downloadAs: "report.html" });
+    expect(resolved.messages[0]).toMatchObject({ files: [{ artifactId: "final", replacedArtifactIds: ["old"] }] });
+  });
+
   it("gives the reader an address and keeps what the row is for", async () => {
     const { messages } = await resolveMessageFiles(
       [assistantWith([{ key: "artifacts/document/x.pdf", name: "summary.pdf", mimeType: "application/pdf", byteSize: 1_605_516 }])],

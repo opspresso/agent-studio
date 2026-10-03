@@ -1,5 +1,7 @@
 "use client";
 
+import { withoutReplacedFiles } from "@/domain/chat/fileRefs";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PageHeader } from "@/app/_components/PageHeader";
 import { IconMessageCircle } from "@tabler/icons-react";
@@ -128,11 +130,11 @@ export function ChatThread({ chatId }: { chatId: string }) {
    */
   const drawn = useMemo(
     () =>
-      messages.map((message) => {
+      withoutReplacedFiles(messages, shown?.live.files).map((message) => {
         const pinned = sessionImagesBySeq[message.seq];
         return pinned && message.role !== "tool" ? { ...message, images: pinned } : message;
       }),
-    [messages, sessionImagesBySeq],
+    [messages, sessionImagesBySeq, shown?.live.files],
   );
 
   /**

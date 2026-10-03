@@ -468,6 +468,7 @@ Members의 선택 목록과 Profile은 같은 유효 등급 설정을 읽는다.
 | Chat 재접속 로그와 Session 삭제 tombstone의 보존 | 행을 쓴 시각부터 실행 lease + `15분` | `src/infrastructure/db/ttl.ts`의 `RUN_LOG_TTL_SECONDS` |
 | Webhook·Schedule의 멱등 claim / 메신저 delivery claim 행 TTL | 생성부터 `24시간`; 실제 삭제는 sweep | `src/infrastructure/db/repositories/triggerRepository.ts`, `inboundClaimRepository.ts` |
 | 한 런의 파일 쓰기 시도 수 (`SaveFile`과 `File` 생성·편집 공유) | `10` | `src/application/runtime/tools.ts` |
+| 최종본 저장 전 런별 임시 파일 (`SaveFile`·`File`·MCP·위임 결과 합계) | `100개`, 합계 `100 MiB` | `src/application/artifact/runFileDrafts.ts` |
 | 카탈로그 검색 하나가 런에 더할 수 있는 capability 수 (Skill / MCP 서버) | `5` / `3` | `src/application/execution/bindings.ts` |
 | 각 MCP 인덱스에 요청하는 카탈로그 매치 수. 그 상한을 넘겨 oversampling 한다. 여러 도구 행이 한 서버로 합쳐지고, 런이 바인딩할 수 없는 후보가 슬롯을 잡아먹어서는 안 되기 때문이다 | MCP 서버 상한의 `4×`(tool 인덱스) / `3×`(server 인덱스) | `src/application/execution/bindings.ts` |
 | 카탈로그 검색어 (요청 없을 때의 시스템 프롬프트 / 최근 사용자 턴 / 최신 요청 + 관련 기억) | `2,000` 자 / `3` 턴 / `2,000` 자(각 절반 최대 `1,000` 자) | `src/application/execution/bindings.ts` |

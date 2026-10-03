@@ -13,6 +13,7 @@ import { onModEnter } from "@/app/_lib/modEnter";
 import { SIGNATURE_REFRESH_MS } from "@/app/chats/_lib/refresh";
 import { VIEW_URL_TTL_SECONDS } from "@/shared/artifactUrlTtl";
 import { CHAT_MESSAGE_MAX_SEQ, keys } from "@/infrastructure/db/keys";
+import { withoutReplacedFiles } from "@/domain/chat/fileRefs";
 
 function message(seq: number, content: string): ChatMessage {
   return {
@@ -63,6 +64,32 @@ function recordingRepo(messages: ChatMessage[]) {
 }
 
 describe("mergeMessages", () => {
+  it("shows one latest attachment when an unchanged edit reuses the stored content identity", () => {
+    const file = { artifactId: "same", name: "report.html", mimeType: "text/html" };
+    const first: ChatMessage = { ...message(1, "Original"), role: "assistant", files: [file] };
+    const last: ChatMessage = { ...message(3, "Checked"), role: "assistant", files: [file] };
+    const merged = mergeMessages([first], [last]);
+    expect(merged[0]).toMatchObject({ files: [] });
+    expect(merged[1]).toBe(last);
+    expect(withoutReplacedFiles([first], [file])[0]).toMatchObject({ files: [] });
+  });
+  it("removes replaced attachments from held turns when only the new tail is fetched", () => {
+    const original: ChatMessage = { ...message(1, "Original report"), role: "assistant", files: [
+      { artifactId: "old", name: "report.html", mimeType: "text/html", url: "https://files.test/old" },
+      { artifactId: "independent", name: "report.html", mimeType: "text/html", url: "https://files.test/other" },
+    ] };
+    const replacement: ChatMessage = { ...message(3, "Final report"), role: "assistant", files: [
+      { artifactId: "final", replacedArtifactIds: ["old"], name: "report.html", mimeType: "text/html", url: "https://files.test/final" },
+    ] };
+    const untouched = message(0, "Request");
+    const result = mergeMessages([untouched, original], [replacement]);
+    expect(result[0]).toBe(untouched);
+    expect(result[2]).toBe(replacement);
+    expect(result[1]).toMatchObject({ content: "Original report", files: [original.files![1]] });
+    expect(original.files).toHaveLength(2);
+    expect(withoutReplacedFiles([original], replacement.files)).toEqual([result[1]]);
+  });
+
   it("appends a tail to what the thread already holds", () => {
     const held = [message(0, "a"), message(1, "b")];
     expect(mergeMessages(held, [message(2, "c")]).map((m) => m.seq)).toEqual([0, 1, 2]);

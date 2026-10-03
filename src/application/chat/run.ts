@@ -81,6 +81,7 @@ export function collectGeneratedFiles(
     byteSize?: number;
     key?: string;
     artifactId?: string;
+    replacedArtifactIds?: string[];
   }>,
   storageConfigured: boolean,
 ): { stored: ChatMessageFile[]; warnings: string[] } {
@@ -95,6 +96,7 @@ export function collectGeneratedFiles(
       mimeType: file.mimeType,
       ...(file.byteSize !== undefined ? { byteSize: file.byteSize } : {}),
       ...(file.artifactId ? { artifactId: file.artifactId } : {}),
+      ...(file.replacedArtifactIds?.length ? { replacedArtifactIds: file.replacedArtifactIds } : {}),
     });
   }
   const missing = files.length - stored.length;
@@ -214,13 +216,7 @@ export async function* runAndPersist(
   // but the key when it persists — a run that draws twenty pictures is twenty
   // pictures of heap per chat in flight, for no reader at all.
   const generatedImages: { prompt?: string; key?: string }[] = [];
-  const generatedFiles: {
-    name: string;
-    mimeType: string;
-    byteSize?: number;
-    key?: string;
-    artifactId?: string;
-  }[] = [];
+  const generatedFiles: Parameters<typeof collectGeneratedFiles>[0] = [];
   // Why the run came out the shape it did — a binding it could not use, history
   // it could not carry. Persisted so reloading the chat still explains it.
   const warnings: string[] = [];
@@ -364,6 +360,7 @@ export async function* runAndPersist(
           ...(chunk.file.byteSize !== undefined ? { byteSize: chunk.file.byteSize } : {}),
           ...(chunk.file.key !== undefined ? { key: chunk.file.key } : {}),
           ...(chunk.file.artifactId !== undefined ? { artifactId: chunk.file.artifactId } : {}),
+          ...(chunk.file.replacedArtifactIds?.length ? { replacedArtifactIds: chunk.file.replacedArtifactIds } : {}),
         });
       }
       yield chunk;

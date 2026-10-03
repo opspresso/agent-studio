@@ -3,7 +3,7 @@
 import { randomUUID } from "node:crypto";
 import type { ArtifactObjectStore } from "@/domain/artifact/objectStore";
 import type { ArtifactRepository } from "@/domain/artifact/repository";
-import { artifactObjectKey } from "@/domain/artifact/types";
+import { artifactObjectKey, artifactOwnerEmail } from "@/domain/artifact/types";
 import type { Artifact, ArtifactKind, ArtifactSource } from "@/domain/artifact/types";
 import type { RunActor } from "@/domain/execution/actor";
 import type { SourceFile } from "@/domain/artifact/sourceFile";
@@ -78,23 +78,17 @@ export interface ArtifactInput {
   model?: string;
 }
 
-/**
- * Store the bytes, then record the row.
- *
- * **Object first, deliberately.** The reverse order can leave a row naming bytes
- * that were never written, which reads as an artifact whose preview is broken
- * forever; this order can only leave an object with no row, and the row is what
- * a caller is still holding when the write throws — so the caller reports the
- * loss rather than persisting a reference to nothing.
- */
-export async function storeArtifact(
-  storage: ArtifactStorage,
+/** One metadata shape for private run drafts and stored artifacts. */
+export function artifactMetadata(
   context: ArtifactContext,
   input: ArtifactInput,
-): Promise<Artifact> {
+): Artifact {
   const artifactId = input.artifactId ?? createArtifactId();
   const key = artifactObjectKey(input.kind, artifactId, input.mimeType);
   const prompt = input.prompt ? cutCodePoints(input.prompt, MAX_ARTIFACT_PROMPT_CHARS) : undefined;
+  const ancestry = input.authorPath?.length
+    ? [...(context.ancestry ?? [context.agentName]), ...input.authorPath]
+    : context.ancestry;
   const artifact: Artifact = {
     artifactId,
     ...(input.derivedFrom ? { derivedFrom: input.derivedFrom } : {}),
@@ -108,15 +102,68 @@ export async function storeArtifact(
     agentName: context.agentName,
     ...(context.actor ? { actor: context.actor } : {}),
     ...(context.ownerEmail ? { ownerEmail: context.ownerEmail } : {}),
-    ...(context.ancestry && context.ancestry.length > 0 ? { ancestry: context.ancestry } : {}),
+    ...(ancestry?.length ? { ancestry } : {}),
     ...(input.producedBy ? { producedBy: input.producedBy } : {}),
     ...(input.model ? { model: input.model } : {}),
     ...(context.runId ? { runId: context.runId } : {}),
     ...(prompt ? { prompt } : {}),
     createdAt: new Date().toISOString(),
   };
+  return artifact;
+}
+
+export async function storeArtifact(
+  storage: ArtifactStorage,
+  context: ArtifactContext,
+  input: ArtifactInput,
+): Promise<Artifact> {
+  return (await writeArtifact(storage, context, input)).artifact;
+}
+
+interface ArtifactWriteResult {
+  artifact: Artifact;
+  replacedArtifactId?: string;
+  cleanupFailure?: { error: unknown };
+}
+
+/** Store the replacement before removing the caller's previous generated file. Uploaded inputs remain inputs. */
+export function replaceGeneratedArtifact(storage: ArtifactStorage, context: ArtifactContext, input: ArtifactInput, sourceId: string): Promise<ArtifactWriteResult> {
+  return writeArtifact(storage, context, input, sourceId);
+}
+
+/** Acquire all content/identity locks together; nested lock acquisition can exhaust the dedicated pool. */
+async function writeArtifact(storage: ArtifactStorage, context: ArtifactContext, input: ArtifactInput, sourceId?: string): Promise<ArtifactWriteResult> {
+  const artifact = artifactMetadata(context, input);
+  const { artifactId, key } = artifact;
   const contentKey = artifactContentKey(artifact, artifact.checksum!);
-  return storage.content.exclusive([`artifact-id:${artifactId}`, contentKey], async () => {
+  const source = sourceId ? await storage.rows.get(sourceId) : null;
+  const locks = [`artifact-id:${artifactId}`, contentKey,
+    ...(sourceId ? [`artifact-id:${sourceId}`] : []),
+    ...(source?.checksum ? [artifactContentKey(source, source.checksum)] : [])];
+  return storage.content.exclusive(locks, async () => {
+    let previous: Artifact | null = null;
+    if (sourceId) {
+      const current = await storage.rows.get(sourceId);
+      const owner = artifactOwnerEmail(context.actor, context.ownerEmail);
+      if (!source || !current || current.artifactId !== sourceId || current.privateFileId || !owner ||
+          artifactOwnerEmail(current.actor, current.ownerEmail) !== owner ||
+          current.key !== source.key || current.checksum !== source.checksum) {
+        throw new ConflictError("The source file is no longer available for replacement");
+      }
+      previous = current;
+    }
+    const stored = await store();
+    if (previous?.source === "generated" && previous.artifactId !== stored.artifactId) {
+      try {
+        await storage.objects.delete(previous.key);
+        await storage.rows.delete(previous.artifactId);
+        return { artifact: stored, replacedArtifactId: previous.artifactId };
+      } catch (error) { return { artifact: stored, cleanupFailure: { error } }; }
+    }
+    return { artifact: stored };
+  });
+
+  async function store(): Promise<Artifact> {
     const occupied = await storage.rows.get(artifactId);
     if (occupied) {
       if (!occupied.checksum || occupied.checksum !== artifact.checksum || artifactContentKey(occupied, occupied.checksum) !== contentKey) {
@@ -137,5 +184,5 @@ export async function storeArtifact(
     await storage.rows.put(artifact);
     await storage.content.put(contentKey, { id: artifactId, kind: "artifact" });
     return artifact;
-  });
+  }
 }

@@ -41,7 +41,7 @@ export interface StreamChunk {
    * request on its own. So a page can be opened the moment its bytes are in the
    * bucket, while a download still waits for the turn to be read back.
    */
-  file?: { name: string; mimeType: string; byteSize?: number; key?: string; artifactId?: string };
+  file?: { name: string; mimeType: string; byteSize?: number; key?: string; artifactId?: string; replacedArtifactIds?: string[] };
   /**
    * Token accounting for one model call. Read for one number only — how much of
    * the turn went into thinking — which is why nothing else here is declared.
@@ -96,6 +96,7 @@ export interface LiveImage {
  * finished turn.
  */
 export interface LiveFile {
+  replacedArtifactIds?: string[];
   name: string;
   mimeType: string;
   byteSize?: number;

@@ -6,6 +6,7 @@
 import type { ChatMessage, ChatMessageFile } from "@/domain/chat/types";
 import { resolveFileUrl } from "@/domain/chat/fileRefs";
 import type { SignObjectUrl } from "@/domain/artifact/objectStore";
+import type { ArtifactRepository } from "@/domain/artifact/repository";
 import { log } from "@/shared/logger";
 import { mapWithLimit } from "@/shared/mapWithLimit";
 
@@ -15,8 +16,10 @@ async function resolveOne(
   file: ChatMessageFile,
   sign: SignObjectUrl | undefined,
   ttlSeconds: number,
+  artifacts?: Pick<ArtifactRepository, "get">,
 ): Promise<ChatMessageFile | undefined> {
   try {
+    if (artifacts && file.artifactId && !await artifacts.get(file.artifactId)) return undefined;
     const url = await resolveFileUrl(file, sign, ttlSeconds);
     if (!url) {
       // A row with a key and no signer — object storage was configured when the
@@ -33,6 +36,7 @@ async function resolveOne(
       // Kept where the download address is minted, because the two answer
       // different questions about the same file: one saves it, one opens it.
       ...(file.artifactId ? { artifactId: file.artifactId } : {}),
+      ...(file.replacedArtifactIds?.length ? { replacedArtifactIds: file.replacedArtifactIds } : {}),
     };
   } catch (error) {
     log.error("chat", "could not sign a stored file", error);
@@ -51,6 +55,7 @@ export async function resolveMessageFiles(
   messages: ChatMessage[],
   sign: SignObjectUrl | undefined,
   ttlSeconds: number,
+  artifacts?: Pick<ArtifactRepository, "get">,
 ): Promise<ResolvedFileMessages> {
   const pending = messages.flatMap((message, messageIndex) => {
     if (message.role === "assistant") return (message.files ?? []).map((file) => ({ messageIndex, documentIndex: -1, file }));
@@ -64,7 +69,7 @@ export async function resolveMessageFiles(
     MAX_CONCURRENT_CHAT_FILE_RESOLUTIONS,
     async ({ messageIndex, documentIndex, file }) => ({
       messageIndex, documentIndex,
-      file: await resolveOne(file, sign, ttlSeconds),
+      file: await resolveOne(file, sign, ttlSeconds, artifacts),
     }),
   );
   const byMessage = new Map<number, ChatMessageFile[]>();

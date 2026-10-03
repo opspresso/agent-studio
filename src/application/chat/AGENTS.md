@@ -71,6 +71,8 @@ there are no framework, adapter or composition-root imports here. Read
   images and image-edit handles; remote URLs never become provider-managed fetches.
 - The run bracket captures generated image/file bytes. Chat stores references and signs them
   per reader. Original attachments go through the artifact use case with their user actor.
+- File drafts stay private to the run until the last successful version is published. Preserve
+  `replacedArtifactIds` so reads, live display and tail merges remove earlier generated attachments.
 - Files and images are separate axes. Files do not enter model context. A file-only run must
   persist its message; a failed file store reports that no download exists.
 - Artifact storage absence/failure is visible. Session model bytes do not provide a downloadable

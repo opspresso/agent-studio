@@ -312,6 +312,8 @@ export function artifactOwnerEmail(
 
 /** A stored file reference; read surfaces replace the key with a signed URL. */
 export interface FileReference {
+  /** Earlier generated file identities removed after this result was stored. */
+  replacedArtifactIds?: string[];
   /** Object key. What is stored; never what is served. */
   key?: string;
   /** Stable identity for downloads, views and later file operations. */

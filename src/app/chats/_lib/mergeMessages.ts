@@ -1,4 +1,5 @@
 import type { ChatMessage } from "@/domain/chat/types";
+import { withoutReplacedFiles } from "@/domain/chat/fileRefs";
 
 /**
  * Fold a tail read (`?sinceSeq=`) into the thread already on screen.
@@ -24,7 +25,7 @@ export function mergeMessages(held: ChatMessage[], fetched: ChatMessage[]): Chat
   for (const message of fetched) {
     bySeq.set(message.seq, message);
   }
-  return [...bySeq.values()].sort((a, b) => a.seq - b.seq);
+  return withoutReplacedFiles([...bySeq.values()].sort((a, b) => a.seq - b.seq));
 }
 
 /** The newest sequence a thread holds, or `undefined` when it holds nothing. */

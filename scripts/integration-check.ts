@@ -1526,7 +1526,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
 
     // ---------- content deduplication (real PostgreSQL locks, aliases and deletion) ----------
     {
-      const { storeArtifact } = await import("@/application/artifact/storeArtifact");
+      const { storeArtifact, replaceGeneratedArtifact } = await import("@/application/artifact/storeArtifact");
       const { artifactContentKey, contentChecksum } = await import("@/application/artifact/contentIdentity");
       const { artifactContentRepository: content } = await import("@/infrastructure/db/repositories/artifactContentRepository");
       const { createArtifactUseCases } = await import("@/application/artifact/artifactUseCases");
@@ -1573,6 +1573,32 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
         assert.deepEqual((await storage.objects.read(saved.key)).bytes, body, "content references return the matching bytes after an ID race");
       }
       pass("artifacts: SHA-256 deduplication across concurrent writes, reserved-ID aliases and canonical deletion");
+
+      const replacementInput = (label: string) => {
+        const artifactId = `final-file-${label}-${suffix}`;
+        const data = { ...input, artifactId, bytes: new TextEncoder().encode(artifactId) };
+        cleanup(() => artifactRepository.delete(artifactId));
+        cleanup(() => deleteItem(dbKeys.artifactContent(artifactContentKey({ ...context, ...data }, contentChecksum(data.bytes)))));
+        return data;
+      };
+      // More replacements than the lock pool has connections must finish without nested lock acquisition.
+      const originals = await Promise.all(Array.from({ length: 8 }, (_, index) => storeArtifact(storage, context, replacementInput(`original-${index}`))));
+      const results = await Promise.all(originals.map((original, index) => replaceGeneratedArtifact(storage, context,
+        { ...replacementInput(`replacement-${index}`), derivedFrom: original.artifactId }, original.artifactId)));
+      for (const [index, result] of results.entries()) {
+        assert.equal(result.replacedArtifactId, originals[index]!.artifactId);
+        assert.equal(await artifactRepository.get(originals[index]!.artifactId), null);
+        assert.equal(blobs.has(originals[index]!.key), false);
+        assert.ok(await artifactRepository.get(result.artifact.artifactId));
+      }
+      const source = await storeArtifact(storage, context, replacementInput("racing-original"));
+      const replacing = await Promise.allSettled(["a", "b"].map(label => replaceGeneratedArtifact(storage, context,
+        { ...replacementInput(`racing-${label}`), derivedFrom: source.artifactId }, source.artifactId)));
+      assert.equal(replacing.filter(result => result.status === "fulfilled").length, 1);
+      assert.equal(replacing.filter(result => result.status === "rejected").length, 1);
+      assert.equal(await artifactRepository.get(source.artifactId), null);
+      assert.equal(blobs.has(source.key), false);
+      pass("artifact replacement: final-only inventory and objects, bounded lock pool and stale-edit fencing");
     }
 
     // ---------- plugin sync lease fencing ----------

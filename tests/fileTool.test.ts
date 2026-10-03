@@ -27,12 +27,12 @@ function setup() {
   const storage: ArtifactStorage = {
     content: fakeArtifactContent(),
     rows: { put: async (row) => { rows.set(row.artifactId, row); }, get: async (id) => rows.get(id) ?? null,
-      listByAgent: async () => [], listByOwner: async () => [], delete: async () => {} },
-    objects: { put: async (input) => { bytes.set(input.key, input.bytes); }, read, sign: async () => "https://files.test/download", delete: async () => {} },
+      listByAgent: async () => [], listByOwner: async () => [], delete: async id => { rows.delete(id); } },
+    objects: { put: async (input) => { bytes.set(input.key, input.bytes); }, read, sign: async () => "https://files.test/download", delete: async key => { bytes.delete(key); } },
   };
-  const deps = { artifacts: storage, documents: documentExtractor, documentRenderer, documentEditor, now: () => now };
-  const call = buildFileTool(deps, "agent", { ...executionIdentity(actor), actor, ancestry: ["agent"] })!;
   const recorder = createArtifactRecorder(storage, { agentName: "agent", actor });
+  const deps = { artifacts: storage, readRunFile: recorder.files.read, documents: documentExtractor, documentRenderer, documentEditor, now: () => now };
+  const call = buildFileTool(deps, "agent", { ...executionIdentity(actor), actor, ancestry: ["agent"] })!;
   async function capture(result: McpToolResult) {
     async function* output(): AsyncGenerator<EngineChunk> {
       for (const file of result.files ?? []) yield { file: { ...file, source: "builtin: File" } };
@@ -67,6 +67,68 @@ describe("private Artifact inputs", () => {
 });
 
 describe("native File tool", () => {
+  it("refuses a concurrent stale replacement after another run publishes the new file", async () => {
+    const run = setup();
+    const first = await buildFileSaver(run.deps)!({ name: "report.txt", mimeType: "text/plain", content: "original" });
+    await run.capture(first);
+    const originalId = first.files![0]!.artifactId!;
+    const edits = await Promise.all(["first replacement", "second replacement"].map(replacement => run.call({ operation: "edit", file_id: originalId,
+      edits: [{ operation: "replace_text", part: "text", index: 0, text: "original", replacement }] })));
+    const outputs = await Promise.all(edits.map(async edited => {
+      const recorder = createArtifactRecorder(run.deps.artifacts, { agentName: "agent", actor });
+      const chunks: EngineChunk[] = [];
+      async function* source(): AsyncGenerator<EngineChunk> { yield { file: { ...edited.files![0]!, source: "builtin: File" } }; }
+      for await (const chunk of captureRunArtifacts(recorder, source())) chunks.push(chunk);
+      return chunks;
+    }));
+    expect(outputs.flat().filter(chunk => chunk.file)).toHaveLength(1);
+    expect(outputs.flat().filter(chunk => chunk.warning)).toHaveLength(1);
+    expect(run.rows.size).toBe(1); expect(run.bytes.size).toBe(1);
+  });
+
+  it("reports incomplete cleanup without hiding a successfully stored final result", async () => {
+    const run = setup();
+    const first = await buildFileSaver(run.deps)!({ name: "report.txt", mimeType: "text/plain", content: "original" });
+    await run.capture(first);
+    const edited = await run.call({ operation: "edit", file_id: first.files![0]!.artifactId,
+      edits: [{ operation: "replace_text", part: "text", index: 0, text: "original", replacement: "final" }] });
+    run.deps.artifacts.objects.delete = async () => { throw new Error("delete unavailable"); };
+    const chunks = await run.capture(edited);
+    expect(chunks.filter(chunk => chunk.file)).toHaveLength(1);
+    expect(chunks.find(chunk => chunk.file)?.file?.replacedArtifactIds).toBeUndefined();
+    expect(chunks.some(chunk => chunk.warning?.includes("cleanup is incomplete"))).toBe(true);
+    expect(run.rows.size).toBe(2); expect(run.bytes.size).toBe(2);
+  });
+
+  it("keeps the last stored file if its replacement cannot be stored", async () => {
+    const run = setup();
+    const first = await buildFileSaver(run.deps)!({ name: "report.txt", mimeType: "text/plain", content: "original" });
+    await run.capture(first);
+    const originalId = first.files![0]!.artifactId!;
+    const edited = await run.call({ operation: "edit", file_id: originalId,
+      edits: [{ operation: "replace_text", part: "text", index: 0, text: "original", replacement: "final" }] });
+    run.deps.artifacts.objects.put = async () => { throw new Error("storage unavailable"); };
+    const chunks = await run.capture(edited);
+    expect(chunks.some(chunk => chunk.file)).toBe(false);
+    expect(chunks.some(chunk => chunk.warning?.includes("could not be stored"))).toBe(true);
+    expect(run.rows.size).toBe(1); expect(run.bytes.size).toBe(1);
+    expect((await run.call({ operation: "read", file_id: originalId })).text).toContain("original");
+  });
+
+  it("preserves uploaded source documents while replacing generated output", async () => {
+    const run = setup();
+    const first = await buildFileSaver(run.deps)!({ name: "source.txt", mimeType: "text/plain", content: "original" });
+    await run.capture(first);
+    const originalId = first.files![0]!.artifactId!;
+    run.rows.get(originalId)!.source = "attachment";
+    const edited = await run.call({ operation: "edit", file_id: originalId,
+      edits: [{ operation: "replace_text", part: "text", index: 0, text: "original", replacement: "final" }] });
+    const chunks = await run.capture(edited);
+    expect(chunks.find(chunk => chunk.file)?.file?.replacedArtifactIds).toBeUndefined();
+    expect(run.rows.size).toBe(2); expect(run.bytes.size).toBe(2);
+    expect((await run.call({ operation: "read", file_id: originalId })).text).toContain("original");
+  });
+
   it("refuses a history placeholder before invoking a document renderer", async () => {
     const f = setup();
     const create = vi.fn(f.deps.documentRenderer.create);
@@ -218,7 +280,7 @@ describe("native File tool", () => {
     expect(edited.files).toBeUndefined();
   });
 
-  it("creates, stores, reads and edits a document using stable identities", async () => {
+  it("publishes an edited document and removes the previous generated file", async () => {
     const run = setup();
     const created = await run.call({ operation: "create", format: "docx", title: "Report", content: "# Report\n\nOriginal content." });
     const first = created.files![0]!;
@@ -235,7 +297,9 @@ describe("native File tool", () => {
     await run.capture(edited);
     expect(run.rows.get(edited.files![0]!.artifactId!)?.derivedFrom).toBe(first.artifactId);
     expect((await run.call({ operation: "read", file_id: edited.files![0]!.artifactId })).text).toContain("Revised content.");
-    expect((await run.call({ operation: "read", file_id: first.artifactId })).text).toContain("Original content.");
+    expect((await run.call({ operation: "read", file_id: first.artifactId })).text).toBe("Error: File unavailable");
+    expect(run.rows.size).toBe(1);
+    expect(run.bytes.size).toBe(1);
   });
 
   it("checks ownership before fetching bytes and scopes agent tokens to their entry agent", async () => {

@@ -18,6 +18,50 @@ const THREAD: ChatWithMessages = {
 };
 const LOAD_ERROR = "The Chat could not be loaded.";
 
+test("shows only the final file across live output, tail synchronization and reload", async ({ page }) => {
+  const original = { chatId: CHAT.chatId, seq: 1, role: "assistant" as const, content: "Original report", createdAt: CHAT.createdAt,
+    files: [{ artifactId: "old", name: "report.html", mimeType: "text/html", byteSize: 100, url: "https://files.test/old" }] };
+  const final = { ...original, seq: 3, content: "Final report", files: [{ ...original.files[0]!, artifactId: "final",
+    replacedArtifactIds: ["old"], url: "https://files.test/final" }] };
+  let finished = false;
+  await page.addInitScript(() => {
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+      if (String(input) !== "/api/chats/chat-1/messages" || init?.method !== "POST") return originalFetch(input, init);
+      return Promise.resolve(new Response(new ReadableStream({ start(controller) {
+        const send = (frame: unknown) => controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(frame)}\n\n`));
+        send({ runId: "run-1", userSeq: 2 }); send({ delta: { content: "Checking the report" } });
+        window.addEventListener("publish-final-file", () => send({ file: { artifactId: "final", replacedArtifactIds: ["old"],
+          key: "final-key", name: "report.html", mimeType: "text/html", byteSize: 120 } }), { once: true });
+        window.addEventListener("finish-file-run", () => { send({ ended: true }); controller.close(); }, { once: true });
+      } }), { headers: { "Content-Type": "text/event-stream" } }));
+    };
+  });
+  await page.route("**/api/chats/chat-1**", route => {
+    const tail = new URL(route.request().url()).search;
+    return route.fulfill({ json: { chat: CHAT, messages: finished
+      ? tail ? [final] : [...THREAD.messages, { ...original, files: [] }, final]
+      : [...THREAD.messages, original] } });
+  });
+  await page.goto(base);
+  await expect(page.locator('a[href="/api/artifacts/old/view"]')).toBeVisible();
+  await page.getByRole("textbox", { name: "Message", exact: true }).fill("Correct the report");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.getByText("Checking the report", { exact: true })).toBeVisible();
+  await page.evaluate(() => window.dispatchEvent(new Event("publish-final-file")));
+  await expect(page.locator('a[href="/api/artifacts/old/view"]')).toHaveCount(0);
+  await expect(page.locator('a[href="/api/artifacts/final/view"]')).toBeVisible();
+  await expect(page.getByText("report.html", { exact: true })).toHaveCount(1);
+  finished = true;
+  await page.evaluate(() => window.dispatchEvent(new Event("finish-file-run")));
+  await expect(page.getByRole("link", { name: "report.html", exact: true })).toHaveAttribute("href", "https://files.test/final");
+  await expect(page.getByText("report.html", { exact: true })).toHaveCount(1);
+  await page.reload();
+  await expect(page.getByText("report.html", { exact: true })).toHaveCount(1);
+  await expect(page.locator('a[href="/api/artifacts/final/view"]')).toBeVisible();
+  await page.screenshot({ path: "/tmp/agent-studio-final-file-preview.png" });
+});
+
 test.beforeAll(async () => {
   const bundle = await build({ entryPoints: ["browser-tests/fixtures/chat-thread.tsx"], bundle: true, write: false,
     outdir: "/tmp/agent-studio-chat-fixture", platform: "browser", format: "iife", jsx: "automatic",

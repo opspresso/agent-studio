@@ -324,6 +324,7 @@ export async function* executeAgent(
         runSignal,
         resolved.mcp.callMcpTool,
         runtime,
+        bracket.artifacts?.files.read,
       );
       return { resolved, agentDeps };
     })().then(

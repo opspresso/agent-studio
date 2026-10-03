@@ -6,6 +6,7 @@ import type { ArtifactStorage } from "@/application/artifact/storeArtifact";
 import type { Artifact } from "@/domain/artifact/types";
 import type { EngineChunk } from "@/domain/llm/types";
 import { fakeArtifactContent } from "./fakeArtifactContent";
+import { MAX_RUN_FILE_DRAFT_BYTES, MAX_RUN_FILE_DRAFTS } from "@/application/artifact/runFileDrafts";
 
 vi.mock("node:crypto", async importOriginal => ({ ...await importOriginal<typeof import("node:crypto")>(), randomUUID: vi.fn() }));
 
@@ -228,6 +229,87 @@ describe("storeArtifact", () => {
 });
 
 describe("captureRunArtifacts", () => {
+  it("captures both output axes without repeating an image when publishing the final file", async () => {
+    const storage = fakeStorage();
+    const chunks = await collect(captureRunArtifacts(createArtifactRecorder(storage, CONTEXT), stream({
+      image: { b64: PNG, mimeType: "image/png" },
+      file: { artifactId: "document", b64: DOCX, mimeType: "application/pdf", name: "report.pdf", source: "mcp: render" },
+      done: true,
+    })));
+    expect(chunks.filter(chunk => chunk.image)).toHaveLength(1);
+    expect(chunks.filter(chunk => chunk.file)).toHaveLength(1);
+    expect(chunks.find(chunk => chunk.file)?.file?.b64).toBeUndefined();
+    expect(storage.rowsWritten.map(row => row.kind)).toEqual(["image", "document"]);
+    expect(chunks.at(-1)).toMatchObject({ done: true });
+  });
+
+  it("publishes only the last edited file after the run, before its terminal frame", async () => {
+    const storage = fakeStorage();
+    const recorder = createArtifactRecorder(storage, CONTEXT);
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { file: { artifactId: "draft", name: "report.html", mimeType: "text/html", b64: Buffer.from("draft").toString("base64"), source: "builtin: SaveFile" } };
+      expect(storage.puts).toHaveLength(0);
+      expect(storage.rowsWritten).toHaveLength(0);
+      yield { file: { artifactId: "edited", derivedFrom: "draft", name: "report.html", mimeType: "text/html", b64: Buffer.from("edited").toString("base64"), source: "builtin: File" } };
+      yield { file: { artifactId: "final", derivedFrom: "edited", name: "report.html", mimeType: "text/html", b64: Buffer.from("final").toString("base64"), source: "builtin: File" } };
+      yield { done: true };
+    }
+    const result = await collect(captureRunArtifacts(recorder, source()));
+    expect(result.flatMap(chunk => chunk.file ? [chunk.file.artifactId] : [])).toEqual(["final"]);
+    expect(result.at(-1)).toEqual({ done: true });
+    expect(storage.rowsWritten.map(row => row.artifactId)).toEqual(["final"]);
+    expect(storage.puts).toEqual([expect.objectContaining({ bytes: Buffer.from("final") })]);
+  });
+
+  it("keeps independently produced files with the same filename", async () => {
+    const storage = fakeStorage();
+    const recorder = createArtifactRecorder(storage, CONTEXT);
+    const file = (id: string, derivedFrom?: string): EngineChunk => ({ file: {
+      artifactId: id, derivedFrom, name: "report.txt", mimeType: "text/plain", b64: Buffer.from(id).toString("base64"), source: "builtin: File",
+    } });
+    const result = await collect(captureRunArtifacts(recorder, stream(file("a"), file("b"), file("a-final", "a"))));
+    expect(result.flatMap(chunk => chunk.file ? [chunk.file.artifactId] : []).sort()).toEqual(["a-final", "b"]);
+    expect(storage.puts).toHaveLength(2);
+  });
+
+  it("publishes the last branch when two edits start from the same draft", async () => {
+    const storage = fakeStorage();
+    const recorder = createArtifactRecorder(storage, CONTEXT);
+    const file = (id: string, derivedFrom?: string): EngineChunk => ({ author: "writer", authorPath: ["planner", "writer"],
+      transferId: "child-1", traceId: "trace", file: { artifactId: id, derivedFrom, name: "report.txt", mimeType: "text/plain",
+        b64: Buffer.from(id).toString("base64"), source: "builtin: File" } });
+    const chunks = await collect(captureRunArtifacts(recorder, stream(file("first"), file("branch-a", "first"), file("branch-b", "first"))));
+    expect(chunks.filter(chunk => chunk.file)).toEqual([expect.objectContaining({ author: "writer", transferId: "child-1", traceId: "trace",
+      file: expect.objectContaining({ artifactId: "branch-b", replacedArtifactIds: ["first", "branch-a"] }) })]);
+    expect(storage.rowsWritten).toEqual([expect.objectContaining({ ancestry: ["poster-bot", "planner", "writer"] })]);
+  });
+
+  it("retains completed file work while propagating a later producer failure", async () => {
+    const storage = fakeStorage();
+    const error = new Error("model disconnected");
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { file: { artifactId: "complete", name: "report.txt", mimeType: "text/plain", b64: "YQ==", source: "builtin: SaveFile" } };
+      throw error;
+    }
+    const out: EngineChunk[] = [];
+    await expect((async () => { for await (const chunk of captureRunArtifacts(createArtifactRecorder(storage, CONTEXT), source())) out.push(chunk); })()).rejects.toBe(error);
+    expect(out.flatMap(chunk => chunk.file ? [chunk.file.artifactId] : [])).toEqual(["complete"]);
+    expect(storage.rowsWritten).toHaveLength(1);
+  });
+
+  it("bounds draft count and bytes without writing rejected output", async () => {
+    const storage = fakeStorage();
+    const recorder = createArtifactRecorder(storage, CONTEXT);
+    const input = { kind: "document" as const, source: "generated" as const, mimeType: "text/plain", bytes: new Uint8Array([1]) };
+    expect(recorder.files.stage({ ...input, bytes: new Uint8Array(MAX_RUN_FILE_DRAFT_BYTES + 1) })).toBeUndefined();
+    for (let i = 0; i < MAX_RUN_FILE_DRAFTS; i++) expect(recorder.files.stage({ ...input, artifactId: `draft-${i}` })).toBeDefined();
+    expect(recorder.files.stage({ ...input, artifactId: "overflow" })).toBeUndefined();
+    expect(storage.puts).toHaveLength(0);
+    expect(recorder.takeWarning()).toContain("2 files");
+    await recorder.files.publish();
+    expect(recorder.files.read("draft-0")).toBeUndefined();
+  });
+
   it("leaves the stream untouched with no recorder", async () => {
     // A deployment with no object storage runs exactly as it did.
     const chunks = [{ delta: { content: "hi" } }, { image: { b64: PNG, mimeType: "image/png" } }];

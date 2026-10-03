@@ -5,11 +5,14 @@
 
 import type { Artifact } from "@/domain/artifact/types";
 import type { EngineChunk } from "@/domain/llm/types";
+import { isTopLevelChunk, runTermination } from "@/domain/llm/types";
 import { log } from "@/shared/logger";
 import { storeArtifact, type ArtifactContext, type ArtifactInput, type ArtifactStorage } from "./storeArtifact";
+import { createRunFileDrafts } from "./runFileDrafts";
 
 /** What the bracket hands to whoever is producing bytes. */
 export interface ArtifactRecorder {
+  readonly files: ReturnType<typeof createRunFileDrafts>;
   /** Store one artifact, or return undefined when it could not be stored. */
   record(input: ArtifactInput): Promise<Artifact | undefined>;
   /**
@@ -45,56 +48,46 @@ export function createArtifactRecorder(
   context: ArtifactContext,
 ): ArtifactRecorder {
   let failures = 0;
+  let cleanupFailures = 0;
   let reported = false;
   /** The first failure's category; later ones are almost always the same. */
   let hint: string | undefined;
+  function failed(input: ArtifactInput, error: unknown, cleanup = false): void {
+    if (cleanup) cleanupFailures += 1;
+    else { failures += 1; hint ??= failureHint(error); }
+    log.warn("artifact", cleanup ? "could not remove a previous file version" : "could not store what a run produced", {
+      agent: context.agentName, kind: input.kind, error: error instanceof Error ? error.message : String(error),
+    });
+  }
   return {
+    files: createRunFileDrafts(storage, context, failed),
     async record(input) {
       try {
-        const artifactContext =
-          input.authorPath && input.authorPath.length > 0
-            ? {
-                ...context,
-                ancestry: [
-                  ...(context.ancestry ?? [context.agentName]),
-                  ...input.authorPath,
-                ],
-              }
-            : context;
-        return await storeArtifact(storage, artifactContext, input);
+        return await storeArtifact(storage, context, input);
       } catch (error) {
         // Never fatal: a run that drew the picture has done the expensive part,
         // and losing the copy is worth strictly less than losing the answer.
-        failures += 1;
-        hint ??= failureHint(error);
-        log.warn("artifact", "could not store what a run produced", {
-          agent: context.agentName,
-          kind: input.kind,
-          error: error instanceof Error ? error.message : String(error),
-        });
+        failed(input, error);
         return undefined;
       }
     },
     takeWarning() {
-      if (failures === 0 || reported) {
+      if ((failures === 0 && cleanupFailures === 0) || reported) {
         return undefined;
       }
       reported = true;
       const because = hint ? ` — ${hint}` : "";
-      return failures === 1
+      const loss = failures === 0 ? "" : failures === 1
         ? `One file this run produced could not be stored${because}, so it is not kept.`
         : `${failures} files this run produced could not be stored${because}, so they are not kept.`;
+      return [loss, cleanupFailures ? "A previous generated file version could not be removed; the final version is available, but cleanup is incomplete." : ""].filter(Boolean).join(" ");
     },
   };
 }
 
 /**
- * Take the bytes out of a run's stream and leave a reference behind.
- *
- * Images keep their bytes — a live view renders them as they arrive, and the
- * key is only needed later. Files lose theirs: a rendered document has nothing
- * to draw, and pushing ten megabytes of base64 down an SSE connection to
- * produce a download link is pure cost.
+ * Images retain their live bytes. File drafts stay private for tool reads and
+ * edits; only final stored references precede the run's terminal frame.
  *
  * With no recorder this is the identity, chunk for chunk, so a deployment with
  * no object storage runs exactly as it did.
@@ -107,26 +100,54 @@ export async function* captureRunArtifacts(
     yield* source;
     return;
   }
-  for await (const chunk of source) {
-    yield await captured(recorder, chunk);
-  }
-  // After the stream, so the count is the run's total rather than the first
-  // failure's — see `takeWarning`. A consumer that walked away never reaches
-  // this, which is right: there is nobody left to tell.
-  const warning = recorder.takeWarning();
-  if (warning) {
-    yield { warning };
+  const pending = new Map<string, EngineChunk>();
+  let terminal: EngineChunk | undefined;
+  let failure: { error: unknown } | undefined;
+  let published = false;
+  try {
+    try {
+      for await (const chunk of source) {
+        const next = await captured(recorder, chunk);
+        let visible = next;
+        if (chunk.file?.b64) {
+          if (next.file?.artifactId) pending.set(next.file.artifactId, {
+            file: next.file,
+            ...(next.author ? { author: next.author } : {}),
+            ...(next.authorPath ? { authorPath: next.authorPath } : {}),
+            ...(next.transferId ? { transferId: next.transferId } : {}),
+            ...(next.traceId ? { traceId: next.traceId } : {}),
+          });
+          const { file: _draft, ...otherAxes } = next;
+          visible = otherAxes;
+        }
+        if (isTopLevelChunk(visible) && runTermination(visible)) terminal = visible;
+        else if (!chunk.file?.b64 || Object.keys(visible).length) yield visible;
+      }
+    } catch (error) { failure = { error }; }
+    const files = await recorder.files.publish();
+    published = true;
+    const emitted = new Set<string>();
+    for (const { draftId, artifact, replacedArtifactIds } of files) {
+      const chunk = pending.get(draftId);
+      if (!chunk?.file || emitted.has(artifact.artifactId)) continue;
+      emitted.add(artifact.artifactId);
+      yield { ...chunk, file: { ...chunk.file, artifactId: artifact.artifactId, key: artifact.key,
+        ...(replacedArtifactIds.length ? { replacedArtifactIds } : {}) } };
+    }
+    const warning = recorder.takeWarning();
+    if (warning) yield { warning };
+    if (terminal) yield terminal;
+    if (failure) throw failure.error;
+  } finally {
+    // Consumer return still settles completed file work and releases draft memory.
+    if (!published) await recorder.files.publish();
   }
 }
 
 async function captured(recorder: ArtifactRecorder, chunk: EngineChunk): Promise<EngineChunk> {
-  // Delivered, never kept: the run read these bytes rather than making them, and
-  // a gallery of what an agent glanced at is not a record of what it produced.
-  // The reader still sees it, and the model still has it to edit.
-  if (chunk.image?.fetched) {
-    return chunk;
-  }
-  if (chunk.image) {
+  let result = chunk;
+  // Fetched images pass through; generated images are inventoried immediately.
+  if (chunk.image && !chunk.image.fetched) {
     const stored = await recorder.record({
       kind: "image",
       source: "generated",
@@ -139,17 +160,14 @@ async function captured(recorder: ArtifactRecorder, chunk: EngineChunk): Promise
       // a picture drawn by something else — see `EngineChunk.image.model`.
       ...(chunk.image.model ? { model: chunk.image.model } : {}),
     });
-    if (!stored) {
-      return chunk;
-    }
-    return {
+    if (stored) result = {
       ...chunk,
       image: { ...chunk.image, artifactId: stored.artifactId, key: stored.key },
     };
   }
   if (chunk.file?.b64) {
     const bytes = Buffer.from(chunk.file.b64, "base64");
-    const stored = await recorder.record({
+    const stored = recorder.files.stage({
       kind: "document",
       source: "generated",
       bytes,
@@ -160,18 +178,21 @@ async function captured(recorder: ArtifactRecorder, chunk: EngineChunk): Promise
       ...(chunk.author ? { producedBy: chunk.author } : {}),
       ...(chunk.authorPath ? { authorPath: chunk.authorPath } : {}),
     });
-    // The bytes go either way. Unstored, they have nowhere to be fetched from
-    // later, and the warning is what says so — carrying them on to a browser
-    // that can only render a filename would not make them reachable.
+    if (!stored) {
+      const { file: _unavailable, ...otherAxes } = result;
+      return otherAxes;
+    }
+    // Only the private draft reader retains bytes until final publication.
     const { b64: _dropped, ...rest } = chunk.file;
     return {
-      ...chunk,
+      ...result,
       file: {
         ...rest,
         byteSize: bytes.byteLength,
-        ...(stored ? { artifactId: stored.artifactId, key: stored.key } : {}),
+        artifactId: stored.artifactId,
+        key: stored.key,
       },
     };
   }
-  return chunk;
+  return result;
 }

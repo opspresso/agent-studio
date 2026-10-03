@@ -9,10 +9,12 @@ import { createArtifactId } from "@/application/artifact/storeArtifact";
 import { FILE_DELIVERY_INSTRUCTION } from "@/application/artifact/fileDelivery";
 import { ELIDED_FILE_CONTENT_ERROR, isElidedToolArgument } from "@/application/llm/toolArgumentElision";
 import type { ArtifactStorage } from "@/application/artifact/storeArtifact";
+import type { ReadRunFile } from "@/application/artifact/runFileDrafts";
 import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
 import type { DocumentRenderer, DocumentEditor } from "@/domain/document/processor";
 
 export interface FileToolDeps {
+  readRunFile?: ReadRunFile;
   readPrivateArtifact?: (id: string, email: string, maxBytes: number) => Promise<{ bytes: Uint8Array }>;
   artifacts?: ArtifactStorage;
   documents: DocumentExtractor;
@@ -69,7 +71,8 @@ export function buildFileTool(
   async function source(value: unknown, allowPrivate = false) {
     const id = requiredString(value, "file_id");
     if (id.length > 128) throw new DocumentProcessingError("File unavailable");
-    const artifact = await storage!.rows.get(id);
+    const draft = deps.readRunFile?.(id);
+    const artifact = draft?.artifact ?? await storage!.rows.get(id);
     const actor = origin.actor;
     const own = artifact && artifactOwnerEmail(artifact.actor, artifact.ownerEmail) === origin.user.email &&
       (actor.kind === "user" || artifact.agentName === (origin.ancestry[0] ?? agentName));
@@ -78,9 +81,9 @@ export function buildFileTool(
     if (artifact.privateFileId && (!allowPrivate || actor?.kind !== "user" || !deps.readPrivateArtifact)) {
       throw new DocumentProcessingError("Private artifacts support authenticated read and inspect only");
     }
-    const read = artifact.privateFileId
+    const read = draft ?? (artifact.privateFileId
       ? await deps.readPrivateArtifact!(artifact.artifactId, actor!.id, MAX_DOCUMENT_BYTES)
-      : await storage!.objects.read(artifact.key, MAX_DOCUMENT_BYTES);
+      : await storage!.objects.read(artifact.key, MAX_DOCUMENT_BYTES));
     return { artifact, file: { bytes: read.bytes, mimeType: artifact.mimeType, name: artifact.filename ?? "file" } };
   }
 

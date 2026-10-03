@@ -7,6 +7,7 @@ import { VIEW_URL_TTL_SECONDS } from "@/shared/artifactUrlTtl";
 import { log } from "@/shared/logger";
 import { listChatMessages } from "./messageList";
 import { pendingRuntimeApproval } from "@/application/runtime/session";
+import { withoutReplacedFiles } from "@/domain/chat/fileRefs";
 
 export interface ChatWithMessages {
   pendingApproval?: Awaited<ReturnType<typeof pendingRuntimeApproval>>;
@@ -73,7 +74,7 @@ export async function getChat(
   // Signed for the reader who is about to look at them. A stored row holds an
   // object key, never an address that keeps working after this response.
   const resolved = await resolveMessageImages(
-    messages.map(forReading),
+    withoutReplacedFiles(messages).map(forReading),
     deps.artifacts?.objects.sign,
     VIEW_URL_TTL_SECONDS,
   );
@@ -89,6 +90,7 @@ export async function getChat(
     resolved.messages,
     deps.artifacts?.objects.sign,
     VIEW_URL_TTL_SECONDS,
+    deps.artifacts?.rows,
   );
   if (withFiles.dropped > 0) {
     log.warn("chat", `${withFiles.dropped} file(s) of chat ${chatId} could not be addressed`);
