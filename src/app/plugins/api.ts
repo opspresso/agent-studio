@@ -1,19 +1,13 @@
 import type { Plugin } from "@/domain/plugin/types";
 import type { PluginResponse } from "@/app/api/plugins/[name]/route";
+import type { PluginsSyncConfigResponse } from "@/app/api/plugins/sync/route";
 import type { PluginSyncResult, PluginSyncSelection } from "@/domain/plugin/sync";
 import type { PluginSyncRecord } from "@/domain/plugin/repository";
 import { readJson } from "@/app/_lib/httpClient";
 
 export type { Plugin, PluginSyncRecord, PluginSyncResult, PluginSyncSelection };
+export type { PluginsSyncConfigResponse };
 export type PluginDetail = PluginResponse;
-
-export interface PluginsSyncConfig {
-  configured: boolean;
-  repo: string | null;
-  branch: string;
-  /** The persisted outcome of the last sync, whoever ran it. */
-  last: PluginSyncRecord | null;
-}
 
 export function listPlugins(): Promise<Plugin[]> {
   return fetch("/api/plugins").then((r) => readJson<Plugin[]>(r));
@@ -48,6 +42,6 @@ export function uploadPluginsArchive(
   );
 }
 
-export function getPluginsSyncConfig(): Promise<PluginsSyncConfig> {
-  return fetch("/api/plugins/sync").then((r) => readJson<PluginsSyncConfig>(r));
+export function getPluginsSyncConfig(): Promise<PluginsSyncConfigResponse> {
+  return fetch("/api/plugins/sync").then((r) => readJson<PluginsSyncConfigResponse>(r));
 }

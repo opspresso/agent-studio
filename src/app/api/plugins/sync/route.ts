@@ -2,10 +2,19 @@ import { withAdminAuth, withAuth } from "@/lib/session";
 import { apiError } from "@/app/api/_lib/http";
 import { AppError, UpstreamError } from "@/application/errors";
 import { archiveSyncRepo } from "@/domain/plugin/sync";
+import type { PluginSyncRecord } from "@/domain/plugin/repository";
 import { getPluginsRepoConfig } from "@/lib/runtime-settings";
 import { lastPluginSync, syncPluginsFromRepo } from "@/lib/container";
 import { selectionSchema } from "./_lib/selection";
 import { editorBody } from "@/app/api/_lib/body";
+
+export interface PluginsSyncConfigResponse {
+  configured: boolean;
+  repo: string | null;
+  branch: string;
+  /** The persisted outcome of the last sync, whoever ran it. */
+  last: PluginSyncRecord | null;
+}
 
 export const GET = withAuth(async () => {
   const { repo, branch, token } = await getPluginsRepoConfig();
@@ -18,7 +27,7 @@ export const GET = withAuth(async () => {
     // the name an archive upload would use, which is the configured repo when
     // there is one — so a deployment syncing by upload alone still sees it.
     last: await lastPluginSync(archiveSyncRepo(repo)),
-  });
+  } satisfies PluginsSyncConfigResponse);
 });
 
 export const POST = withAdminAuth(async (user, request: Request) => {

@@ -20,7 +20,7 @@ import {
   syncPlugins,
   uploadPluginsArchive,
   type Plugin,
-  type PluginsSyncConfig,
+  type PluginsSyncConfigResponse,
   type PluginSyncResult,
   type PluginSyncSelection,
 } from "./api";
@@ -37,7 +37,7 @@ export default function PluginsPage() {
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<PluginSyncResult | null>(null);
-  const [syncConfig, setSyncConfig] = useState<PluginsSyncConfig | null>(null);
+  const [syncConfig, setSyncConfig] = useState<PluginsSyncConfigResponse | null>(null);
   /**
    * The archive behind the report on screen, when there is one. Applying a
    * deletion re-runs the sync that reported the orphan, and an archive sync
