@@ -12,6 +12,7 @@
 
 import type { Run } from "../../markdown";
 import { DECK, LEADING, centiPoints, emu } from "../theme";
+import { CJK_CHARACTER } from "../semantics";
 import type { Piece } from "./types";
 
 /** EMU, which is what every DrawingML measurement is in: 914,400 to the inch. */
@@ -148,21 +149,11 @@ export const COLUMNS = 45;
 export const INDENT_COLUMNS = 2;
 export const INDENT_EMU = 274320;
 
-/**
- * Scripts that take a full character width.
- *
- * The same set `write/pdf.ts` breaks lines on, and deliberately a second copy:
- * importing it from there would pull `pdf-lib` and a 2MB font loader into a
- * renderer that embeds nothing.
- */
-const WIDE =
-  /[ᄀ-ᇿ⺀-〿぀-ヿ㄰-㆏㐀-䶿一-鿿ꥠ-꥿가-퟿豈-﫿︰-﹏＀-｠￠-￦]/;
-
 /** Text width in character units: a wide character is one, everything else is half. */
 export function widthOf(text: string): number {
   let width = 0;
   for (const character of text) {
-    width += WIDE.test(character) ? 1 : 0.5;
+    width += CJK_CHARACTER.test(character) ? 1 : 0.5;
   }
   return width;
 }

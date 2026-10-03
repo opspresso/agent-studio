@@ -29,6 +29,7 @@ import { plainTextOf, withoutDirectives } from "../markdown";
 import { columnShares } from "./table";
 import {
   HANGUL,
+  CJK_CHARACTER,
   pageStructureOf,
   figureOf,
   type Figure,
@@ -99,16 +100,6 @@ function coloursFor(design: DesignProfile): PdfColours {
     tint: colour("brandTint"),
   };
 }
-
-/**
- * Scripts that break between any two characters.
- *
- * Hangul, Han, Kana, and the CJK punctuation and full-width forms that travel
- * with them. A Latin word inside Korean prose is still one atom, which is what
- * keeps `mcp-document` from being broken across two lines.
- */
-const CJK =
-  /[ᄀ-ᇿ⺀-〿぀-ヿ㄰-㆏㐀-䶿一-鿿ꥠ-꥿가-퟿豈-﫿︰-﹏＀-｠￠-￦]/;
 
 /** Characters the built-in Courier can encode, which is what makes a listing monospaced. */
 const LATIN1_ONLY = /^[\x20-\x7e]*$/;
@@ -192,7 +183,7 @@ function atomsOf(run: Run, fonts: Fonts, size: number, maxWidth = Infinity): Ato
       push(character, true);
       continue;
     }
-    if (CJK.test(character)) {
+    if (CJK_CHARACTER.test(character)) {
       push(word, false);
       word = "";
       push(character, false);
