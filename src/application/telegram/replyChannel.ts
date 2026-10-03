@@ -7,6 +7,8 @@ import {
 } from "@/application/messaging/editInPlaceReply";
 import type { ReplyChannel } from "@/domain/messaging/reply";
 import { closeOpenFence } from "@/shared/markdownFence";
+import { cutCodePoints } from "@/shared/utf8Text";
+import { savedFileName } from "@/domain/artifact/types";
 
 /**
  * How a Telegram reply is delivered — the single owner of that decision.
@@ -116,13 +118,12 @@ export function createTelegramReplyChannel(
     },
 
     async sendImage(image, index) {
-      const ext = image.mimeType === "image/png" ? "png" : "jpg";
       await telegram.sendPhoto(token, {
         chatId: target.chatId,
         ...thread,
         photo: Buffer.from(image.b64, "base64"),
-        filename: `generated-${Date.now()}-${index + 1}.${ext}`,
-        ...(image.prompt ? { caption: image.prompt.slice(0, 1024) } : {}),
+        filename: savedFileName(`generated-${Date.now()}-${index + 1}`, image.mimeType),
+        ...(image.prompt ? { caption: cutCodePoints(image.prompt, 1024) } : {}),
       });
     },
 
