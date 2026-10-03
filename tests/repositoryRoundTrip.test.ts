@@ -14,7 +14,7 @@ vi.mock("@/infrastructure/db/store", async () => (await import("./fakeStore")).c
 const store = (await import("@/infrastructure/db/store")) as unknown as FakeStore;
 
 import type { ChatMessage } from "@/domain/chat/types";
-import { keys } from "@/infrastructure/db/keys";
+import { CHAT_MESSAGE_MAX_SEQ, keys } from "@/infrastructure/db/keys";
 import { chatRepository } from "@/infrastructure/db/repositories/chatRepository";
 import { mcpRepository } from "@/infrastructure/db/repositories/mcpRepository";
 import { agentRepository } from "@/infrastructure/db/repositories/agentRepository";
@@ -580,15 +580,18 @@ describe("chatRepository message round-trip", () => {
     expect((await store.getItem(keys.chat("c-seq")))?.nextSeq).toBe(6);
   });
 
-  it("starts the counter past the newest message of a chat written before it existed", async () => {
-    store.seed([
-      { ...keys.chat("c-legacy") },
-      { ...keys.chatMessage("c-legacy", 0), seq: 0 },
-      { ...keys.chatMessage("c-legacy", 7), seq: 7 },
-    ]);
+  it("refuses sequence numbers beyond the readable message key range", async () => {
+    store.seed([{ ...keys.chat("c-full"), nextSeq: CHAT_MESSAGE_MAX_SEQ }]);
+    await expect(chatRepository.reserveMessageSeq("c-full")).resolves.toBe(CHAT_MESSAGE_MAX_SEQ);
+    await expect(chatRepository.reserveMessageSeq("c-full")).rejects.toThrow("Chat message sequence limit reached");
+    expect((await store.getItem(keys.chat("c-full")))?.nextSeq).toBe(CHAT_MESSAGE_MAX_SEQ + 1);
+  });
 
-    await expect(chatRepository.reserveMessageSeq("c-legacy")).resolves.toBe(8);
-    await expect(chatRepository.reserveMessageSeq("c-legacy")).resolves.toBe(9);
+  it.each([undefined, null, "4", -1, 1.5])("rejects an invalid stored counter %j without reconstructing it from history", async nextSeq => {
+    store.seed([{ ...keys.chat("c-invalid"), nextSeq }, { ...keys.chatMessage("c-invalid", 7), seq: 7 }]);
+    const before = store.all();
+    await expect(chatRepository.reserveMessageSeq("c-invalid")).rejects.toThrow("Invalid stored Chat message sequence");
+    expect(store.all()).toEqual(before);
   });
 
   it("preserves every role's fields through appendMessage + listMessages", async () => {
