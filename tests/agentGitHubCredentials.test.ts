@@ -32,7 +32,7 @@ const target = { apiUrl: "https://api.github.com", webUrl: "https://github.com" 
 const oauth: OAuthClient = { register: vi.fn(), exchangeCode: vi.fn(), refresh: vi.fn() };
 const auth = createMcpAuthProvider({ ...isolatedMcpRefresh(), connections: mcpConnectionRepository, oauth, cipher: secretCipher });
 const credentials = createAgentGitHubCredentials({ authorize: async (name) => { const row = await agentRepository.get(name); if (!row) throw new Error("Agent not found"); return row; }, mcps: mcpRepository, auth, cipher: secretCipher, target });
-const github = (agentName: string) => createCodingGitHub({ ...target, internalHosts: [], getToken: () => credentials.token(agentName, { userId: agentName, email: "owner@example.test" }) }, () => now).forge;
+const github = (agentName: string) => createCodingGitHub({ ...target, internalHosts: [], getToken: () => credentials.token(agentName, { userId: agentName, email: "owner@example.test" }) }).forge;
 const creations = createWorkspaceRepositoryCreationUseCases({ policies: workspacePolicyRepository, creations: workspaceRepositoryCreationStore,
   authorize: async () => {}, forge: github, now: () => now });
 let requests: { path: string; token: string | null; method: string }[];

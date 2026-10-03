@@ -503,7 +503,7 @@ describe("explicit coding action approvals", () => {
     }));
     try {
       forge = createCodingGitHub({ apiUrl: "https://example.test/api/v3", webUrl: "https://example.test",
-        internalHosts: ["example.test"], getToken: async () => "test-account-token" }, () => now).forge;
+        internalHosts: ["example.test"], getToken: async () => "test-account-token" }).forge;
       await repository.write({ expectedRevision: workspace.revision, workspace: { ...workspace, revision: workspace.revision + 1, pullRequest: pull } });
       const api = createCodingUseCases(deps);
       const pending = await api.request(workspace.id, { user: user, actor: { kind: "user", id: owner } }, { kind: "merge", pullRequestNumber: 7, headSha: head });

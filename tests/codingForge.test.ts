@@ -1,15 +1,12 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
-import { createHmac } from "node:crypto";
 import { createCodingGitHub } from "@/infrastructure/github/codingForge";
 import { CodingMutationRejectedError } from "@/domain/coding/types";
 
-vi.mock("node:crypto", async importOriginal => ({ ...await importOriginal<typeof import("node:crypto")>(),
-  sign: vi.fn(() => Buffer.from("deterministic-test-signature")) }));
 const now = new Date("2026-09-14T00:00:00Z");
 const sha = "a".repeat(40);
 const repository = { repository: "company/repo", baseBranch: "main", branch: "agent/task-1", headSha: sha };
-const config = { apiUrl: "http://localhost:9009/api/v3", webUrl: "http://localhost:9009", appId: "app-1", installationId: 42,
-  privateKey: "test-private-key", webhookSecret: "test-webhook", internalHosts: ["localhost"] };
+const config = { apiUrl: "http://localhost:9009/api/v3", webUrl: "http://localhost:9009",
+  getToken: async () => "caller-token", internalHosts: ["localhost"] };
 let requests: { url: string; method: string; headers: Headers; body: Record<string, unknown> }[];
 let pull: { number: number; node_id: string; html_url: string; draft: boolean; state: "open" | "closed"; head: { sha: string; ref: string; repo: { full_name: string } }; base: { ref: string; repo: { full_name: string } } };
 let checks: { status: string; conclusion: string }[];
@@ -54,7 +51,6 @@ beforeEach(() => {
     if (request.url.endsWith("/releases")) return refusal ? new Response(null, { status: refusal }) : Response.json(releaseReceipt, { status: 201 });
     if (request.url.includes("/compare/")) return Response.json({ status: comparison });
     if (request.url.includes("/git/refs/heads/main")) return refusal ? new Response("refused", { status: refusal }) : Response.json({ object: { sha: request.body.sha } });
-    if (request.url.endsWith("/access_tokens")) return Response.json({ token: "short-lived-test-token", expires_at: "2026-09-14T01:00:00Z" });
     if (request.url.includes("/branches?")) return Response.json(branchNames.map(name => ({ name })), { status: repositoryStatus });
     if (request.url.includes("/branches/")) return Response.json({}, { status: branchStatus });
     if (request.url.endsWith(`/commits/${sha}`)) return Response.json({ sha });
@@ -73,9 +69,15 @@ beforeEach(() => {
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
-describe("coding GitHub App adapter", () => {
+describe("coding GitHub adapter", () => {
+  it("requires the caller's GitHub grant even when obsolete App credentials are supplied", () => {
+    expect(() => createCodingGitHub({ ...config, getToken: undefined,
+      appId: "old-app", installationId: 42, privateKey: "unused-key" } as never)).toThrow("Invalid coding GitHub configuration");
+    expect(requests).toEqual([]);
+  });
+
   const release = { kind: "release" as const, tag: "v1.0.0", title: "First release", body: "Verified changes", draft: false, prerelease: false };
-  it("creates an exact main tag and releases it with contents-only write permission", async () => {
+  it("creates an exact main tag and releases it with the caller's grant", async () => {
     const { forge } = createCodingGitHub(config);
     const target = await forge.releaseTarget(repository);
     expect(target).toEqual({ headSha: mainSha, ci: "passed" });
@@ -84,7 +86,7 @@ describe("coding GitHub App adapter", () => {
     expect(requests.find(row => row.url.endsWith("/git/refs"))?.body).toEqual({ ref: "refs/tags/v1.0.0", sha: mainSha });
     expect(requests.find(row => row.url.endsWith("/releases"))?.body).toEqual({ tag_name: release.tag, target_commitish: mainSha,
       name: release.title, body: release.body, draft: false, prerelease: false });
-    expect(requests.filter(row => row.url.endsWith("/access_tokens")).at(-1)?.body.permissions).toEqual({ contents: "write" });
+    expect(requests.every(row => row.headers.get("Authorization") === "Bearer caller-token")).toBe(true);
   });
   it("reuses a matching tag and refuses tag overwrite, stale main and failed checks", async () => {
     const { forge } = createCodingGitHub(config);
@@ -132,7 +134,7 @@ describe("coding GitHub App adapter", () => {
     expect(result).not.toBeInstanceOf(CodingMutationRejectedError);
     expect(result.message).toContain("Release was created");
   });
-  it("checks the immutable review commit with scoped read access rather than a mutable branch", async () => {
+  it("checks the immutable review commit instead of a mutable branch", async () => {
     const { forge } = createCodingGitHub(config);
     await forge.checkRepository(repository.repository, `review/${sha}`, sha);
     expect(requests.some(request => request.url.endsWith(`/commits/${sha}`))).toBe(true);
@@ -141,12 +143,12 @@ describe("coding GitHub App adapter", () => {
   });
   it.each([401, 403, 404])("reports unavailable repository access before clone (%s)", async status => {
     repositoryStatus = status;
-    await expect(createCodingGitHub(config, () => now).forge.checkRepository(repository.repository, "main"))
+    await expect(createCodingGitHub(config).forge.checkRepository(repository.repository, "main"))
       .rejects.toMatchObject({ reason: "unavailable", message: expect.stringContaining(`HTTP ${status}`) });
-    expect(requests.filter(row => !row.url.endsWith("/access_tokens")).every(row => row.method === "GET")).toBe(true);
+    expect(requests.every(row => row.method === "GET")).toBe(true);
   });
   it("distinguishes an empty repository from a missing branch and accepts a ready branch", async () => {
-    const forge = createCodingGitHub(config, () => now).forge;
+    const forge = createCodingGitHub(config).forge;
     branchNames = [];
     await expect(forge.checkRepository(repository.repository, "main")).rejects.toMatchObject({ reason: "empty" });
     branchNames = ["develop"]; branchStatus = 404;
@@ -156,32 +158,30 @@ describe("coding GitHub App adapter", () => {
   });
   it("does not call a transport failure a missing repository", async () => {
     repositoryStatus = 503;
-    await expect(createCodingGitHub(config, () => now).forge.checkRepository(repository.repository, "main"))
+    await expect(createCodingGitHub(config).forge.checkRepository(repository.repository, "main"))
       .rejects.toMatchObject({ status: 503 });
   });
-  it("uses account credentials only on the server and never issues them to a Sandbox", async () => {
+  it("uses the caller's account credential at the server request boundary", async () => {
     const getToken = vi.fn(async () => "server-only-account-token");
-    const github = createCodingGitHub({ apiUrl: config.apiUrl, webUrl: config.webUrl, internalHosts: config.internalHosts, getToken }, () => now);
+    const github = createCodingGitHub({ apiUrl: config.apiUrl, webUrl: config.webUrl, internalHosts: config.internalHosts, getToken });
     expect((await github.forge.branches(repository.repository)).names).toContain("main");
     expect(requests).toHaveLength(1);
     expect(requests[0]!.headers.get("Authorization")).toBe("Bearer server-only-account-token");
-    expect(() => github.credential(repository.repository, "read")).toThrow("cannot be issued");
     expect(getToken).toHaveBeenCalledTimes(1);
   });
-  it("issues short-lived tokens scoped to the selected repository and exact permission", async () => {
-    const github = createCodingGitHub(config, () => now);
-    const credential = await github.credential(repository.repository, "read");
-    expect(credential.expiresAt).toBe("2026-09-14T01:00:00Z");
-    expect(requests[0]?.body).toEqual({ repositories: ["repo"], permissions: { contents: "read" } });
-    const jwt = requests[0]!.headers.get("Authorization")!.slice(7).split(".");
-    expect(JSON.parse(Buffer.from(jwt[1]!, "base64url").toString())).toMatchObject({ iss: "app-1", iat: now.getTime() / 1000 - 60, exp: now.getTime() / 1000 + 540 });
-    expect(JSON.stringify(requests)).not.toContain(config.privateKey);
+  it("reads the current grant on every operation and stops when it is revoked", async () => {
+    const getToken = vi.fn().mockResolvedValueOnce("first-token").mockResolvedValueOnce("rotated-token").mockRejectedValueOnce(new Error("grant revoked"));
+    const github = createCodingGitHub({ ...config, getToken });
+    await github.forge.branches(repository.repository);
+    await github.forge.branches(repository.repository);
+    await expect(github.forge.branches(repository.repository)).rejects.toThrow("grant revoked");
+    expect(requests.map(row => row.headers.get("Authorization"))).toEqual(["Bearer first-token", "Bearer rotated-token"]);
   });
   it("lists bounded branch choices", async () => {
-    expect(await createCodingGitHub(config, () => now).forge.branches(repository.repository)).toEqual({ names: ["main", "feature/change"], hasMore: false });
+    expect(await createCodingGitHub(config).forge.branches(repository.repository)).toEqual({ names: ["main", "feature/change"], hasMore: false });
   });
   it("does not treat absent, pending or failed CI as success", async () => {
-    const forge = createCodingGitHub(config, () => now).forge;
+    const forge = createCodingGitHub(config).forge;
     checks = [];
     expect((await forge.pullRequest(repository, 7)).ci).toBe("none");
     checks = [{ status: "in_progress", conclusion: "" }];
@@ -192,13 +192,13 @@ describe("coding GitHub App adapter", () => {
   });
   it("merges a PR with no reported checks without claiming CI passed", async () => {
     checks = [];
-    const forge = createCodingGitHub(config, () => now).forge;
+    const forge = createCodingGitHub(config).forge;
     expect((await forge.pullRequest(repository, 7)).ci).toBe("none");
     await forge.merge(repository, 7, sha);
     expect(requests.find(request => request.url.endsWith("/merge"))?.body.sha).toBe(sha);
   });
   it("publishes only the reviewed work branch to main with force disabled", async () => {
-    const forge = createCodingGitHub(config, () => now).forge;
+    const forge = createCodingGitHub(config).forge;
     expect(await forge.reviewMainPush(repository, sha)).toEqual({ baseSha: mainSha, ci: "passed" });
     expect(await forge.pushMain(repository, sha, mainSha)).toBe(sha);
     expect(requests.find(request => request.method === "PATCH")?.body).toEqual({ sha, force: false });
@@ -206,11 +206,11 @@ describe("coding GitHub App adapter", () => {
   });
   it.each(["diverged", "behind"])("refuses a %s main update without sending a mutation", async state => {
     comparison = state;
-    await expect(createCodingGitHub(config, () => now).forge.reviewMainPush(repository, sha)).rejects.toThrow("never overwrites history");
+    await expect(createCodingGitHub(config).forge.reviewMainPush(repository, sha)).rejects.toThrow("never overwrites history");
     expect(requests.some(request => request.method === "PATCH")).toBe(false);
   });
   it("rejects unpublished, changed-base and pending-CI main pushes", async () => {
-    const forge = createCodingGitHub(config, () => now).forge;
+    const forge = createCodingGitHub(config).forge;
     branchSha = "f".repeat(40);
     await expect(forge.reviewMainPush(repository, sha)).rejects.toThrow("Push the reviewed commit");
     branchSha = sha;
@@ -221,10 +221,10 @@ describe("coding GitHub App adapter", () => {
   });
   it("distinguishes GitHub's definitive branch-rule refusal from a lost response", async () => {
     refusal = 422;
-    await expect(createCodingGitHub(config, () => now).forge.pushMain(repository, sha, mainSha)).rejects.toMatchObject({ message: expect.stringContaining("branch rules") });
+    await expect(createCodingGitHub(config).forge.pushMain(repository, sha, mainSha)).rejects.toMatchObject({ message: expect.stringContaining("branch rules") });
   });
   it("merges only the exact head and rejects foreign pull requests", async () => {
-    const forge = createCodingGitHub(config, () => now).forge;
+    const forge = createCodingGitHub(config).forge;
     await expect(forge.merge(repository, 7, "c".repeat(40))).rejects.toThrow("head");
     await forge.merge(repository, 7, sha);
     expect(requests.find(request => request.url.endsWith("/merge"))?.body).toEqual({ sha, merge_method: "merge" });
@@ -236,50 +236,42 @@ describe("coding GitHub App adapter", () => {
     { merged: true, sha: "b".repeat(41) }, { merged: "true", sha }, { merged: 1, sha },
   ])("keeps an invalid merge receipt uncertain (%j)", async receipt => {
     mergeReceipt = receipt;
-    await expect(createCodingGitHub(config, () => now).forge.merge(repository, 7, sha))
+    await expect(createCodingGitHub(config).forge.merge(repository, 7, sha))
       .rejects.toThrow("did not confirm the pull request merge");
     expect(requests.filter(request => request.url.endsWith("/merge"))).toHaveLength(1);
   });
   it("distinguishes a confirmed merge refusal from an invalid receipt", async () => {
     mergeReceipt = { merged: false, sha: "" };
-    await expect(createCodingGitHub(config, () => now).forge.merge(repository, 7, sha))
+    await expect(createCodingGitHub(config).forge.merge(repository, 7, sha))
       .rejects.toBeInstanceOf(CodingMutationRejectedError);
   });
   it.each([40, 64])("returns a confirmed %i-character merge commit", async length => {
     mergeReceipt = { merged: true, sha: "b".repeat(length) };
-    await expect(createCodingGitHub(config, () => now).forge.merge(repository, 7, sha))
+    await expect(createCodingGitHub(config).forge.merge(repository, 7, sha))
       .resolves.toBe("b".repeat(length));
   });
   it("reuses a draft PR and explicitly marks it ready for review", async () => {
     existing = true; pull.draft = true;
-    const result = await createCodingGitHub(config, () => now).forge.openPullRequest(repository, { title: "Title", body: "Body", draft: false });
+    const result = await createCodingGitHub(config).forge.openPullRequest(repository, { title: "Title", body: "Body", draft: false });
     expect(result.draft).toBe(false);
     expect(requests.filter(request => request.url.endsWith("/pulls") && request.method === "POST")).toHaveLength(0);
     expect(requests.find(request => request.url.endsWith("/graphql"))?.body.variables).toEqual({ id: "PR_node" });
   });
   it("does not edit an existing PR whose source head changed after publication", async () => {
     existing = true; pull.head.sha = "f".repeat(40);
-    await expect(createCodingGitHub(config, () => now).forge.openPullRequest(repository, { title: "Title", body: "Body", draft: false })).rejects.toThrow("head changed");
+    await expect(createCodingGitHub(config).forge.openPullRequest(repository, { title: "Title", body: "Body", draft: false })).rejects.toThrow("head changed");
     expect(requests.some(request => request.method === "PATCH")).toBe(false);
   });
   it("dispatches a workflow through GitHub rather than Sandbox execution", async () => {
-    const result = await createCodingGitHub(config, () => now).forge.dispatch(repository.repository, "deploy.yaml", "main", { target: "preview" });
+    const result = await createCodingGitHub(config).forge.dispatch(repository.repository, "deploy.yaml", "main", { target: "preview" });
     expect(result.runId).toBe(99);
     expect(dispatchCount).toBe(1);
     expect(requests.find(request => request.url.endsWith("/dispatches"))?.body).toEqual({ ref: "main", inputs: { target: "preview" } });
   });
   it("honors an explicit request to convert an existing PR to draft", async () => {
     existing = true;
-    const result = await createCodingGitHub(config, () => now).forge.openPullRequest(repository, { title: "Title", body: "Body", draft: true });
+    const result = await createCodingGitHub(config).forge.openPullRequest(repository, { title: "Title", body: "Body", draft: true });
     expect(result.draft).toBe(true);
     expect(String(requests.find(request => request.url.endsWith("/graphql"))?.body.query)).toContain("convertPullRequestToDraft");
-  });
-  it("authenticates webhook bodies, including rejection after body tampering", () => {
-    const github = createCodingGitHub(config, () => now);
-    const body = '{"event":"check_run"}';
-    const signature = `sha256=${createHmac("sha256", config.webhookSecret).update(body).digest("hex")}`;
-    expect(github.verifyWebhook(body, signature)).toBe(true);
-    expect(github.verifyWebhook(body + " ", signature)).toBe(false);
-    expect(github.verifyWebhook(body, null)).toBe(false);
   });
 });
