@@ -109,7 +109,7 @@ export interface SlackChannelInfo {
 /**
  * A person, as `users.info` describes them — narrowed to what a run may see.
  *
- * **No email**, though `users:read.email` is granted. That is the rule
+ * **No email**, even if a pre-existing grant includes it. That is the rule
  * `callerFrom` already applies to the caller block, for the same reason: an
  * email identifies someone outside Slack, and no answer needs one to be written
  * well. Everything here is visible to anyone in the workspace who clicks a

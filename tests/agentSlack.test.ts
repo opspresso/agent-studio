@@ -418,6 +418,11 @@ describe("what the manifest asks Slack for", () => {
     expect(scopes()).toContain("channels:read");
     expect(scopes()).toContain("channels:history");
   });
+
+  it("requests display profiles without permission to read email addresses", () => {
+    expect(scopes()).toContain("users:read");
+    expect(scopes()).not.toContain("users:read.email");
+  });
 });
 
 describe("channel keywords", () => {

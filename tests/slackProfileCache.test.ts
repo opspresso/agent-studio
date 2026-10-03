@@ -8,8 +8,7 @@ import {
 const NOW = 1_750_000_000_000;
 const HOUR = 60 * 60 * 1000;
 const PROFILE = {
-  detail: { id: "U1", displayName: "Bruce", timezone: "Asia/Seoul" },
-  email: "bruce@example.com",
+  id: "U1", displayName: "Bruce", timezone: "Asia/Seoul",
 };
 
 beforeEach(() => {

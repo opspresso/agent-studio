@@ -64,12 +64,6 @@ export interface SlackReaderPort {
    */
   userDetail(token: string, userId: string): Promise<SlackUserDetail | null>;
   /**
-   * Resolve the address behind a Slack user ID for artifact ownership, never
-   * for a prompt. Return null when email is unavailable; the Agent index still
-   * keeps unattributed outputs accessible to their managers.
-   */
-  userEmail(token: string, userId: string): Promise<string | null>;
-  /**
    * People whose name or handle contains `query`.
    *
    * Slack has no name search a bot can reach — `users.list` is a full walk — so

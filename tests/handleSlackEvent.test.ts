@@ -120,8 +120,6 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
   const downloads: string[] = [];
   const profileLookups: string[] = [];
   const profiles = new Map<string, RunCaller>();
-  /** Slack id → address, for the artifact owner the run files its output under. */
-  const emails = new Map<string, string>();
   const slack: SlackClientPort = {
     async setSessionStatus(_token, args) {
       calls.push(`session:${args.status}`);
@@ -217,10 +215,6 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
     },
     // The workspace read tools have their own tests; the handler never calls
     // these, and a fake that omitted them would only be hiding that.
-    async userEmail(_token, userId) {
-      calls.push("userEmail");
-      return emails.get(userId) ?? null;
-    },
     async userDetail() {
       calls.push("userDetail");
       return null;
@@ -256,7 +250,6 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
     replies,
     downloads,
     profiles,
-    emails,
     profileLookups,
     finalText,
   };
@@ -405,8 +398,7 @@ describe("stopping Slack runs", () => {
   });
 
   it("applies the private-agent access gate before recording native and command stops", async () => {
-    const { slack, emails } = makeSlackFake();
-    emails.set("U1", "outsider@example.com");
+    const { slack } = makeSlackFake();
     const deps = deps0(slack);
     deps.agents.get = async () => ({ ...agentFixture(), visibility: "private" });
     deps.identities.resolve = async () => null;
@@ -2105,8 +2097,8 @@ describe("uploading what the run read", () => {
  * personal usage and Artifact custody. Unlinked senders cannot execute.
  */
 describe("verified Slack caller attribution", () => {
-  it("uses the Studio identity rather than a platform-supplied email or owner permission", async () => {
-    const { slack, emails } = makeSlackFake(); emails.set("U1", "untrusted@example.test");
+  it("uses the verified Studio identity for ownership while preserving the Slack actor", async () => {
+    const { slack } = makeSlackFake();
     const deps = deps0(slack); const run = vi.fn<SlackEventDeps["runAgent"]>(async function* () { yield { done: true }; }); deps.runAgent = run;
     deps.identities.resolve = async () => ({ userId: "verified-user", email: "verified@example.test" });
     deps.agents = withConfigurations({ get: async () => ({ ...agentFixture(), slack: { enabled: true, botToken: "token", signingSecret: "secret" } }) } as never, async () => configurationFixture());
@@ -2114,9 +2106,14 @@ describe("verified Slack caller attribution", () => {
     expect(run.mock.calls[0]?.[0].ownerEmail).toBe("verified@example.test");
     expect(run.mock.calls[0]?.[0].actor).toEqual({ kind: "slack", id: "U1" });
   });
-  it("does not depend on optional Slack email profile lookup", async () => {
-    const { slack, finalText } = makeSlackFake(); slack.userEmail = async () => { throw new Error("missing_scope"); };
-    await handleSlackEvent(makeDeps([{ delta: { content: "linked caller" } }, { done: true }], slack), EVENT, BINDING);
+  it("answers a linked caller when the optional display profile lookup fails", async () => {
+    const { slack, finalText } = makeSlackFake();
+    slack.userProfile = vi.fn(async () => { throw new Error("missing_scope"); });
+    const deps = makeDeps([{ delta: { content: "linked caller" } }, { done: true }], slack);
+    deps.agents = withConfigurations({ get: async () => agentFixture() } as never,
+      async () => ({ ...configurationFixture(), parameters: { callerContext: true } }));
+    await handleSlackEvent(deps, EVENT, BINDING);
+    expect(slack.userProfile).toHaveBeenCalledWith("tok", "U1");
     expect(finalText()).toBe("linked caller");
   });
 });

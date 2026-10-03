@@ -97,10 +97,6 @@ function makeSlackFake(
           }
         : null;
     },
-    async userEmail() {
-      // Attribution only; no tool reads it.
-      return null;
-    },
     async userDetail(_token, userId) {
       calls.push({ method: "userDetail", args: userId });
       return PEOPLE[userId] ?? null;
@@ -269,7 +265,7 @@ describe("looking up a user", () => {
   });
 
   it("never returns an email", async () => {
-    // `users:read.email` is granted to the bot, so this is a decision rather
+    // An existing grant may return email, so this is a decision rather
     // than a limitation — the same one `callerFrom` already makes for the
     // caller block. A profile shape that grew an email would fail here.
     const { read } = makeSlackFake();
@@ -559,9 +555,6 @@ describe("resolving a crowd of names", () => {
         return { channels: [], truncated: false };
       },
       async userDetail() {
-        return null;
-      },
-      async userEmail() {
         return null;
       },
       async findUsers() {

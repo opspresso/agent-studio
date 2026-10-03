@@ -13,7 +13,7 @@ import type {
 import { log } from "@/shared/logger";
 import { readBodyBytes } from "@/shared/httpBody";
 import { neutralizeSlackMentions } from "@/domain/slack/outboundText";
-import { getCachedProfile, rememberProfile, type CachedSlackProfile } from "./profileCache";
+import { getCachedProfile, rememberProfile } from "./profileCache";
 import type { SlackChannelListing, SlackChannelQuery } from "@/domain/slack/reader";
 export type { SlackMessage };
 
@@ -31,11 +31,6 @@ interface SlackUserInfo {
     status_text?: string;
     status_emoji?: string;
     image_512?: string;
-    /**
-     * Read for attribution and nothing else — `toUserDetail` does not copy it,
-     * so no tool result and no prompt can carry it.
-     */
-    email?: string;
   };
 }
 
@@ -220,19 +215,18 @@ function safeStreamArgs<T extends { markdown_text?: string; chunks?: SlackChunk[
 }
 
 /**
- * One `users.info`, cached per workspace, feeding three views: what a tool may
- * show, what the caller block may say, and the address attribution needs.
+ * One `users.info`, cached per workspace, feeding the tool and caller views.
  *
  * Never throws: a name is a nicety and a missing one must not be the reason a
  * mention goes unanswered. A failure is cached briefly so a revoked scope does
  * not cost a round trip per message.
  */
-async function fetchProfile(token: string, userId: string): Promise<CachedSlackProfile | null> {
+async function fetchProfile(token: string, userId: string): Promise<SlackUserDetail | null> {
   const cached = getCachedProfile(token, userId);
   if (cached) {
     return cached.value;
   }
-  let resolved: CachedSlackProfile | null = null;
+  let resolved: SlackUserDetail | null = null;
   try {
     const data = await slackGet<{ user?: SlackUserInfo }>(
       token,
@@ -242,8 +236,7 @@ async function fetchProfile(token: string, userId: string): Promise<CachedSlackP
     if (!data.user) {
       throw new Error("Slack users.info returned no user");
     }
-    const email = firstNonEmpty(data.user.profile?.email);
-    resolved = { detail: toUserDetail(data.user, userId), ...(email ? { email } : {}) };
+    resolved = toUserDetail(data.user, userId);
   } catch (error) {
     log.warn(
       "slack",
@@ -334,18 +327,7 @@ export const slackClient = {
    * not cost a round trip per message.
    */
   async userDetail(token: string, userId: string): Promise<SlackUserDetail | null> {
-    return (await fetchProfile(token, userId))?.detail ?? null;
-  },
-
-  /**
-   * The address behind a Slack id, for attribution only.
-   *
-   * Never reaches a prompt or a tool result — it decides whose gallery a run's
-   * output is filed under, which a Slack workspace id cannot answer. The lookup
-   * is the same one every other view here shares.
-   */
-  async userEmail(token: string, userId: string): Promise<string | null> {
-    return (await fetchProfile(token, userId))?.email ?? null;
+    return fetchProfile(token, userId);
   },
 
   /**

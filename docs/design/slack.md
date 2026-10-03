@@ -22,7 +22,8 @@ Interactivity payload 처리기와 토큰 갱신 흐름이 없어 해당 설정�
 워크스페이스 봇 토큰을 사용하며, 이 설정만으로 조직 단위 설치 흐름을 제공하지 않는다.
 봇 권한은 메시지·파일·리액션·채널 조회·사용자 확인에 사용한다. 채널 자동 가입,
 이모지 목록 조회와 사용자 custom profile 조회 권한은 요청하지 않는다.
-사용자 확인에는 `users:read`와 `users:read.email`을 사용하며, user token scope는 추가하지 않는다.
+표시 프로필 조회에는 `users:read`를 사용하며, 이메일 조회 권한과 user token scope는 요청하지 않는다.
+기존 앱이 이메일을 반환해도 어댑터는 이를 저장하거나 사용하지 않는다.
 
 `is_mcp_enabled`와 MCP OAuth callback은 같은 앱을 별도 MCP 연결에 사용할 수 있도록 유지한다.
 이 설정만으로 사용자 OAuth 연결이나 검색 권한이 생기지는 않는다. MCP 사용은 MCP 설정의 별도 인가를 따른다.

@@ -32,7 +32,7 @@ import {
  *   reads text it did not write and is steered by it, so a workspace where the
  *   same run can also post is one where a message in a channel can make the bot
  *   speak somewhere else.
- * - **Never an email.** `users:read.email` is granted too, and this is the same
+ * - **Never an email.** Existing grants may return one; this is the same
  *   rule `callerFrom` already applies to the caller block: a name, a timezone,
  *   nothing that identifies a person outside Slack.
  * - **Ids are resolved to names.** A transcript of `<@U04B7QK9E>` is not

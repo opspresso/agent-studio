@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { slackClient } from "@/infrastructure/slack/client";
-import { clearProfileCache } from "@/infrastructure/slack/profileCache";
+import { clearProfileCache, getCachedProfile } from "@/infrastructure/slack/profileCache";
 
 /**
  * The transport, not the features. Two things had to be true of every Slack call
@@ -29,6 +29,21 @@ afterEach(() => {
 });
 
 describe("how a Slack call fails", () => {
+  it("retains only display profile data even when an existing Slack grant returns an email", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    const request = vi.fn(async () => jsonResponse({ ok: true, user: { profile: { display_name: "Ada", email: "private@example.test" } } }));
+    vi.stubGlobal("fetch", request);
+    try {
+      await expect(slackClient.userDetail(TOKEN, "U1")).resolves.toEqual({ id: "U1", displayName: "Ada" });
+      await expect(slackClient.userProfile(TOKEN, "U1")).resolves.toEqual({ displayName: "Ada" });
+      expect(JSON.stringify(getCachedProfile(TOKEN, "U1"))).not.toContain("private@example.test");
+      expect(request).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("names a rate limit as one, and quotes what Slack asked for", async () => {
     // The body is deliberately not JSON — that is what Slack sends, and reading
     // it first is what produced a parse error in place of a diagnosis.

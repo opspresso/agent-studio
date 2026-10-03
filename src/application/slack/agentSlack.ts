@@ -307,7 +307,6 @@ export function buildAgentSlackManifest(
           "im:write",
           "reactions:read",
           "reactions:write",
-          "users:read.email",
           "users:read",
         ],
       },
