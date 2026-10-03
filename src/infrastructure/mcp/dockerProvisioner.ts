@@ -32,6 +32,13 @@ import {
 const run = promisify(execFile);
 
 const NAME = MANAGED_NAME;
+const OWNER_LABEL = "agent-studio.managed-mcp";
+const NAME_LABEL = "agent-studio.mcp-name";
+
+function assertContainerId(id: string): string {
+  if (!/^[a-f0-9]{64}$/.test(id)) throw new Error("Docker returned an invalid container identity");
+  return id;
+}
 
 class DockerCommandError extends Error {
   constructor(
@@ -74,6 +81,34 @@ function isMissingContainer(error: unknown): boolean {
   return error instanceof DockerCommandError && error.stderr.includes("No such container:");
 }
 
+/** Read only identity/state/ownership fields; Docker's full inspect includes secrets. */
+async function inspectOwned(target: string, name: string): Promise<ManagedWorkload | null> {
+  let state: string;
+  try {
+    state = await docker(["inspect", "--type", "container", "-f",
+      `{{.Id}} {{.State.Running}} {{.State.Status}} {{index .Config.Labels "${OWNER_LABEL}"}} {{index .Config.Labels "${NAME_LABEL}"}}`, target]);
+  } catch (error) {
+    if (isMissingContainer(error)) return null;
+    throw error;
+  }
+  const fields = state.split(/\s+/);
+  const [identity = "", running, detail, owner, ownerName] = fields;
+  if (fields.length !== 5 || owner !== "true" || ownerName !== name) {
+    throw new Error(`Docker container "${name}" is not owned by this managed MCP server`);
+  }
+  return { name, identity: assertContainerId(identity), running: running === "true",
+    address: `http://127.0.0.1:${managedPortFor(name)}`, detail };
+}
+
+async function removeContainer(identity: string): Promise<void> {
+  try {
+    // An ID cannot be reassigned to an unrelated container between inspect and rm.
+    await docker(["rm", "-f", assertContainerId(identity)]);
+  } catch (error) {
+    if (!isMissingContainer(error)) throw error;
+  }
+}
+
 /**
  * The container's environment as an env-file: one `KEY=VALUE` per line, which
  * is why a value cannot hold a line break. Written to a 0600 file the CLI
@@ -108,34 +143,39 @@ export function createDockerProvisioner(): McpProvisioner {
         }
         return arg.replaceAll("{{PORT}}", String(target));
       });
-      await docker(["pull", "-q", image]).catch(() => {
-        // A locally built image has nothing to pull; the run below will say so
-        // if it genuinely is not there.
-      });
-      await docker(["rm", "-f", name]).catch(() => {});
       const environment = spec.environment ?? {};
+      const contents = envFileContent(environment);
+      const previous = await inspectOwned(name, name);
+      await docker(["pull", "-q", image]).catch(async error => {
+        // Offline/local images are usable only when the daemon confirms them.
+        // Do not remove a working container for an image that cannot be started.
+        try { await docker(["image", "inspect", "--format", "{{.Id}}", image]); }
+        catch { throw error; }
+      });
+      if (previous) await removeContainer(previous.identity);
+      let identity: string;
       if (Object.keys(environment).length === 0) {
         // Nothing to hand over, so no file to write — and none to leave behind
         // if the run throws. The `--env-file` below is skipped for the same
         // reason.
-        await startContainer(undefined);
+        identity = await startContainer(undefined);
       } else {
         const envDir = await mkdtemp(join(tmpdir(), "agent-studio-mcp-"));
         const envFile = join(envDir, "env");
         try {
-          await writeFile(envFile, envFileContent(environment), { mode: 0o600 });
-          await startContainer(envFile);
+          await writeFile(envFile, contents, { mode: 0o600 });
+          identity = await startContainer(envFile);
         } finally {
           await rm(envDir, { recursive: true, force: true });
         }
       }
-      const state = await docker(["inspect", "-f", "{{.Id}} {{.State.Running}}", name]);
-      const [identity = "", running = "false"] = state.split(/\s+/);
-      return { name, address: `http://127.0.0.1:${port}`, identity, running: running === "true" };
+      const workload = await inspectOwned(assertContainerId(identity), name);
+      if (!workload) throw new Error(`Managed MCP server "${name}" disappeared during startup`);
+      return workload;
 
-      async function startContainer(environmentFile: string | undefined): Promise<void> {
+      async function startContainer(environmentFile: string | undefined): Promise<string> {
         try {
-          await runContainer(environmentFile);
+          return await runContainer(environmentFile);
         } catch (cause) {
           // The port is a hash of the name over 400 slots, so two managed
           // servers can collide — and Docker's bind error does not say with
@@ -157,12 +197,16 @@ export function createDockerProvisioner(): McpProvisioner {
         }
       }
 
-      async function runContainer(environmentFile: string | undefined): Promise<void> {
-        await docker([
+      async function runContainer(environmentFile: string | undefined): Promise<string> {
+        return docker([
         "run",
         "-d",
         "--name",
         name,
+        "--label",
+        `${OWNER_LABEL}=true`,
+        "--label",
+        `${NAME_LABEL}=${name}`,
         "--restart",
         "unless-stopped",
         "--memory",
@@ -198,38 +242,14 @@ export function createDockerProvisioner(): McpProvisioner {
     },
 
     async stop(name: string): Promise<void> {
-      try {
-        await docker(["rm", "-f", assertSafe(name, NAME, "name")]);
-      } catch (error) {
-        if (!isMissingContainer(error)) {
-          throw error;
-        }
-      }
+      const safe = assertSafe(name, NAME, "name");
+      const workload = await inspectOwned(safe, safe);
+      if (workload) await removeContainer(workload.identity);
     },
 
     async inspect(name: string): Promise<ManagedWorkload | null> {
       const safe = assertSafe(name, NAME, "name");
-      try {
-        const state = await docker([
-          "inspect",
-          "-f",
-          "{{.Id}} {{.State.Running}} {{.State.Status}}",
-          safe,
-        ]);
-        const [identity = "", running = "false", detail] = state.split(/\s+/);
-        return {
-          name: safe,
-          address: `http://127.0.0.1:${managedPortFor(safe)}`,
-          identity,
-          running: running === "true",
-          ...(detail ? { detail } : {}),
-        };
-      } catch (error) {
-        if (isMissingContainer(error)) {
-          return null;
-        }
-        throw error;
-      }
+      return inspectOwned(safe, safe);
     },
   };
 }

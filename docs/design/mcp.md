@@ -108,6 +108,10 @@ throw 동작과 `SdkErrorCode` 매핑을 확인한다.
 
 행에는 image·args·endpointPath·containerPort·암호화 environment를 저장한다.
 Docker에는 argv 배열과 process가 만든 0600 임시 env 파일을 넘기며 호스트 파일 경로를 받지 않는다.
+컨테이너에는 managed MCP 소유 라벨과 서버 이름을 기록한다. 조회·교체·중지는 두 라벨을
+확인하며 삭제는 검증한 컨테이너 ID로 수행한다. 라벨이 없는 기존 컨테이너는 자동 인수하지 않는다.
+이름이 충돌하면 운영자가 기존 컨테이너의 용도를 확인해 이름을 분리한 뒤 Studio에서 다시 생성한다.
+이미지 pull이 실패하면 로컬 이미지가 있는지 확인하며, 사용할 이미지가 없으면 기존 컨테이너를 보존한다.
 `PORT`는 runtime이 지정하고 args의 `{{PORT}}`를 실제 listen 포트로 치환한다.
 자원·파일시스템·capability 제한은 [보안 계약](../SECURITY.md#managed-루프백-예외)을 따른다.
 

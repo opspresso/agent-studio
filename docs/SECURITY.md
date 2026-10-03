@@ -497,6 +497,8 @@ endpoint path. 은
 `src/domain/mcp/provisioner.ts`의 패턴으로 API 입력과 Docker 실행 양쪽에서 검사한다. 항목을
 편집할 수 있는 운영자가 그것으로 호스트에서 임의 코드를 돌릴 수는 없어야 한다. 호스트 파일
 경로는 입력으로 받지 않으며, 저장된 환경 값만 프로세스가 만든 0600 임시 env file 로 전달한다.
+컨테이너 조회·교체·중지는 `agent-studio.managed-mcp=true`와 `agent-studio.mcp-name`을 검사한다.
+다른 컨테이너의 이름 충돌은 거절하고 삭제는 검증한 ID로 수행해 이름 재사용 경합을 피한다.
 
 컨테이너는 각각 메모리와 memory+swap을 모두 512MiB, CPU 1개, PID 256개로 제한하고 Linux
 capability를 모두 버리며 `no-new-privileges`로 실행된다. root filesystem은 read-only이고
