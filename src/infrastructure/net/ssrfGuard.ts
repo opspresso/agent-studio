@@ -125,13 +125,21 @@ function prefix(ip: string, bits: number): { base: readonly number[]; bits: numb
  * IPv6 ranges that must never be dispatched to — the IPv4 list's counterpart.
  * Multicast is here for the same reason `224.0.0.0/4` is there, and Teredo is
  * a tunnel to an IPv4 address this guard would otherwise never see.
+ * Non-public allocations follow the IANA IPv6 Special-Purpose Address Registry;
+ * RFC 3879 also reserves the deprecated site-local prefix for existing sites.
  */
 const BLOCKED_IPV6 = [
+  prefix("64:ff9b:1::", 48), // local-use translation; encoding is network-specific (RFC 8215)
   prefix("100::", 64), // discard-only
+  prefix("100:0:0:1::", 64), // dummy source addresses (RFC 9780)
   prefix("2001::", 32), // Teredo
+  prefix("2001:2::", 48), // benchmarking
   prefix("2001:db8::", 32), // documentation
+  prefix("3fff::", 20), // documentation (RFC 9637)
+  prefix("5f00::", 16), // segment-routing SIDs within an administrative domain
   prefix("fc00::", 7), // unique local
   prefix("fe80::", 10), // link-local
+  prefix("fec0::", 10), // deprecated site-local
   prefix("ff00::", 8), // multicast
 ];
 

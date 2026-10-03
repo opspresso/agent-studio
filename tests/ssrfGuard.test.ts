@@ -72,6 +72,18 @@ describe("assertPublicUrl with IP literals", () => {
     ).rejects.toBeInstanceOf(SsrfError);
   });
 
+  it.each([
+    "fec0::1", "feff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+    "64:ff9b:1::a00:1", "64:ff9b:1:ffff:ffff:ffff:ffff:ffff",
+    "100:0:0:1::1", "2001:2::1", "2001:2:0:ffff:ffff:ffff:ffff:ffff",
+    "3fff::1", "3fff:fff:ffff:ffff:ffff:ffff:ffff:ffff",
+    "5f00::1", "5f00:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+  ])("blocks non-public IPv6 %s as a literal and in mixed DNS answers", async address => {
+    await expect(assertPublicUrl(`http://[${address}]/`)).rejects.toBeInstanceOf(SsrfError);
+    await expect(assertPublicUrl("https://mixed.example.test", resolvesTo("2606:4700::1", address)))
+      .rejects.toBeInstanceOf(SsrfError);
+  });
+
   it.each(["http://8.8.8.8/", "https://1.1.1.1/", "http://[2606:4700::1]/"])(
     "allows public literal %s",
     async (url) => {

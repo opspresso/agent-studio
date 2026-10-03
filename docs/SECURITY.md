@@ -366,6 +366,11 @@ IPv4 를 안에 담는 접두사(IPv4-mapped, IPv4-compatible, NAT64 `64:ff9b::/
 `2002::/16`)는 통째로 막지 않고 **담긴 IPv4 로** 판정한다 — IPv6 전용 망에서 공인 주소에
 닿는 정상 경로가 그것이기 때문이다. `64:ff9b::8.8.8.8` 은 통과하고 `64:ff9b::10.0.0.1` 은
 거부된다.
+로컬 변환용 `64:ff9b:1::/48`은 주소 배치가 네트워크별로 달라 전체를 차단한다.
+site-local `fec0::/10`, dummy `100:0:0:1::/64`, 벤치마크 `2001:2::/48`, 문서용 `3fff::/20`,
+SRv6 SID `5f00::/16`도 공개 요청 대상에서 제외한다. 근거는
+[IANA IPv6 특수 대역](https://www.iana.org/assignments/iana-ipv6-special-registry/)과
+[RFC 3879](https://www.rfc-editor.org/rfc/rfc3879#section-4)다.
 
 이 registry의 공개 주소 디스패치는 `fetchPublicUrl`(`src/infrastructure/net/publicFetch.ts`)을 지난다.
 배포가 지정한 LLM·인증·스토리지·카탈로그 endpoint까지 모두 이 가드로 검사하는 것은 아니다.
