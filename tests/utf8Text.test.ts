@@ -36,6 +36,15 @@ describe("decodeUtf8Text", () => {
     expect(decodeUtf8Text(cut)).toBeNull();
   });
 
+  it.each([
+    [0xc0, 0xaf], // Overlong slash.
+    [0xed, 0xa0, 0x80], // A surrogate is not a Unicode scalar value.
+    [0xf4, 0x90, 0x80, 0x80], // Above U+10FFFF.
+  ])("rejects invalid scalar encoding %j and resets for the next file", (...bytes) => {
+    expect(decodeUtf8Text(new Uint8Array(bytes))).toBeNull();
+    expect(decodeUtf8Text(Buffer.from("\uFEFF다음 파일 �"))).toBe("다음 파일 �");
+  });
+
   it("refuses ASCII UTF-16, which validity alone would let through", () => {
     // "hi" in UTF-16LE is `68 00 69 00` — perfectly valid UTF-8 that decodes to
     // "h\0i\0" with no replacement character anywhere. Validity does not settle
@@ -57,6 +66,10 @@ describe("decodeUtf8Text", () => {
 
   it("drops a byte-order mark, which is encoding and not content", () => {
     expect(decodeUtf8Text(Buffer.from("﻿name,value", "utf-8"))).toBe("name,value");
+  });
+
+  it("removes only the first leading BOM and preserves embedded ones", () => {
+    expect(decodeUtf8Text(Buffer.from("\uFEFF\uFEFFname\uFEFFvalue"))).toBe("\uFEFFname\uFEFFvalue");
   });
 
   it("reads a view into a larger buffer, not the whole buffer", () => {

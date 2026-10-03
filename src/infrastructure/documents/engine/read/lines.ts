@@ -17,10 +17,9 @@ import { mergeRuns, type Run } from "../markdown";
  * space merges the columns.
  */
 export function collapseRuns(runs: readonly Run[]): Run[] {
-  const collapsed = runs.map((run) =>
+  const merged = mergeRuns(runs).map((run) =>
     run.code ? run : { ...run, text: run.text.replace(/[^\S\n]+/g, (run) => (run.includes("\t") ? "\t" : " ")) },
   );
-  const merged = mergeRuns(collapsed);
   const first = merged[0];
   if (first && !first.code) {
     first.text = first.text.replace(/^[^\S\n]+/, "");

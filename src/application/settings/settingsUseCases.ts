@@ -391,12 +391,13 @@ export function createSettingsUseCases(
               throw new ValidationError(`Concurrent runs per actor must be between 0 and ${MAX_RUN_SLOTS}`);
             }
           }
-          if (spec.key === "s3PublicBaseUrl" && value !== "") {
+          if ((spec.key === "s3PublicBaseUrl" || spec.key === "publicBaseUrl") && value !== "") {
             try {
               const url = new URL(value);
               if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error();
             } catch {
-              throw new ValidationError("Public object URL must be HTTP(S) without credentials, query parameters or fragments");
+              const label = spec.key === "s3PublicBaseUrl" ? "Public object URL" : "Public deployment URL";
+              throw new ValidationError(`${label} must be HTTP(S) without credentials, query parameters or fragments`);
             }
           }
           if (spec.key === "slackLoadingIndicator" && value !== "" && (value.length > 80 || /[\u0000-\u001f\u007f]/.test(value))) {

@@ -401,7 +401,7 @@ describe("per-agent MCP header overrides at dispatch", () => {
             headersFor: async () => ({
               headers: {},
               unavailable:
-                "MCP server 'shared-mcp' requires authorization and this agent has not connected it.",
+                "MCP server 'shared-mcp' requires authorization and this caller has not connected it.",
             }),
             markUnauthorized: async () => {},
           },
@@ -421,9 +421,9 @@ describe("per-agent MCP header overrides at dispatch", () => {
     }
   });
 
-  it("prefers the agent's connection over the entry's own header", async () => {
-    // The connection is the more specific credential, so it wins where both
-    // exist — the fallback is for agents that have not connected.
+  it("uses the caller's OAuth connection instead of a registry authorization header", async () => {
+    // OAuth servers require the caller's personal grant; unrelated registry
+    // headers remain available alongside the caller's authorization.
     const oauthServer = {
       ...registryServer,
       auth: { type: "oauth2", resource: "https://shared-mcp.test" },

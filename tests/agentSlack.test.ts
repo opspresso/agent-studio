@@ -236,6 +236,16 @@ describe("schedule channel choices", () => {
 });
 
 describe("buildAgentSlackManifest", () => {
+  it.each([34, 79, 139, 299])("keeps every manifest text field well formed at Unicode boundary %i", (prefix) => {
+    const text = "x".repeat(prefix) + "😀";
+    const manifest = buildAgentSlackManifest(makeAgent({ displayName: text, description: text }), "https://studio.example.com");
+    const display = manifest.display_information as { name: string; description: string };
+    const features = manifest.features as { bot_user: { display_name: string }; agent_view: { agent_description: string } };
+    for (const value of [display.name, display.description, features.bot_user.display_name, features.agent_view.agent_description]) {
+      expect(value.isWellFormed()).toBe(true);
+    }
+  });
+
   it("uses the selected service name for a generated description", () => {
     const manifest = buildAgentSlackManifest(makeAgent(), "https://studio.example.com", "AgentOps");
     expect((manifest.display_information as { description: string }).description).toBe("AgentOps bot for the bot-proj agent");
@@ -407,6 +417,11 @@ describe("what the manifest asks Slack for", () => {
     // Without `channels:read` "summarise #deploy" cannot even find the channel.
     expect(scopes()).toContain("channels:read");
     expect(scopes()).toContain("channels:history");
+  });
+
+  it("requests display profiles without permission to read email addresses", () => {
+    expect(scopes()).toContain("users:read");
+    expect(scopes()).not.toContain("users:read.email");
   });
 });
 

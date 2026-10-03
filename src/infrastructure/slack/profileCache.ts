@@ -2,20 +2,6 @@ import { createHash } from "node:crypto";
 import type { SlackUserDetail } from "@/domain/slack/types";
 
 /**
- * What one `users.info` answered: the view a tool may return, and the address it
- * may not.
- *
- * The email sits *outside* `detail` rather than on it, because `SlackUserDetail`
- * is the shape a tool result is built from and carries a documented promise that
- * it holds no address. Attribution reads this field; nothing that reaches a
- * prompt ever does.
- */
-export interface CachedSlackProfile {
-  detail: SlackUserDetail;
-  email?: string;
-}
-
-/**
  * Remembered Slack profiles, per workspace.
  *
  * The *detail* is what is cached, not the caller block derived from it: both
@@ -53,7 +39,7 @@ const MAX_ENTRIES = 2000;
 
 interface CacheEntry {
   /** `null` is a remembered miss, not an empty profile. */
-  value: CachedSlackProfile | null;
+  value: SlackUserDetail | null;
   expiresAt: number;
 }
 
@@ -72,7 +58,7 @@ export function getCachedProfile(
   token: string,
   userId: string,
   now: number = Date.now(),
-): { value: CachedSlackProfile | null } | undefined {
+): { value: SlackUserDetail | null } | undefined {
   const key = cacheKey(token, userId);
   const entry = cache.get(key);
   if (!entry) {
@@ -88,7 +74,7 @@ export function getCachedProfile(
 export function rememberProfile(
   token: string,
   userId: string,
-  value: CachedSlackProfile | null,
+  value: SlackUserDetail | null,
   now: number = Date.now(),
 ): void {
   const key = cacheKey(token, userId);

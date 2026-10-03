@@ -20,6 +20,7 @@ import {
 import { nextUpdatedAt } from "@/shared/nextUpdatedAt";
 import { DEFAULT_SERVICE_NAME } from "@/shared/branding";
 import { slackSecretContext } from "@/domain/security/secretContext";
+import { cutCodePoints } from "@/shared/utf8Text";
 
 export interface AgentSlackView {
   enabled: boolean;
@@ -269,8 +270,8 @@ export function buildAgentSlackManifest(
   const description = agent.description.trim() || defaultAgentDescription(agent, serviceName);
   return {
     display_information: {
-      name: agent.displayName.slice(0, 35),
-      description: description.slice(0, MAX_APP_DESCRIPTION_LENGTH),
+      name: cutCodePoints(agent.displayName, 35),
+      description: cutCodePoints(description, MAX_APP_DESCRIPTION_LENGTH),
       background_color: "#2b5cd9",
     },
     features: {
@@ -280,12 +281,12 @@ export function buildAgentSlackManifest(
         messages_tab_enabled: true,
         messages_tab_read_only_enabled: false,
       },
-      bot_user: { display_name: agent.displayName.slice(0, 80), always_online: true },
+      bot_user: { display_name: cutCodePoints(agent.displayName, 80), always_online: true },
       // The agent messaging experience. `agent_description` is required once
       // this key is present, and it is the only text a user sees before asking
       // anything — an empty view reads as a bot that is not running.
       agent_view: {
-        agent_description: description.slice(0, MAX_AGENT_DESCRIPTION_LENGTH),
+        agent_description: cutCodePoints(description, MAX_AGENT_DESCRIPTION_LENGTH),
         suggested_prompts: (agent.slack?.suggestedPrompts ?? []).slice(0, MAX_SUGGESTED_PROMPTS),
       },
     },
@@ -306,7 +307,6 @@ export function buildAgentSlackManifest(
           "im:write",
           "reactions:read",
           "reactions:write",
-          "users:read.email",
           "users:read",
         ],
       },
@@ -350,7 +350,7 @@ export function buildAgentSlackManifest(
 }
 
 /**
- * Verify an agent's stored bot token against Slack. Owner-gated by the caller;
+ * Check ownership and verify the stored bot token against Slack.
  * `authTest` is injected so this stays free of the Slack HTTP client.
  */
 export async function testAgentSlack(

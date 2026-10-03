@@ -25,6 +25,7 @@ import type { RunOrigin } from "@/domain/execution/actor";
 import { buildMcpTools, closeMcp, type McpToolDeps, type ResolvedMcp } from "./mcpTools";
 import { log } from "@/shared/logger";
 import { unrefTimer } from "@/shared/unrefTimer";
+import { waitWithSignal } from "@/shared/waitWithSignal";
 import { cutCodePoints } from "@/shared/utf8Text";
 
 /**
@@ -126,7 +127,7 @@ export async function prepareMemoryForRun(
     configuration: AgentConfiguration;
     query: string;
     signal?: AbortSignal;
-    origin?: Partial<Pick<RunOrigin, "actor" | "user" | "userEmail" | "conversation" | "backgroundTask">>;
+    origin?: Partial<Pick<RunOrigin, "actor" | "user" | "conversation" | "backgroundTask">>;
   },
 ): Promise<Awaited<ReturnType<typeof recallForRun>>> {
   if (input.origin?.backgroundTask || !input.configuration.parameters.memoryRecall) {
@@ -229,7 +230,7 @@ export async function recallMemories(input: {
   const answers = await Promise.all(
     targets.map(async ({ server, alias }) => {
       try {
-        const result = await settleWithin(callMcpTool(alias, { query }), input.signal);
+        const result = await settleWithin(() => callMcpTool(alias, { query }), input.signal);
         return { server, text: result.text.trim() };
       } catch (error) {
         // A run cancelled mid-recall is not a memory server that failed; the
@@ -287,34 +288,13 @@ export async function recallMemories(input: {
  * honours the run's signal itself — only stopped being waited for, and both of
  * its outcomes are handled so a late answer is never an unhandled rejection.
  */
-async function settleWithin<T>(pending: Promise<T>, signal?: AbortSignal): Promise<T> {
-  // Already cancelled: nothing to wait for. Checked before a listener is
-  // registered, since `abort` will not fire again.
-  signal?.throwIfAborted();
-  return await new Promise<T>((resolve, reject) => {
-    const settle = (): void => {
-      clearTimeout(timer);
-      signal?.removeEventListener("abort", onAbort);
-    };
-    const onAbort = (): void => {
-      settle();
-      reject(signal?.reason instanceof Error ? signal.reason : new Error("Request was cancelled"));
-    };
-    const timer = setTimeout(() => {
-      settle();
-      reject(new Error(`no answer within ${RECALL_TIMEOUT_MS / 1000}s`));
-    }, RECALL_TIMEOUT_MS);
-    unrefTimer(timer);
-    signal?.addEventListener("abort", onAbort, { once: true });
-    pending.then(
-      (value) => {
-        settle();
-        resolve(value);
-      },
-      (error: unknown) => {
-        settle();
-        reject(error instanceof Error ? error : new Error(String(error)));
-      },
-    );
-  });
+async function settleWithin<T>(call: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+  const timeout = new AbortController();
+  const timer = setTimeout(() => timeout.abort(new Error(`no answer within ${RECALL_TIMEOUT_MS / 1000}s`)), RECALL_TIMEOUT_MS);
+  unrefTimer(timer);
+  try {
+    return await waitWithSignal(call, signal ? AbortSignal.any([signal, timeout.signal]) : timeout.signal);
+  } finally {
+    clearTimeout(timer);
+  }
 }

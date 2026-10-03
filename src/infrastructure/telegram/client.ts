@@ -2,6 +2,7 @@
 
 import type { TelegramClientPort } from "@/domain/telegram/client";
 import { readBodyBytes } from "@/shared/httpBody";
+import { z } from "zod";
 
 /**
  * How long any one Bot API call may take. A Telegram run's work happens in
@@ -13,13 +14,24 @@ const TELEGRAM_TIMEOUT_MS = 30_000;
 const TELEGRAM_TRANSFER_TIMEOUT_MS = 120_000;
 
 /** The Bot API's envelope. `description` is what an operator can act on. */
-interface TelegramEnvelope<T> {
-  ok: boolean;
-  result?: T;
-  description?: string;
-  error_code?: number;
-  parameters?: { retry_after?: number };
-}
+const envelopeSchema = z.object({
+  ok: z.boolean(),
+  result: z.unknown().optional(),
+  description: z.string().optional(),
+  parameters: z.object({ retry_after: z.number().nonnegative().optional() }).optional(),
+});
+const identitySchema = z.object({
+  id: z.number().int().positive(),
+  username: z.string().optional(),
+  first_name: z.string().optional(),
+});
+// Zero is valid for a message Telegram scheduled but has not sent yet.
+const messageSchema = z.object({ message_id: z.number().int().nonnegative() });
+const fileSchema = z.object({
+  file_path: z.string().min(1),
+  file_size: z.number().int().nonnegative().optional(),
+});
+const confirmationSchema = z.literal(true);
 
 async function telegramFetch(
   url: string,
@@ -44,18 +56,21 @@ async function telegramFetch(
  * rate limit arrives as 429 with `retry_after` in the JSON body, and that
  * number is the whole content of the answer, so it is quoted.
  */
-async function telegramResult<T>(res: Response, method: string, token: string): Promise<T> {
-  let data: TelegramEnvelope<T> | undefined;
+async function telegramResult<T>(res: Response, method: string, token: string, schema: z.ZodType<T>): Promise<T> {
+  let body: unknown;
   try {
-    data = (await res.json()) as TelegramEnvelope<T>;
+    body = await res.json();
   } catch {
     // Not JSON: a proxy or an outage in between. The status is all there is.
     throw new Error(`Telegram ${method} failed: HTTP ${res.status}`);
   }
+  const envelope = envelopeSchema.safeParse(body);
+  if (!envelope.success) {
+    throw new Error(`Telegram ${method} returned an invalid response`);
+  }
+  const data = envelope.data;
   if (!res.ok || !data.ok) {
-    const retryAfter = data.parameters?.retry_after;
-    const safeRetryAfter =
-      typeof retryAfter === "number" && Number.isFinite(retryAfter) ? retryAfter : undefined;
+    const safeRetryAfter = data.parameters?.retry_after;
     const description = token ? data.description?.replaceAll(token, "[redacted]") : data.description;
     throw new Error(
       res.status === 429 || safeRetryAfter !== undefined
@@ -63,20 +78,26 @@ async function telegramResult<T>(res: Response, method: string, token: string): 
         : `Telegram ${method} failed: ${description ?? `HTTP ${res.status}`}`,
     );
   }
-  return data.result as T;
+  const result = schema.safeParse(data.result);
+  if (!result.success) {
+    // Schema diagnostics can quote response values, including credentials.
+    throw new Error(`Telegram ${method} returned an invalid result`);
+  }
+  return result.data;
 }
 
 async function telegramApi<T>(
   token: string,
   method: string,
   payload: Record<string, unknown>,
+  schema: z.ZodType<T>,
 ): Promise<T> {
   const res = await telegramFetch(`https://api.telegram.org/bot${token}/${method}`, method, {
     method: "POST",
     headers: { "Content-Type": "application/json; charset=utf-8" },
     body: JSON.stringify(payload),
   });
-  return telegramResult<T>(res, method, token);
+  return telegramResult(res, method, token, schema);
 }
 
 /**
@@ -89,11 +110,7 @@ function threadArgs(threadId: number | undefined): Record<string, number> {
 
 export const telegramClient: TelegramClientPort = {
   async getMe(token) {
-    const me = await telegramApi<{ id: number; username?: string; first_name?: string }>(
-      token,
-      "getMe",
-      {},
-    );
+    const me = await telegramApi(token, "getMe", {}, identitySchema);
     return {
       id: me.id,
       ...(me.username ? { username: me.username } : {}),
@@ -102,22 +119,22 @@ export const telegramClient: TelegramClientPort = {
   },
 
   async setWebhook(token, args) {
-    await telegramApi<boolean>(token, "setWebhook", {
+    await telegramApi(token, "setWebhook", {
       url: args.url,
       secret_token: args.secretToken,
       allowed_updates: [...args.allowedUpdates],
       // Anything Telegram queued while the webhook was elsewhere is not for
       // this deployment to answer late.
       drop_pending_updates: true,
-    });
+    }, confirmationSchema);
   },
 
   async deleteWebhook(token) {
-    await telegramApi<boolean>(token, "deleteWebhook", { drop_pending_updates: true });
+    await telegramApi(token, "deleteWebhook", { drop_pending_updates: true }, confirmationSchema);
   },
 
   async sendMessage(token, args) {
-    const sent = await telegramApi<{ message_id: number }>(token, "sendMessage", {
+    const sent = await telegramApi(token, "sendMessage", {
       chat_id: args.chatId,
       text: args.text,
       ...threadArgs(args.threadId),
@@ -134,26 +151,26 @@ export const telegramClient: TelegramClientPort = {
       // A link in an answer is context, not the message; the preview would be
       // the loudest thing on screen.
       link_preview_options: { is_disabled: true },
-    });
+    }, messageSchema);
     return { messageId: sent.message_id };
   },
 
   async editMessageText(token, args) {
-    await telegramApi<unknown>(token, "editMessageText", {
+    await telegramApi(token, "editMessageText", {
       chat_id: args.chatId,
       message_id: args.messageId,
       text: args.text,
       ...(args.parseMode ? { parse_mode: args.parseMode } : {}),
       link_preview_options: { is_disabled: true },
-    });
+    }, z.unknown());
   },
 
   async sendChatAction(token, args) {
-    await telegramApi<boolean>(token, "sendChatAction", {
+    await telegramApi(token, "sendChatAction", {
       chat_id: args.chatId,
       action: args.action,
       ...threadArgs(args.threadId),
-    });
+    }, confirmationSchema);
   },
 
   async sendPhoto(token, args) {
@@ -172,7 +189,7 @@ export const telegramClient: TelegramClientPort = {
       { method: "POST", body: form },
       TELEGRAM_TRANSFER_TIMEOUT_MS,
     );
-    await telegramResult<unknown>(res, "sendPhoto", token);
+    await telegramResult(res, "sendPhoto", token, z.unknown());
   },
 
   /**
@@ -183,12 +200,9 @@ export const telegramClient: TelegramClientPort = {
    * once the memory is already spent.
    */
   async downloadFile(token, fileId, maxBytes) {
-    const file = await telegramApi<{ file_path?: string; file_size?: number }>(token, "getFile", {
+    const file = await telegramApi(token, "getFile", {
       file_id: fileId,
-    });
-    if (!file.file_path) {
-      throw new Error("Telegram getFile returned no path");
-    }
+    }, fileSchema);
     if (file.file_size !== undefined && file.file_size > maxBytes) {
       throw new Error(`Telegram file is larger than the ${maxBytes} byte cap`);
     }

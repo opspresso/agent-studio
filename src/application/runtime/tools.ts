@@ -21,7 +21,7 @@ import { boundToolArgsPair } from "./arguments";
 import { writeToolResult, type RuntimeEmitter } from "./output";
 import { createSdkMcp, type McpCapability, type ToolCallDetails } from "./mcp";
 import type { ToolSchemaValidator } from "@/domain/llm/toolSchema";
-import { toolInputGuardrail } from "./policy";
+import { authorizeRuntimeEffect, toolInputGuardrail } from "./policy";
 
 type CapabilityOutput = McpToolResult & { bounded?: boolean };
 
@@ -37,11 +37,10 @@ export function createRuntimeTools(
   const modelTask = assembly.builtinNames.has(MODEL_TASK_TOOL_NAME) ? createRuntimeModelTask(deps, input, turn, assembly.images, emit) : undefined;
   let lossReported = false;
   let serial = Promise.resolve();
-  const imageInputReject = describeImageInputReject(input.model);
   const serverByTool = new Map((input.mcpServers ?? []).flatMap((server) => server.toolNames.map((name) => [name, server.name] as const)));
 
   async function invoke(name: string, args: Record<string, unknown>, display: Record<string, unknown>, callId: string): Promise<CapabilityOutput> {
-    await deps.authorizeExecution?.();
+    await authorizeRuntimeEffect(deps, input.signal);
     const builtin = assembly.builtinNames.has(name);
     if (!builtin) return deps.callMcpTool ? deps.callMcpTool(name, display) : { text: `Error: Tool '${name}' cannot be executed in this context.` };
     if (name === MODEL_TASK_TOOL_NAME) return modelTask!(args);
@@ -150,6 +149,7 @@ export function createRuntimeTools(
           ids.push(assembly.images.add(image, `returned by ${name}`).id);
           emit({ image: { ...image, prompt: `Returned by ${name}`, ...(name === FETCH_URL_TOOL_NAME ? { fetched: true } : {}) } });
         }
+        const imageInputReject = describeImageInputReject(turn.model);
         let text = result.text;
         if (images.length) text += `\n${images.length} image(s) delivered to the user (image ids: ${ids.join(", ")})${imageInputReject ? `, but not to you: ${imageInputReject}` : ", and attached to the next message."}`;
         const dropped = (result.images?.length ?? 0) - images.length;

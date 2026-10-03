@@ -126,4 +126,17 @@ describe("a Teams reply", () => {
     expect(sink.fileLink({ url: "https://s/k", name: "report [v2].docx" })).toBe("📎 [report v2.docx](https://s/k)");
     expect(sink.warningLine("lost")).toBe("⚠️ lost");
   });
+
+  it.each([["image/jpeg", "jpg"], ["image/webp", "webp"], ["image/gif", "gif"]])("names inline %s images with their media extension", async (mimeType, extension) => {
+    const { teams, sent } = makeTeamsFake();
+    await createTeamsReplyChannel(teams, CREDS, TARGET).sendImage({ b64: "AA==", mimeType }, 0);
+    expect(sent[0]!.attachments![0]).toMatchObject({ contentType: mimeType, name: `generated-${NOW}-1.${extension}` });
+  });
+
+  it("bounds image text without splitting its final Unicode character", async () => {
+    const { teams, sent } = makeTeamsFake();
+    await createTeamsReplyChannel(teams, CREDS, TARGET).sendImage({ b64: "AA==", mimeType: "image/png", prompt: "x".repeat(1023) + "😀" }, 0);
+    expect(sent[0]!.text?.isWellFormed()).toBe(true);
+    expect(sent[0]!.text).toBe("x".repeat(1023));
+  });
 });

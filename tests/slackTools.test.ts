@@ -75,7 +75,7 @@ function makeSlackFake(
     },
     async threadReplies(_token, args) {
       calls.push({ method: "threadReplies", args });
-      return over.thread ?? [];
+      return { messages: over.thread ?? [], truncated: false };
     },
     async listChannels(_token, args) {
       calls.push({ method: "listChannels", args });
@@ -96,10 +96,6 @@ function makeSlackFake(
             ...(person.avatarUrl ? { avatarUrl: person.avatarUrl } : {}),
           }
         : null;
-    },
-    async userEmail() {
-      // Attribution only; no tool reads it.
-      return null;
     },
     async userDetail(_token, userId) {
       calls.push({ method: "userDetail", args: userId });
@@ -126,6 +122,12 @@ const TS_A = "1750000000.000100";
 const TS_B = "1750000600.000200";
 
 describe("reading a channel", () => {
+  it.each(["SlackHistory", "SlackThread"])("keeps a positive fractional %s limit from becoming a zero-message read", async (tool) => {
+    const { read, calls } = makeSlackFake();
+    await read(tool, { channel: "C1", thread_ts: TS_A, limit: 0.5 });
+    expect(calls[0]?.args).toMatchObject({ limit: 1 });
+  });
+
   it("renders a transcript oldest first, with speakers named", async () => {
     // Slack returns a channel newest-first. A model handed that reversed reports
     // the conclusion as the question.
@@ -211,6 +213,14 @@ describe("reading a channel", () => {
 });
 
 describe("reading a thread", () => {
+  it("reports unread replies instead of presenting a partial thread as complete", async () => {
+    const { slack } = makeSlackFake();
+    slack.threadReplies = async () => ({ messages: [{ ts: TS_A, text: "read portion" }], truncated: true });
+    const result = await createSlackWorkspaceReader(slack, TOKEN)("SlackThread", { channel: "C1", thread_ts: TS_A });
+    expect(result).toContain("read portion");
+    expect(result).toContain("More thread replies were not read");
+  });
+
   it("keeps Slack's order, which is already oldest first", async () => {
     const { read } = makeSlackFake({
       thread: [
@@ -269,7 +279,7 @@ describe("looking up a user", () => {
   });
 
   it("never returns an email", async () => {
-    // `users:read.email` is granted to the bot, so this is a decision rather
+    // An existing grant may return email, so this is a decision rather
     // than a limitation — the same one `callerFrom` already makes for the
     // caller block. A profile shape that grew an email would fail here.
     const { read } = makeSlackFake();
@@ -553,15 +563,12 @@ describe("resolving a crowd of names", () => {
         }));
       },
       async threadReplies() {
-        return [];
+        return { messages: [], truncated: false };
       },
       async listChannels() {
         return { channels: [], truncated: false };
       },
       async userDetail() {
-        return null;
-      },
-      async userEmail() {
         return null;
       },
       async findUsers() {

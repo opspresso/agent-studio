@@ -14,6 +14,7 @@ import { isValidTimezone, parseCron } from "@/domain/trigger/cron";
 import type { TriggerRepository } from "@/domain/trigger/repository";
 import {
   AGENT_WEBHOOK_ID,
+  defaultWebhookTrigger,
   type ScheduleDelivery,
   type ScheduleTrigger,
   type Trigger,
@@ -75,7 +76,8 @@ export interface TriggerView {
   triggerId: string;
   kind: TriggerKind;
   description: string;
-  enabled: boolean;
+  /** Schedule only; Webhook invocation is controlled by personal tokens. */
+  enabled?: boolean;
   allowConcurrent: boolean;
   createdAt: string;
   updatedAt: string;
@@ -203,10 +205,11 @@ export function createTriggerUseCases(deps: TriggerDeps) {
       const githubReview = await reviewConfig(input.githubReview, agentName);
       // An agent has exactly one webhook and it answers at `/api/webhook/{agent}`,
       // which resolves this id and nothing else. Both halves of that are enforced
-      // here, at the only place a row is minted: a webhook under any other name
+      // here: a webhook under any other name
       // would have no delivery endpoint, and a schedule under this one would make
       // the delivery endpoint 404 for an agent whose console shows a webhook.
       if ((input.kind ?? "webhook") === "webhook") {
+        if (input.enabled !== undefined) throw new ValidationError("Webhook activation is controlled by personal tokens");
         if (input.triggerId !== AGENT_WEBHOOK_ID) {
           throw new ValidationError(
             `An agent's webhook is always "${AGENT_WEBHOOK_ID}" — it is addressed by the agent name`,
@@ -216,16 +219,14 @@ export function createTriggerUseCases(deps: TriggerDeps) {
         throw new ValidationError(`"${AGENT_WEBHOOK_ID}" is reserved for the agent's webhook`);
       }
       const now = new Date().toISOString();
+      const defaults = defaultWebhookTrigger(agentName, now);
       const base = {
-        agentName,
+        ...defaults,
         triggerId: input.triggerId,
-        description: input.description ?? "",
-        enabled: input.enabled ?? true,
+        description: input.description ?? defaults.description,
         // Overlap is off unless asked for: a firing that comes faster than the
         // run takes would otherwise pile runs up until the cost guard notices.
-        allowConcurrent: input.allowConcurrent ?? false,
-        createdAt: now,
-        updatedAt: now,
+        allowConcurrent: input.allowConcurrent ?? defaults.allowConcurrent,
       };
       let trigger: Trigger;
       if (input.kind === "schedule") {
@@ -236,6 +237,7 @@ export function createTriggerUseCases(deps: TriggerDeps) {
         trigger = {
           ...base,
           kind: "schedule",
+          enabled: input.enabled ?? true,
           createdBy: { userId: member.id, email: member.email },
           cron: input.cron,
           timezone: input.timezone,
@@ -262,7 +264,7 @@ export function createTriggerUseCases(deps: TriggerDeps) {
           ...(githubReview ? { githubReview } : {}),
         };
       }
-      if (trigger.kind === "webhook" && trigger.githubReview && trigger.enabled) {
+      if (trigger.kind === "webhook" && trigger.githubReview) {
         const issue = reviewSetupIssue(agent);
         if (issue) throw new ValidationError(issue);
       }
@@ -288,7 +290,6 @@ export function createTriggerUseCases(deps: TriggerDeps) {
       if (input.githubReview !== undefined && existing.kind !== "webhook") throw new ValidationError("GitHub reviews are only available for webhooks");
       const shared = {
         description: input.description ?? existing.description,
-        enabled: input.enabled ?? existing.enabled,
         allowConcurrent: input.allowConcurrent ?? existing.allowConcurrent,
         updatedAt: nextUpdatedAt(existing.updatedAt),
       };
@@ -304,6 +305,7 @@ export function createTriggerUseCases(deps: TriggerDeps) {
         const updated: ScheduleTrigger = {
           ...rest,
           ...shared,
+          enabled: input.enabled ?? existing.enabled,
           cron: input.cron ?? existing.cron,
           timezone: input.timezone ?? existing.timezone,
           ...(message ? { message } : {}),
@@ -320,6 +322,7 @@ export function createTriggerUseCases(deps: TriggerDeps) {
       ) {
         throw new ValidationError("Only a schedule trigger has cron, timezone, message or deliveries");
       }
+      if (input.enabled !== undefined) throw new ValidationError("Webhook activation is controlled by personal tokens");
       const { githubReview: previousReview, ...storedWebhook } = existing;
       const githubReview = input.githubReview === undefined ? previousReview : await reviewConfig(input.githubReview, agentName);
       const updated: WebhookTrigger = {
@@ -327,8 +330,8 @@ export function createTriggerUseCases(deps: TriggerDeps) {
         ...shared,
         ...(githubReview ? { githubReview } : {}),
       };
-      // Revocation and disabling always remain available, including broken stored setups.
-      if (updated.githubReview && updated.enabled && (input.githubReview != null || input.enabled === true)) {
+      // Removing review policy remains available even when its prerequisites are broken.
+      if (updated.githubReview && input.githubReview != null) {
         const issue = reviewSetupIssue(agent);
         if (issue) throw new ValidationError(issue);
       }
@@ -339,6 +342,7 @@ export function createTriggerUseCases(deps: TriggerDeps) {
     async remove(agentName: string, triggerId: string, userEmail: string): Promise<void> {
       await assertAgentOwner(deps.agents, agentName, userEmail);
       await load(agentName, triggerId);
+      if (triggerId === AGENT_WEBHOOK_ID) throw new ValidationError("Revoke personal Webhook tokens to stop deliveries; shared settings and history are retained");
       await deps.triggers.delete(agentName, triggerId);
     },
 

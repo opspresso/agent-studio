@@ -133,18 +133,12 @@ registry 정리 정책은 tag뿐 아니라 이미지가 참조하는 manifest와
 | 엔드포인트 | 종류 | 동작 |
 |---|---|---|
 | `GET /api/health` | liveness | 정적 `200`. 의존성이 없고 인증도 없다. "프로세스가 서빙 중인가" 에 답한다. |
-| `GET /api/ready` | readiness | PostgreSQL(`SELECT 1 FROM items LIMIT 1`, 연결·자격 증명·스키마를 한 번에)과 설정된 기본 모델의 Provider 연결을 프로브한다 (각 2초 타임아웃, 상세는 노출하지 않는다). 기본 모델이 없으면 LLM 검사를 생략한다. DB 프로브는 전용 connection 하나에서 연결 대기·클라이언트 응답·서버 실행을 모두 제한하고, 시간 초과 connection을 폐기한다. LLM 프로브는 `/models`의 **HTTP 연결만** 확인하고 응답 status나 API key의 유효성은 검사하지 않는다. 네트워크로 다운스트림에 닿을 수 없거나 **또는** 인스턴스가 draining 중이면 `503`. |
+| `GET /api/ready` | readiness | PostgreSQL(`SELECT 1 FROM items LIMIT 1`)의 연결·자격 증명·스키마를 검사한다. 전용 connection 하나에서 연결 대기·클라이언트 응답·서버 실행을 각각 2초로 제한하고 시간 초과 connection을 폐기한다. DB 검사 실패 또는 draining 중이면 `503`이며 오류 상세는 노출하지 않는다. |
 
-재시작 검사는 `/api/health` 에, 로드 밸런서는 `/api/ready` 에 붙여라.
-
-### 수평 확장된 배포에서의 readiness
-
-여러 인스턴스가 프로바이더 하나를 공유할 때 LLM 검사는 게이트로 삼기에 틀린 대상이다:
-프로바이더가 한 번 삐끗하면 **플릿 전체**가 한꺼번에 unready 로 표시된다. 프로바이더가 전혀
-필요 없는 콘솔·chat·대시보드까지 포함해서.
-
-그런 배포에서는 readiness 도 `/api/health` 로 향하게 하고, draining 은 플랫폼 자신의 등록
-해제(deregistration)에 맡겨라. 엔드포인트 전파 구간은 `preStop` 대기가 덮는다.
+재시작 검사는 `/api/health`에, 로드 밸런서는 `/api/ready`에 연결한다.
+모델 프로바이더는 readiness에서 호출하지 않는다. 외부 모델 장애나 공개 인터넷 단절로
+설정 변경·로그인·콘솔까지 사용할 수 없게 되는 것을 막기 위해서다.
+모델 자격 증명과 추론은 실제 Agent 실행으로 검증한다.
 
 ### Draining
 
@@ -188,28 +182,22 @@ standalone 서버는 진행 중인 요청을 끝낸다. 이 모듈은 결코 `pr
 넘으면 run deadline과 어긋난 실행이므로 원인을 조사하라. `MAX_RUN_DURATION_MS`를 바꿨다면 그
 설정값을 기준으로 판단한다.
 
-**리더가 떠났다고 chat 런이 더는 스스로 떨어져 나가지 않는다.** 탭을 닫은 것은 리더가 떠났다는
-뜻이지 중단이 아니므로 ([design/chat.md](design/chat.md#런은-자기-연결보다-오래-산다) 참고),
-이제 이 gauge 는 아무도 보고 있지 않은 런까지 센다. 더 정직한 숫자지만, 사용자로 가득 찬
-페이지가 새로고침을 해도 더는 부하가 떨어지지 않는다. 런을 일찍 끝내는 것은 Stop 을 누르는
-것과 런 데드라인뿐이다. 버려진 chat 런도 비용을 온전히 청구하고 끝날 때까지 caller 별 런
-슬롯을 붙들고 있다; 그것을 묶는 것이 `MAX_CONCURRENT_RUNS_PER_ACTOR` 와 비용 가드다.
+Chat은 화면 이동·탭 닫기 후에도 실행되므로 active-run gauge에 계속 포함된다
+([Chat 연결 수명](design/chat.md#런은-자기-연결보다-오래-산다)). 실행 중인 Chat은 비용을 기록하고
+사용자별 동시성 슬롯을 유지한다. 명시적 Stop, 실행 데드라인과 권한 검사는 계속 적용된다.
 
-**gauge 가 아니라 실패와 지속 시간에 알림을 걸어라.** gauge 는 인스턴스가 얼마나 바쁜지를
-말할 뿐, 그 작업이 성공하고 있는지도 이제 얼마나 걸리는지도 말하지 않는다. 취소된 런(끊고 나간
-클라이언트)은 의도적으로 실패로 세지 않는다. 그러지 않으면 사용자로 가득 찬 페이지에서 다들
-다른 곳으로 이동하는 것이 장애처럼 읽힌다. 이는 `/predict`, `/agent`, `/chat/completions`,
-Slack 에는 여전히 해당하며, 이들은 caller 의 signal 을 받아 실제로 abort 한다; chat 은 Stop 을
-눌렀을 때만 거기에 닿는다. 히스토그램에서 유한한 최상단 버킷은 고정된 `600`초이며 기본 런
-데드라인과 같다. `MAX_RUN_DURATION_MS`를 바꿔도 버킷은 바뀌지 않으므로, 그때는 `+Inf` 버킷과
-duration 합계를 실제 설정값에 맞춰 해석하라. 데드라인까지 방치된 버려진 chat 런은 *실패*로
-기록된다.
+실패율과 지속 시간에 알림을 설정한다. 명시적 취소는 실패로 세지 않으며 데드라인 초과는 실패다.
+`/predict`·`/agent`·`/chat/completions`는 연결 종료를 실행 취소로 전달한다.
+Slack 이벤트는 접수 후 백그라운드에서 실행하며 HTTP 연결 종료로 취소하지 않는다.
+Slack 중단 명령과 버튼은 별도의 실행 중단 신호를 전달한다.
+히스토그램의 유한한 최상단 버킷은 고정된 `600`초다. `MAX_RUN_DURATION_MS`를 바꾸면
+`+Inf` 버킷과 duration 합계를 실제 설정값에 맞춰 해석한다.
 
 **`agent_studio_unknown_model_calls_total` 의 rate 가 0 이 아니면 알림을 걸어라.**
 등록 모델의 가격을 알 수 없으면 가격 계산은 $0이며 이 경로가 경고·카운터를 남긴다.
 provider 보고 비용을 사용하는 텍스트 호출은 이 계산을 거치지 않을 수 있으므로 카운터를
 전체 호출 수로 해석하지 않는다. `UNKNOWN_MODEL_POLICY=refuse` (env 또는 런타임
-설정)는 이 카운터를 거부로 바꾼다: 런 브래킷이 어떤 가드보다도 먼저 `400` 을 답한다.
+설정)는 런 브래킷의 모델 정책 검사에서 가격 미지정 모델의 새 실행을 `400`으로 거부한다.
 
 카운터는 프로세스 단위이며 **agent 도 user 도 model 도 이름 붙이지 않는다**. 라벨은
 히스토그램의 `le`와 build 정보의 유한한 `version`·`stage`뿐이다. 값의 범위가 무한한 라벨은
@@ -285,6 +273,7 @@ Chat 소유자가 도구별 인자를 확인하고 승인·거절한다. 재개�
 schedule scan이 없으면 위 DB sweep이 실행되지 않는다. 읽기는 만료를 별도로 검사하지만
 저장 공간은 줄지 않는다. 삭제량이 틱 상한을 넘으면 여러 틱이 필요하므로 실제 purge 지연은
 호출 주기와 backlog에 달려 있다. sweep 실패는 로그에 남고 다음 호출에서 다시 처리한다.
+Session 정리는 삭제 잠금 대기 후에도 만료 시각을 확인해 그동안 갱신된 행을 보존한다.
 
 고정 수명의 보조 상태에는 webhook 중복 claim, 메신저 delivery·참여·transcript,
 MCP OAuth state와 동시성 슬롯이 있다. 수명은 기능 계약의 일부이며
@@ -423,7 +412,7 @@ discovery와 문서 embedding을 반복한다.
 머지가 반영된다. 1분 간격이어도 괜찮다. 아무것도 찾지 못한 틱의 비용은 요청 하나이기 때문이다.
 
 - **head SHA 가 지름길이다.** 틱은 저장소의 head 를 먼저 읽고, 그것이 마지막으로 적용된 sync 와
-  같으면 거기서 멈춘다. 전체 스냅샷이 필요로 하는 ~30 번의 blob 읽기에 대비되는 읽기 한 번이다.
+  같으면 전체 스냅샷의 파일별 조회를 생략한다.
   차단된 쓰기 실패를 담고 있는 저장된 리포트는 이 지름길의 자격을 박탈하므로, 그것을 복구하는
   것은 재실행이다.
 - **중복은 안전하다.** 저장소당 한 번에 하나의 sync 만 실행되고, 리스는 두 번째가 모든 GitHub
@@ -470,7 +459,7 @@ discovery와 문서 embedding을 반복한다.
 | 동작 | 무엇에 묶이는가 | 결과 |
 |---|---|---|
 | 런타임 설정 전파 | `SETTINGS_CACHE_TTL_MS` (5s) | 관리자 설정은 설정 캐시가 만료될 때까지 다른 곳에서 이전 값으로 동작할 수 있다. email 기반 member tier의 캐시는 별도 30초이며 쓰기 시 무효화는 프로세스 안에서만 일어난다. |
-| MCP 레지스트리 편집 | `MCP_DISCOVERY_CACHE_TTL_MS` / `MCP_MAX_SERVER_TTL_MS` | 한 인스턴스에서 한 편집이 그 구간만큼 다른 인스턴스들에게 보이지 않는다. |
+| MCP 도구 목록 전파 | `MCP_DISCOVERY_CACHE_TTL_MS` / `MCP_MAX_SERVER_TTL_MS` | 다른 인스턴스가 같은 URL·헤더로 캐시한 도구 목록은 만료까지 유지될 수 있다. |
 | 관리형 MCP | — | **호스트당 앱 인스턴스 하나.** 관리형 컨테이너가 게시하는 호스트 루프백 포트를 앱이 공유한다. |
 | 메트릭 카운터 | — | 프로세스 단위. 인스턴스들 사이의 집계는 스크레이프 계층에서 하라. |
 | 백그라운드 작업 (`after()`) | 해당 프로세스 | 중단된 메신저 이벤트·트리거 발화를 자동 재실행하지 않는다. 트리거 이력은 [복구 호출](#schedule-티커)이 있을 때 만료 lease를 failed로 마감한다. 메신저 이벤트에는 이 복구를 적용하지 않는다. |
@@ -525,12 +514,12 @@ await 하지 않는 이유는 재시작 한 번이 이미지를 당겨 오는 �
       *살아남고*(그림은 보여 주고 보관되지 않았다는 경고만 뜬다), get 이 없으면 갤러리와 chat
       트랜스크립트의 **모든** 이미지가 403 이 되며, delete 가 없으면 갤러리의 삭제가 실패하고
       행이 남는다
-- [ ] **프록시.** `PUBLIC_BASE_URL` 을 바깥에서 보이는 주소로(Agent Card, Slack 매니페스트,
+- [ ] **프록시.** `PUBLIC_BASE_URL` 을 바깥에서 보이는 주소로(Agent 실행 URL, Slack 매니페스트,
       Telegram webhook, Teams messaging endpoint 표시, OAuth 콜백, proxied 오브젝트 주소),
       `TRUSTED_PROXY_CIDRS` 에 앞단 프록시의 범위를(비워 두면 프록시 둘 뒤에서 rate limit 이
       함대 전체를 하나의 버킷으로 조인다), 그리고 프록시의 idle timeout 을 SSE keepalive(15초)
       보다 길게
-- [ ] LB 헬스 체크 → `/api/ready` (확장된 플릿에서는 `/api/health`), 재시작 검사 → `/api/health`
+- [ ] LB 헬스 체크 → `/api/ready`, 재시작 검사 → `/api/health`
 - [ ] 컨테이너 `stopTimeout` ≥ `MAX_RUN_DURATION_MS` (Compose 예: `stop_grace_period: 660s`)
 - [ ] Prometheus 가 `/api/metrics` 를 스크레이프할 것; `agent_studio_runs_failed_total`, `agent_studio_run_duration_seconds`, `agent_studio_unknown_model_calls_total` 에 알림
 - [ ] 관리형 MCP 를 쓴다면 호스트당 앱 인스턴스 하나, 그리고 앱이 호스트의 Docker CLI 와 루프백에 닿을 것

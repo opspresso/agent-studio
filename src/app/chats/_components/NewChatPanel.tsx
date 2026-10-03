@@ -222,7 +222,7 @@ export function NewChatPanel() {
                 thread's stopwatch opens with the create, the claim and the
                 upload already counted. */}
             {(starting || entry.live !== EMPTY_TURN) && (
-              <LiveAssistant turn={entry.live} running={starting} />
+              <LiveAssistant turn={entry.live} running={starting} completed={false} />
             )}
           </Stack>
         )}

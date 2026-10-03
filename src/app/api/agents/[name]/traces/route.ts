@@ -4,6 +4,9 @@ import { apiError } from "@/app/api/_lib/http";
 import { isUtcDay } from "@/shared/date";
 import { parsePageLimit } from "@/shared/pageLimit";
 import { isRunActorKind, type RunActorKind } from "@/domain/execution/actor";
+import type { Trace } from "@/domain/trace/types";
+
+export interface AgentTracesResponse { traces: Trace[] }
 
 type RouteContext = { params: Promise<{ name: string }> };
 
@@ -34,7 +37,7 @@ export const GET = withAuth(async (user, request: Request, ctx: RouteContext) =>
     actorKind = actorKindParam;
   }
   try {
-    return Response.json({ traces: await traceUseCases.list(name, user.email, { limit, from, to, actorKind }) });
+    return Response.json({ traces: await traceUseCases.list(name, user.email, { limit, from, to, actorKind }) } satisfies AgentTracesResponse);
   } catch (error) {
     return apiError(error);
   }

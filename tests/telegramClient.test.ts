@@ -34,6 +34,35 @@ afterEach(() => {
 });
 
 describe("how a Telegram call fails", () => {
+  it.each([{}, { message_id: "9" }, { message_id: -1 }, { message_id: 1.5 }])("rejects an invalid message receipt: %j", async (result) => {
+    const calls = stubFetch(() => jsonResponse({ ok: true, result }));
+    await expect(telegramClient.sendMessage(TOKEN, { chatId: 1, text: "reply" }))
+      .rejects.toThrow("Telegram sendMessage returned an invalid result");
+    expect(calls).toHaveLength(1);
+  });
+
+  it.each([{}, { id: "42" }, { id: 42, username: 9 }])("rejects invalid bot identities: %j", async (result) => {
+    stubFetch(() => jsonResponse({ ok: true, result }));
+    await expect(telegramClient.getMe(TOKEN)).rejects.toThrow("Telegram getMe returned an invalid result");
+  });
+
+  it.each([null, { ok: "true", result: true }, { ok: false, description: { token: TOKEN } }])("rejects malformed response envelopes without exposing their body: %j", async (body) => {
+    stubFetch(() => jsonResponse(body));
+    await expect(telegramClient.deleteWebhook(TOKEN)).rejects.toThrow("Telegram deleteWebhook returned an invalid response");
+  });
+
+  it("does not report webhook registration as successful without the API confirmation", async () => {
+    stubFetch(() => jsonResponse({ ok: true, result: false }));
+    await expect(telegramClient.setWebhook(TOKEN, { url: "https://studio/webhook", secretToken: "secret", allowedUpdates: ["message"] }))
+      .rejects.toThrow("Telegram setWebhook returned an invalid result");
+  });
+
+  it("refuses an invalid file path before attempting a download", async () => {
+    const calls = stubFetch(() => jsonResponse({ ok: true, result: { file_path: { path: "photos/1.jpg" } } }));
+    await expect(telegramClient.downloadFile(TOKEN, "f1", 10)).rejects.toThrow("Telegram getFile returned an invalid result");
+    expect(calls).toHaveLength(1);
+  });
+
   it("names a rate limit as one, and quotes what Telegram asked for", async () => {
     stubFetch(() =>
       jsonResponse(
@@ -81,6 +110,16 @@ describe("how a Telegram call fails", () => {
 });
 
 describe("what a Telegram call sends", () => {
+  it("preserves a scheduled message's zero ID instead of treating it as malformed", async () => {
+    stubFetch(() => jsonResponse({ ok: true, result: { message_id: 0 } }));
+    await expect(telegramClient.sendMessage(TOKEN, { chatId: 1, text: "reply" })).resolves.toEqual({ messageId: 0 });
+  });
+
+  it("reads a bot identity and ignores unrelated API fields", async () => {
+    stubFetch(() => jsonResponse({ ok: true, result: { id: 42, is_bot: true, username: "my_bot", first_name: "Bot" } }));
+    await expect(telegramClient.getMe(TOKEN)).resolves.toEqual({ id: 42, username: "my_bot", firstName: "Bot" });
+  });
+
   it("posts JSON to the method under the token, and reads the result", async () => {
     const calls = stubFetch(() => jsonResponse({ ok: true, result: { message_id: 9 } }));
     const sent = await telegramClient.sendMessage(TOKEN, {

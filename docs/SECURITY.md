@@ -289,9 +289,8 @@ agent token 의 표시용 마스크는 생성 시점에 계산돼 암호문 옆�
 skill 과 MCP 서버. 를 모두 쓴다. 저장소가 선언한 이름을 채택하고 provenance 를 그것으로 다시
 쓴다. 그것은 프로브가 아니라 쓰기 자격 증명으로 범위를 잡고 회전시켜라.
 
-trigger 시크릿은 활성화 플래그를 읽기 **전에** 비교된다. 비활성 trigger 가 틀린 시크릿에 활성
-trigger 와 다르게 답할 수 없게 하기 위해서다. 그 차이는 어떤 trigger 가 존재하는지에 대한
-오라클이다.
+Webhook 설정을 찾은 뒤 개인 credential을 검증하고 전달 ID·이벤트·중복·실행 조건을 검사한다.
+공용 활성화 플래그는 없으며 각 사용자는 본인 토큰 발급·폐기로 호출을 제어한다.
 
 상수 시간 비교는 소유자가 하나, `src/shared/timingSafe.ts` 이고
 `tests/architecture.test.ts` 가 고정한다.
@@ -303,7 +302,8 @@ ACK 후 실행하는 과정과 외부 도구 효과를 하나의 transaction으�
 end-to-end exactly-once를 보장하지 않는다. 플랫폼이 재전달하지 않으면 유실 이벤트를
 스스로 복구하는 worker도 없다. Agent webhook의 멱등 계약은 [Trigger 설계](design/triggers.md)를 따른다.
 
-Teams signing metadata는 HTTP 성공 응답만 사용한다. 조회 실패도 재시도 간격에 포함하며
+Teams activity는 `channelId: msteams`만 받으며, 서명 키의 비어 있지 않은 endorsements에
+`msteams`가 없으면 인증을 거부한다. Teams signing metadata는 HTTP 성공 응답만 사용한다. 조회 실패도 재시도 간격에 포함하며
 만료된 키를 장애 중 인증에 사용하지 않는다. 조회·캐시의 현재 계약은 [Teams 설계](design/teams.md)를 따른다.
 
 ## 인바운드 요청 크기
@@ -367,6 +367,11 @@ IPv4 를 안에 담는 접두사(IPv4-mapped, IPv4-compatible, NAT64 `64:ff9b::/
 `2002::/16`)는 통째로 막지 않고 **담긴 IPv4 로** 판정한다 — IPv6 전용 망에서 공인 주소에
 닿는 정상 경로가 그것이기 때문이다. `64:ff9b::8.8.8.8` 은 통과하고 `64:ff9b::10.0.0.1` 은
 거부된다.
+로컬 변환용 `64:ff9b:1::/48`은 주소 배치가 네트워크별로 달라 전체를 차단한다.
+site-local `fec0::/10`, dummy `100:0:0:1::/64`, 벤치마크 `2001:2::/48`, 문서용 `3fff::/20`,
+SRv6 SID `5f00::/16`도 공개 요청 대상에서 제외한다. 근거는
+[IANA IPv6 특수 대역](https://www.iana.org/assignments/iana-ipv6-special-registry/)과
+[RFC 3879](https://www.rfc-editor.org/rfc/rfc3879#section-4)다.
 
 이 registry의 공개 주소 디스패치는 `fetchPublicUrl`(`src/infrastructure/net/publicFetch.ts`)을 지난다.
 배포가 지정한 LLM·인증·스토리지·카탈로그 endpoint까지 모두 이 가드로 검사하는 것은 아니다.
@@ -497,6 +502,8 @@ endpoint path. 은
 `src/domain/mcp/provisioner.ts`의 패턴으로 API 입력과 Docker 실행 양쪽에서 검사한다. 항목을
 편집할 수 있는 운영자가 그것으로 호스트에서 임의 코드를 돌릴 수는 없어야 한다. 호스트 파일
 경로는 입력으로 받지 않으며, 저장된 환경 값만 프로세스가 만든 0600 임시 env file 로 전달한다.
+컨테이너 조회·교체·중지는 `agent-studio.managed-mcp=true`와 `agent-studio.mcp-name`을 검사한다.
+다른 컨테이너의 이름 충돌은 거절하고 삭제는 검증한 ID로 수행해 이름 재사용 경합을 피한다.
 
 컨테이너는 각각 메모리와 memory+swap을 모두 512MiB, CPU 1개, PID 256개로 제한하고 Linux
 capability를 모두 버리며 `no-new-privileges`로 실행된다. root filesystem은 read-only이고
@@ -679,7 +686,8 @@ Agent 소유자·다른 사용자·registry의 정적 인증으로 대신 호출
 
 Workspace는 chat 소유자에게만 공개되며 실행·승인은 현재 Agent 접근도 다시 확인한다.
 Workspace 설정 쓰기는 Agent 소유자에게 한정하고 revision 조건과 Agent 수명 경계로 보호한다.
-Agent의 도구 활성화는 해당 Agent에 명시적으로 연결한 GitHub MCP 계정을 정책 범위 내 사용하는 것을 허용한다.
+GitHub API와 Git 전송은 해당 Agent에 바인딩한 GitHub MCP의 호출자 개인 OAuth 연결을 사용한다.
+정적 MCP 헤더·Agent 소유자의 연결·Plugin 토큰으로 대신 인증하지 않는다.
 Runtime 모델 선택은 관리자에게 한정하며 도구를 끄면 새 실행·Git 승인을 거절한다.
 등록 저장소·정확한 소유자 허용은 DB에서 현재 값을 읽으며 일반 Agent가 수정하지 않는다.
 소유자 허용은 해당 계정의 향후 저장소도 포함하므로 관리 화면에서 그 범위를 명시한다. 조회 실패는
@@ -711,7 +719,7 @@ GitHub 브랜치 규칙을 따르며 권한·보호 규칙을 우회하는 옵�
 태그는 검토한 원격 main, 릴리즈는 검토한 기존 태그의 정확한 commit을 사용한다. 태그를 덮어쓰지 않으며
 GitHub의 저장소 범위 contents 쓰기 권한으로 실행하고 생성 응답과 릴리즈 태그를 검증한다.
 `/api/workspaces/github/webhook`은 서명과 delivery ID로 PR 메타데이터만 갱신하며 승인 권한이 없다.
-Agent Trigger인 `/api/webhook/{agent}`는 별도 Agent 시크릿으로 실행을 시작한다.
+Agent Trigger인 `/api/webhook/{agent}`는 개인 Webhook 토큰 발급자의 권한으로 실행을 시작한다.
 관리자가 `githubReview`를 활성화하면 서명된 PR 이벤트에 대해 해당 Agent의 GitHub MCP 연결로 리뷰 댓글을
 게시할 수 있다. 자동 리뷰 게시 설정은 관리자만 변경하며, 접근 가능한 저장소 전체 또는
 명시적 저장소 목록으로 한정한다. PR의 본문·URL이 게시 목적지를 결정하지 않는다. 공급자 API가
@@ -741,7 +749,8 @@ Native CLI에는 공급자 API 키 대신 하나의 Workspace Run에 한정된 �
 `AES_ENCRYPTION_KEY`에서 별도 HKDF 목적 키를 파생하며 오브젝트 URL 서명과 교환할 수 없다.
 Run 만료·취소·종료·원래 인증 수단 철회는 다음 모델 요청을 거절한다. 요청자의 Authorization,
 쿠키, 임의 헤더를 공급자에게 전달하지 않는다. 공유 Provider에 저장된 대화·prompt·파일·도구 리소스는
-참조할 수 없으며 Responses는 저장을 끈다. Gateway 주소는 배포자가 지정하고 Sandbox 네트워크에서
+참조할 수 없다. 중첩된 도구 결과·문서 content에도 같은 검사를 적용하며, 직접 보낸 bytes와
+도구 인자의 일반 데이터는 허용한다. Responses는 저장을 끈다. Gateway 주소는 배포자가 지정하고 Sandbox 네트워크에서
 Studio에 필요한 통신만 허용한다. [Workspace 계약](design/workspaces.md#native-모델-gateway)을 따른다.
 
 ## SDK Session과 승인 상태
@@ -811,9 +820,8 @@ preview는 모델을 호출하지 않아도 recall·discovery를 수행할 수 �
 그래서 이것이 기본 동작이 아니라 Agent별 옵트인이다. 켜는 것은 실제 사람의 이름을 프롬프트에,
 그리고 제공자가 로깅하는 무엇에든 집어넣겠다는 결정이다.
 
-옵트인은 모델에 넣을 이름·시간대·아바타를 위한 프로필 조회를 게이트한다. Slack 의 private
-agent 접근 검사와 artifact 소유자 식별에 필요한 email 조회는 옵트인과 독립적으로
-`users.info` 를 호출할 수 있다. 그 email 은 모델의 caller 블록에 들어가지 않는다.
+옵트인은 모델에 넣을 이름·시간대·아바타를 위한 프로필 조회를 게이트한다.
+Agent 접근 검사와 artifact 소유자 식별은 연결한 Studio 계정을 사용하며 Slack 이메일을 조회하지 않는다.
 이름이 메시지와 함께 도착하는 Telegram 에서는 옵트인하지 않은 이름이 대화 트랜스크립트에 쓰이지도
 않는다([데이터 노출과 보존](#데이터-노출과-보존) 참고). **transfer 는 호출자를
 자식에게 실어 나르고**(`RunOrigin`), 거기서 자식 Agent 자신의 옵트인이 다시 결정한다. 그래서
@@ -858,16 +866,16 @@ reference, 알림을 만들지 않는 date token은 보존한다.
 - **쓰기 없음.** `chat:write` 는 봇에게 부여돼 있고. 답장 전송에 필요하다. 의도적으로 어떤
   도구에서도 닿을 수 없다. 런은 자기가 쓰지 않은 텍스트에 조종된다. 글도 올릴 수 있는 런은,
   어떤 채널에 심어 둔 메시지가 봇으로 하여금 다른 곳에서 말하게 만들 수 있는 런이다.
-- **email 은 모델에 도달하지 않는다.** `users:read.email` 이 부여돼 있는데도 그렇다.
+- **email 은 모델에 도달하지 않는다.** 생성 manifest는 `users:read.email`을 요청하지 않으며
+  기존 앱이 반환하는 이메일도 저장하거나 사용하지 않는다.
   `SlackUser` 와 `SlackUsers` 는 이름, 직함, 시간대, 상태 문구, 아바타로 답한다. 동료가
   프로필을 클릭해서 보는 전부다. 주소는 결코 답하지 않는다. 그것은
   [호출자 컨텍스트](#호출자-컨텍스트)가 이미 적용하는 규칙이고, 이유도 같다. email 은 Slack 밖에서
   사람을 식별하며, 어떤 답도 잘 쓰이기 위해 그것을 필요로 하지 않는다.
 
-  이메일은 private Agent 접근 판정, MCP 위임 신원과 Artifact의 개인 귀속에 별도로 사용한다.
+  접근 판정, MCP 위임 신원과 Artifact의 개인 귀속에는 연결한 Studio 계정의 ID·이메일을 사용한다.
   Slack actor는 발신자의 Slack 사용자 ID로 유지한다. 개인 예산과 동시성은 일회용 코드로
-  연결한 Studio 사용자 ID에 합산한다. `toUserDetail`은 이메일을 모델용 도구 결과에
-  복사하지 않는다. 이 조회는 모델 표시 문맥을 제어하는 `callerContext`와 독립적이다.
+  연결한 Studio 사용자 ID에 합산한다. `toUserDetail`은 이메일을 모델용 도구 결과에 복사하지 않는다.
 
 *안으로* 실려 오는 것은 첨부된 문서와 똑같은 방식으로 신뢰되지 않는다. 채널의 메시지는 그 채널에
 있는 누구든 쓴 것이고, 그것이 텍스트로 모델에 도달한다. PII 필터링은 다른 것과 마찬가지로 그

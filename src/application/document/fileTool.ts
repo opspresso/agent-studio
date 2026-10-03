@@ -7,11 +7,14 @@ import { MAX_DOCUMENT_BYTES, documentKind } from "@/domain/llm/documentLimits";
 import { DOCUMENT_FORMATS, DOCUMENT_PROFILES, DOCUMENT_THEMES, DOCUMENT_LAYOUTS, DocumentProcessingError, type DocumentEdit, type DocumentAsset, type DocumentColors, type EffectiveDocumentStyle } from "@/domain/document/processor";
 import { createArtifactId } from "@/application/artifact/storeArtifact";
 import { FILE_DELIVERY_INSTRUCTION } from "@/application/artifact/fileDelivery";
+import { ELIDED_FILE_CONTENT_ERROR, isElidedToolArgument } from "@/application/llm/toolArgumentElision";
 import type { ArtifactStorage } from "@/application/artifact/storeArtifact";
+import type { ReadRunFile } from "@/application/artifact/runFileDrafts";
 import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
 import type { DocumentRenderer, DocumentEditor } from "@/domain/document/processor";
 
 export interface FileToolDeps {
+  readRunFile?: ReadRunFile;
   readPrivateArtifact?: (id: string, email: string, maxBytes: number) => Promise<{ bytes: Uint8Array }>;
   artifacts?: ArtifactStorage;
   documents: DocumentExtractor;
@@ -27,6 +30,29 @@ import { log } from "@/shared/logger";
 function requiredString(value: unknown, name: string): string {
   if (typeof value !== "string" || !value.trim()) throw new DocumentProcessingError(`${name} is required`);
   return value;
+}
+
+function assertFileContent(value: unknown): void {
+  if (isElidedToolArgument(value)) throw new DocumentProcessingError(ELIDED_FILE_CONTENT_ERROR);
+}
+
+function assertCellContent(value: unknown): void {
+  assertFileContent(value);
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    if ("formula" in value) assertFileContent(value.formula);
+    if ("cachedValue" in value) assertFileContent(value.cachedValue);
+  }
+}
+
+/** Inspect content only; the renderer owns sheet structure and size validation. */
+function assertSheetContent(sheets: unknown): void {
+  if (!Array.isArray(sheets)) return;
+  for (const sheet of sheets) {
+    if (!sheet || typeof sheet !== "object" || !Array.isArray(sheet.rows)) continue;
+    for (const row of sheet.rows) {
+      if (Array.isArray(row)) row.forEach(assertCellContent);
+    }
+  }
 }
 
 /** File identities are resolved by trusted storage, never by a model-provided object key or URL. */
@@ -45,7 +71,8 @@ export function buildFileTool(
   async function source(value: unknown, allowPrivate = false) {
     const id = requiredString(value, "file_id");
     if (id.length > 128) throw new DocumentProcessingError("File unavailable");
-    const artifact = await storage!.rows.get(id);
+    const draft = deps.readRunFile?.(id);
+    const artifact = draft?.artifact ?? await storage!.rows.get(id);
     const actor = origin.actor;
     const own = artifact && artifactOwnerEmail(artifact.actor, artifact.ownerEmail) === origin.user.email &&
       (actor.kind === "user" || artifact.agentName === (origin.ancestry[0] ?? agentName));
@@ -54,9 +81,9 @@ export function buildFileTool(
     if (artifact.privateFileId && (!allowPrivate || actor?.kind !== "user" || !deps.readPrivateArtifact)) {
       throw new DocumentProcessingError("Private artifacts support authenticated read and inspect only");
     }
-    const read = artifact.privateFileId
+    const read = draft ?? (artifact.privateFileId
       ? await deps.readPrivateArtifact!(artifact.artifactId, actor!.id, MAX_DOCUMENT_BYTES)
-      : await storage!.objects.read(artifact.key, MAX_DOCUMENT_BYTES);
+      : await storage!.objects.read(artifact.key, MAX_DOCUMENT_BYTES));
     return { artifact, file: { bytes: read.bytes, mimeType: artifact.mimeType, name: artifact.filename ?? "file" } };
   }
 
@@ -80,6 +107,8 @@ export function buildFileTool(
         throw new DocumentProcessingError("Design options apply only to newly created files; existing-file edits preserve their original style");
       }
       if (args.operation === "create") {
+        assertFileContent(args.content);
+        assertSheetContent(args.sheets);
         const format = DOCUMENT_FORMATS.find((format) => format === args.format);
         if (!format) throw new DocumentProcessingError(`format must be one of ${DOCUMENT_FORMATS.join(", ")}`);
         const profile = args.profile === undefined ? undefined : DOCUMENT_PROFILES.find((profile) => profile === args.profile);
@@ -123,9 +152,11 @@ export function buildFileTool(
         if (svg) {
           const text = decodeUtf8Text(file.bytes);
           if (text === null) throw new DocumentProcessingError("This SVG is not UTF-8 text");
+          assertFileContent(text);
           return { text: framedDocument(file.name, cutCodePoints(text, MAX_DOCUMENT_TOOL_CHARS), text.length > MAX_DOCUMENT_TOOL_CHARS ? "partial SVG markup" : "SVG markup", artifact.artifactId) };
         }
         const extracted = await deps.documents.extract({ ...file, maxChars: MAX_DOCUMENT_TOOL_CHARS, signal });
+        assertFileContent(extracted.text);
         return { text: framedDocument(file.name, extracted.text, extracted.note, artifact.artifactId) };
       }
       if (args.operation === "inspect") {
@@ -137,6 +168,7 @@ export function buildFileTool(
         if (kind === "text" || kind === "html" || svg) {
           const text = decodeUtf8Text(file.bytes);
           if (text === null) throw new DocumentProcessingError("This file is not UTF-8 text");
+          assertFileContent(text);
           return { text: framedDocument(file.name, cutCodePoints(text, MAX_DOCUMENT_TOOL_CHARS), `${text.length > MAX_DOCUMENT_TOOL_CHARS ? "Partial text; " : ""}text editing uses part=text and index=0 with an original substring that occurs once`, artifact.artifactId) };
         }
         const inspected = await editor.inspect(file, { from, mode: args.mode, includeHidden: args.include_hidden }, signal);
@@ -147,6 +179,10 @@ export function buildFileTool(
           throw new DocumentProcessingError(`edits must contain 1–${MAX_DOCUMENT_EDITS} explicit edit operations`);
         }
         const edits = args.edits as DocumentEdit[];
+        for (const edit of edits) {
+          if (edit.operation === "replace_text") assertFileContent(edit.replacement);
+          if (edit.operation === "set_cell") assertCellContent(edit.value);
+        }
         if (documentKind(file.mimeType, file.name) === "text" || documentKind(file.mimeType, file.name) === "html" || svg) {
           if (file.bytes.byteLength > MAX_SAVED_FILE_BYTES) throw new DocumentProcessingError("This text file exceeds the editing byte limit");
           let text = decodeUtf8Text(file.bytes);

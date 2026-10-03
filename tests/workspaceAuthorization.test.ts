@@ -10,7 +10,7 @@ const email = "owner@example.com";
 const agent: Agent = { name: "demo", displayName: "Demo", ownerEmail: email, description: "",
   createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" };
 const grant: WebhookTrigger = { agentName: "demo", triggerId: "webhook", kind: "webhook", description: "",
-  enabled: true, allowConcurrent: false,
+  allowConcurrent: false,
   createdAt: agent.createdAt, updatedAt: agent.updatedAt };
 
 function fixture() {
@@ -69,9 +69,9 @@ describe("Workspace execution authorization", () => {
     await expect(authorizeWorkspaceExecution(deps, "demo", email, { kind: "webhook", id: "demo:webhook" },
       { kind: "webhook", agentName: "demo", triggerId: "webhook", ...deps.identity.principal })).resolves.toBeUndefined();
   });
-  it.each(["disabled", "wrong-trigger", "missing", "wrong-user"])("refuses a %s Webhook grant", async failure => {
+  it.each(["revoked", "wrong-trigger", "missing", "wrong-user"])("refuses a %s Webhook grant", async failure => {
     const deps = fixture();
-    if (failure === "disabled") deps.triggers.get.mockResolvedValue({ ...grant, enabled: false });
+    if (failure === "revoked") deps.identity.revoke();
     if (failure === "wrong-trigger") deps.triggers.get.mockResolvedValue({ ...grant, triggerId: "other" });
     if (failure === "missing") deps.triggers.get.mockResolvedValue(null);
     const caller = { kind: "webhook" as const, agentName: "demo", triggerId: "webhook", ...deps.identity.principal,

@@ -22,8 +22,8 @@ const MAX_TOKEN_RESPONSE_BYTES = 256_000;
 
 /**
  * Errors that mean the grant itself is gone, so the owner must re-authorize.
- * Everything else — a 5xx, a timeout, a proxy page — is transient and must not
- * cost someone their connection.
+ * Other failures leave the provider outcome unknown; refresh coordination owns
+ * whether that uncertainty requires reauthorization.
  */
 const GRANT_ERROR_CODES = new Set([
   "invalid_grant",

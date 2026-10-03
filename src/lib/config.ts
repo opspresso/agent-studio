@@ -70,8 +70,8 @@ export function availableServiceLogos(): string[] {
 
 /**
  * Access-control guardrail for deployed stages. An empty ADMIN_EMAILS is
- * fail-open — every signed-in user becomes an admin of the shared registries and
- * of this app's own settings — so `alpha`/`prod` refuse to boot until it is set.
+ * fail-open for member-or-higher accounts on shared registries and app settings,
+ * so `alpha`/`prod` refuse to boot until it is set. Guests stay read-only.
  * `local` keeps the fail-open default for zero-config development.
  *
  * ALLOWED_EMAIL_DOMAINS is deliberately *not* required: an empty value is the
@@ -336,7 +336,7 @@ export const config = {
   },
   /**
    * Emails allowed to mutate shared registries (ADMIN_EMAILS, comma-separated).
-   * Empty means no restriction — any signed-in user may mutate (fail-open);
+   * Empty removes the email restriction; member-or-higher tier is still required.
    * refused at boot in `alpha`/`prod` by `assertAccessControlConfig`.
    */
   get adminEmails(): string[] {

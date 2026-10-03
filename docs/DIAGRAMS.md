@@ -114,8 +114,8 @@ sequenceDiagram
   participant B as openRun (runBracket)
   participant E as engine.runAgent
   participant T as 도구 · MCP · 서브에이전트
-  S->>F: executeAgent(deps, {agent, configuration, messages, actor, caller, conversation})
-  F->>B: openRun — 상관 ID · 모델 정책 · 비용(fail-open) · 동시성(fail-closed) · 메트릭 · Artifact recorder
+  S->>F: executeAgent(deps, {agent, configuration, messages, user, actor, executionGrant, caller, conversation})
+  F->>B: openRun — 상관 ID · 모델 정책 · Agent 비용 · 사용자 월 상한 · 동시성 · 메트릭 · Artifact recorder
   B-->>F: bracket
   F->>F: prepareMemoryForRun (명시적 바인딩 recall)<br/>memory prepare span 으로 기록
   F->>F: resolveRunTools (요청 + 관련 기억으로 discovery · 스킬 / MCP / 서브에이전트 병렬)<br/>tools prepare span 으로 기록 — 첫 model span 은 그 뒤에서 시작한다
@@ -224,7 +224,7 @@ flowchart LR
 flowchart LR
   subgraph agent["AGENT#{name} 파티션"]
     meta["META (Agent + 현재 configuration)"]
-    tok["AGENTCREDENTIAL#{purpose}#{userId}#{credentialId}"]
+    tok["CREDENTIAL#{purpose}#{credentialId}<br/>CREDENTIALUSER#{purpose}#{userId}"]
     trig["TRIGGER#{id} · TRIGGERRUN#…"]
     jobs["AUDIOJOB#… · AUDIOSLOTS · AUDIOCONFIG"]
     policy["WORKSPACEPOLICY · REPOSITORYCREATE#…"]
@@ -307,8 +307,10 @@ flowchart LR
   worker --> sandbox["격리 Sandbox<br/>command · Codex · Claude · OpenCode"]
   sandbox --> checkpoint["암호화 파일·native Session 체크포인트"]
   tool --> review["prepare_git<br/>정확한 tree/HEAD 검토"]
-  review --> approval["Workspace 승인 화면"]
-  approval --> git["서버 Git 동작<br/>commit · push · PR · merge"]
+  review -->|"commit · 작업 브랜치 push · PR"| intent["코딩 요청 권한"]
+  review -->|"merge · main · tag · release · deploy"| approval["Workspace 별도 승인 화면"]
+  intent --> git["검토한 HEAD·트리에 묶인 Git 동작"]
+  approval --> git
   git --> saved["결과 + 전달 알림<br/>동일 transaction"]
   saved --> resume["별도 알림 소비자<br/>Chat lease · SDK 이력 · 공통 facade"]
   resume --> chat
@@ -316,6 +318,7 @@ flowchart LR
   ci -->|"검사 완료·실패·변경·기한 초과"| resume
 ```
 
-한 승인은 한 동작만 허용한다. 성공 후 같은 채팅이 다음 요청 단계의 검토를 준비하며, 실패·거절·
-결과 불명을 성공처럼 반복하지 않는다. 알림 claim 후 중단된 모델 실행은 자동 재실행하지 않는다.
+각 동작은 검토한 상태에 묶이고, 별도 승인은 요청한 한 동작만 허용한다.
+성공 후 같은 채팅이 다음 요청 단계의 검토를 준비하며, 실패·거절·결과 불명을 성공처럼 반복하지 않는다.
+알림 claim 후 중단된 모델 실행은 자동 재실행하지 않는다.
 `waiting-ci`는 모델을 실행하는 상태가 아니며 원격 검사만 관찰한다.

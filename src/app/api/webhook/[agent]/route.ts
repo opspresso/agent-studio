@@ -11,10 +11,8 @@ type RouteContext = { params: Promise<{ agent: string }> };
 /**
  * An agent's webhook: `POST /api/webhook/{agent}`.
  *
- * The agent name is the whole address, because an agent has exactly one
- * webhook — the console turns it on and off rather than naming it. This is the
- * only way a delivery reaches the platform; `admitDelivery` resolves the row it
- * belongs to, so there is no id here to get wrong.
+ * Each agent has one shared webhook configuration. `admitDelivery` resolves
+ * that row; personal credentials control which callers may execute it.
  *
  * Authentication selects a personal Webhook credential and its issuing Studio user.
  * GitHub callbacks include its public selector in the credential query parameter.
@@ -70,12 +68,8 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
     case "review-not-ready":
       return Response.json({ error: admitted.reason, status: admitted.status }, { status: 409 });
     case "not-configured":
-      // Deliberately the same answer a wrong secret would get for an agent that
-      // does have a webhook would not be — but an agent with no webhook at all
-      // is not a secret, and 404 is what a misconfigured URL needs to say.
+      // Missing shared configuration is 404; invalid personal credentials are 401.
       return Response.json({ error: "Webhook not found" }, { status: 404 });
-    case "disabled":
-      return Response.json({ ok: true, status: "disabled" }, { status: 202 });
     case "duplicate":
       return Response.json({ ok: true, status: "duplicate" }, { status: 202 });
     case "busy":

@@ -4,7 +4,7 @@
  * meet through Markdown serialization rather than importing each other.
  */
 
-import type { Align, Code, Heading, List, Paragraph, Quote, Rule, Run } from "../markdown";
+import type { Align, Code, Heading, List, ListItem, Paragraph, Quote, Rule, Run } from "../markdown";
 
 /** Format metadata shown by structure inspection but omitted from extracted Markdown. */
 export interface Marks {
@@ -109,6 +109,29 @@ type Body = Heading | Paragraph | List | Code | Quote | Rule | ReadTable | ReadI
  * still works and a new kind cannot forget to carry them.
  */
 export type ReadBlock = Body & { marks?: Marks };
+
+/** Keep stated list numbers; a discontinuity opens a new Markdown list block. */
+export class ReadListBuilder {
+  private nextNumbers: number[] = [];
+
+  constructor(private readonly blocks: ReadBlock[]) {}
+
+  append(ordered: boolean, item: ListItem, start?: number): void {
+    const last = this.blocks.at(-1);
+    const continues = start === undefined || start === (this.nextNumbers[item.depth] ?? 1);
+    if (last?.kind === "list" && last.ordered === ordered && continues) {
+      last.items.push(item);
+    } else {
+      this.nextNumbers = [];
+      this.blocks.push({
+        kind: "list", ordered, items: [item],
+        ...(start !== undefined && start !== 1 ? { marks: { start } } : {}),
+      });
+    }
+    this.nextNumbers.length = item.depth + 1;
+    this.nextNumbers[item.depth] = (start ?? this.nextNumbers[item.depth] ?? 1) + 1;
+  }
+}
 
 export interface ReadDocument {
   blocks: ReadBlock[];

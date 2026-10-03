@@ -9,6 +9,7 @@ import type { AgentConfiguration } from "@/domain/agent/types";
 import { clearMcpDiscoveryCache } from "@/infrastructure/mcp/discoveryCache";
 import { mcpSessionFactory } from "@/infrastructure/mcp/sessionFactory";
 import { conforming, modernResult, protocolPreamble } from "./mcpProtocolStub";
+import { interactiveIdentity } from "./runIdentity";
 
 vi.mock("@/infrastructure/net/publicFetch", () => ({
   fetchPublicUrl: (input: string | URL | Request, init?: RequestInit) => fetch(input, init),
@@ -33,7 +34,7 @@ function fixture() {
   } as unknown as McpToolDeps;
   const configuration = { agentName: "audio", model: "test", systemPrompt: "", parameters: { piiFiltering: false }, skillList: [], subagentList: [], mcpList: servers.map(({ name }) => ({ name })) } as AgentConfiguration;
   const open = (bindings = configuration.mcpList) => buildMcpTools(deps, { ...configuration, mcpList: bindings }, undefined,
-    { actor: { kind: "user", id: "owner@example.test" } });
+    interactiveIdentity("owner@example.test"));
   return { open, register, configuration, deps };
 }
 
@@ -80,7 +81,7 @@ describe("mapped MCP tools offered to an Agent", () => {
     const refresh = createMcpSourceRefresher({ ...f.deps, authorizeRun: async () => {},
       agents: { get: async () => ({ configuration: f.configuration }) },
     } as unknown as Parameters<typeof createMcpSourceRefresher>[0]);
-    const job = { agentName: f.configuration.agentName, userEmail: "owner@example.test",
+    const job = { agentName: f.configuration.agentName, userEmail: "owner@example.test", ...interactiveIdentity("owner@example.test"),
       sourceIdentity: { namespace: registered.namespace, itemId: registered.itemId } } as AudioJob;
     const source = await refresh(job, registered.refresh!, new AbortController().signal);
     expect(source).toMatchObject({ url: refreshedUrl, namespace: registered.namespace, itemId: recording.id,

@@ -54,6 +54,17 @@ describe("selectPluginRoots", () => {
     expect(roots.map((root) => root.rootPath)).toEqual([""]);
     expect(nested.map((root) => root.rootPath)).toEqual(["plugins/devops"]);
   });
+
+  it("finds ancestors regardless of input order without confusing path prefixes", () => {
+    const { roots, nested } = selectPluginRoots([
+      blob("plugins/a/deep/inner/plugin.json"),
+      blob("plugins/ab/plugin.json"),
+      blob("plugins/a/plugin.json"),
+      blob("plugins/a/deep/plugin.json"),
+    ]);
+    expect(roots.map(root => root.rootPath)).toEqual(["plugins/ab", "plugins/a"]);
+    expect(nested.map(root => root.rootPath)).toEqual(["plugins/a/deep/inner", "plugins/a/deep"]);
+  });
 });
 
 describe("groupEntriesByRoot", () => {
@@ -113,6 +124,12 @@ describe("excludeSubtrees", () => {
   it("returns the entries untouched with no roots to exclude", () => {
     const entries = [blob("plugin.json")];
     expect(excludeSubtrees(entries, [])).toBe(entries);
+  });
+
+  it("preserves similarly named siblings and excludes nested descendants", () => {
+    const entries = [blob("plugins/a/plugin.json"), blob("plugins/ab/plugin.json"), blob("plugins/a/deep/ref.md")];
+    expect(excludeSubtrees(entries, [{ rootPath: "plugins/a", manifestPath: "plugins/a/plugin.json" }])).toEqual([entries[1]]);
+    expect(excludeSubtrees(entries, [{ rootPath: "", manifestPath: "plugin.json" }])).toEqual([]);
   });
 });
 

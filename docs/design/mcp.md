@@ -31,7 +31,7 @@ Plugin sync는 streamable-HTTP 서버만 가져오며 header를 가져오지 않
 | Header | 의미 | discovery cache |
 |---|---|---|
 | `X-Tenant-Id` | 호출하는 Agent 이름 | 신원 키에 포함 |
-| `X-User-Email` | 확인한 user·agent-token 이메일 또는 표면이 해석한 이메일 | 신원 키에 포함 |
+| `X-User-Email` | 확인된 Studio 사용자의 `RunIdentity.user.email` | 신원 키에 포함 |
 | `X-Conversation-Id` | 표면과 호출자 범위로 구분한 대화 주소 | 요청 문맥으로만 전달 |
 
 이 값은 credential을 대신하지 않는다. MCP 서버는 자기 Bearer/OAuth와 함께 인가해야 한다.
@@ -108,6 +108,10 @@ throw 동작과 `SdkErrorCode` 매핑을 확인한다.
 
 행에는 image·args·endpointPath·containerPort·암호화 environment를 저장한다.
 Docker에는 argv 배열과 process가 만든 0600 임시 env 파일을 넘기며 호스트 파일 경로를 받지 않는다.
+컨테이너에는 managed MCP 소유 라벨과 서버 이름을 기록한다. 조회·교체·중지는 두 라벨을
+확인하며 삭제는 검증한 컨테이너 ID로 수행한다. 라벨이 없는 기존 컨테이너는 자동 인수하지 않는다.
+이름이 충돌하면 운영자가 기존 컨테이너의 용도를 확인해 이름을 분리한 뒤 Studio에서 다시 생성한다.
+이미지 pull이 실패하면 로컬 이미지가 있는지 확인하며, 사용할 이미지가 없으면 기존 컨테이너를 보존한다.
 `PORT`는 runtime이 지정하고 args의 `{{PORT}}`를 실제 listen 포트로 치환한다.
 자원·파일시스템·capability 제한은 [보안 계약](../SECURITY.md#managed-루프백-예외)을 따른다.
 
@@ -160,6 +164,8 @@ fingerprint에 묶이며 설정 변경 후 이전 계정 표시를 재사용하�
 Client ID가 달라지면 기존 grant를 거절한다. 개별 등록 client secret은 해당 connection에 남는다.
 Client ID·Secret 수동 입력은 관리자 공용 앱 설정에만 제공한다. 개인 연결 응답에는
 client Secret을 포함하지 않는다. issuer·resource가 달라진 grant는 실행에 사용하지 않는다.
+승인 대기 상태에는 요청 당시의 client ID·resource·redirect URI·scopes를 필수로 저장한다.
+누락된 상태는 현재 설정으로 보완하지 않고 토큰 교환 전에 거절하며, 사용자가 연결을 다시 시작해야 한다.
 
 credential 선택은 기존 client, 사용할 수 있는 Client ID Metadata Document,
 dynamic registration 순서다. 설치 공용 metadata URL은 설정한 공개 base로만 만든다.

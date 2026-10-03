@@ -9,10 +9,8 @@ let contentLockPool: Pool | undefined;
 const READINESS_DB_TIMEOUT_MS = 2000;
 
 /**
- * The one connection pool. Lazy, like the document client it replaces, so
- * importing an adapter costs nothing until a query is made — the composition
- * root evaluates every adapter at once, and a test that mocks this module
- * never opens a socket.
+ * Shared application query pool, opened lazily so importing adapters does not
+ * start database connections. Readiness and content locks have separate pools.
  */
 export function getPool(): Pool {
   if (!pool) {
@@ -115,7 +113,7 @@ export async function withContentLock<T>(keys: string | readonly string[], opera
   } finally { client.release(broken); }
 }
 
-/** Test seam and shutdown hook: drop the pool so the next call builds a new one. */
+/** Close initialized pools; subsequent use creates fresh pools. */
 export async function closePool(): Promise<void> {
   const current = pool;
   const currentReadiness = readinessPool;

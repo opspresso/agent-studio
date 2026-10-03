@@ -1,20 +1,11 @@
 import type { RunCaller, RunUser } from "@/domain/execution/actor";
 import { randomUUID } from "node:crypto";
-import type { Chat, ChatMessage } from "@/domain/chat/types";
-import { chatConversation } from "@/domain/chat/conversation";
+import type { Chat } from "@/domain/chat/types";
 import type { AttachedDocumentInput, AttachedImage, ChatDeps } from "./deps";
 import { ChatForbiddenError, ChatValidationError } from "./errors";
 import { mayAccessAgent } from "@/domain/agent/access";
-import {
-  runAndPersist,
-  readMessageDocuments,
-  storeAttachedImages,
-  userTurnContent,
-} from "./run";
 import { titleFromMessage } from "./title";
-import { claimChatRun } from "./runLease";
-import { withLeadingWarnings } from "@/application/run/leadingWarnings";
-import { teeToRunLog } from "./runLog";
+import { startChatTurn, type ChatTurnResult } from "./startChatTurn";
 
 export interface CreateChatInput {
   agentName: string;
@@ -28,29 +19,8 @@ export interface CreateChatInput {
   signal?: AbortSignal;
 }
 
-export interface CreateChatResult {
+export interface CreateChatResult extends ChatTurnResult {
   chat: Chat;
-  /**
-   * The claim this turn holds on the chat. The caller announces it so a reader
-   * that loses the connection can name the run it wants back, or stop it.
-   */
-  runId: string;
-  /** Where the user's turn landed, so a reader arriving mid-run does not draw it twice. */
-  userSeq: number;
-  /**
-   * When this turn's clock started, on the server's own clock — the instant the
-   * user row is stamped with, which is where the answer's stored duration is
-   * measured from.
-   *
-   * Handed out so the head frame can carry the run's *age* rather than a
-   * timestamp: a browser subtracting two clocks reports whatever they disagree
-   * by, and the reader's stopwatch and the duration on the stored answer have to
-   * be the same measurement.
-   */
-  startedAtMs: number;
-  stream: AsyncGenerator<unknown>;
-  /** Tell the run its reader left, so it starts writing itself down. */
-  onClientGone: () => void;
 }
 
 /**
@@ -85,74 +55,8 @@ export async function createChat(
     updatedAt: now,
   };
   await deps.chats.create(chat);
-  const runId = await claimChatRun(deps.chats, chat.chatId);
-
-  try {
-    const attachments = input.images ?? [];
-    const uploaded = await storeAttachedImages(
-      deps,
-      { agentName: agent.name, actor: { kind: "user", id: input.user.email } },
-      attachments,
-    );
-    const documentInput = input.documents ?? [];
-    const read = await readMessageDocuments(deps, {
-      agentName: agent.name,
-      actor: { kind: "user", id: input.user.email },
-    }, documentInput);
-    const userSeq = await deps.chats.reserveMessageSeq(chat.chatId);
-    const userMessage: ChatMessage = {
-      chatId: chat.chatId,
-      seq: userSeq,
-      role: "user",
-      content: input.firstMessage,
-      ...(uploaded.stored.length > 0 ? { images: uploaded.stored } : {}),
-      ...(read.stored.length > 0 ? { documents: read.stored } : {}),
-      createdAt: now,
-    };
-    await deps.chats.appendMessage(userMessage);
-
-    const source = deps.runAgent({
-      user: input.user,
-      agent,
-      configuration,
-      // Inline bytes enter the SDK Session; stored keys serve the display record.
-      messages: [
-        { role: "user", content: userTurnContent(input.firstMessage, attachments, read.stored) },
-      ],
-      actor: { kind: "user", id: input.user.email },
-      ...(input.caller ? { caller: input.caller } : {}),
-      // The chat is the conversation. Its id is this platform's own, so it needs
-      // no normalising — but it goes through the one builder all the same.
-      conversation: chatConversation(chat.chatId),
-      signal: input.signal,
-    });
-
-    // Outside persistence, so the log's terminal entry lands after the assistant
-    // message and before the lease is released.
-    const tee = teeToRunLog(
-      deps,
-      chat.chatId,
-      runId,
-      // An attachment that could not be stored is said so before the answer.
-      runAndPersist(
-        deps,
-        chat,
-        withLeadingWarnings([...uploaded.warnings, ...read.warnings], source),
-        // So a stop is persisted as the note it is, rather than surfacing here
-        // as a failure the log would keep.
-        input.signal,
-      ),
-    );
-    return {
-      chat,
-      runId,
-      userSeq,
-      startedAtMs: startedAt.getTime(),
-      stream: tee.stream,
-      onClientGone: tee.onClientGone,
-    };
-  } catch (error) {
-    await deps.chats.releaseRun(chat.chatId, runId);
-    throw error;
-  }
+  const turn = await startChatTurn(deps, {
+    ...input, chat, agent, configuration, content: input.firstMessage, startedAt,
+  });
+  return { chat, ...turn };
 }

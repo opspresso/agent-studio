@@ -446,19 +446,22 @@ function RunProgress({ startedAtMs }: { startedAtMs?: number | undefined }) {
  *
  * And only for a run this view watched end. A thread opened onto a turn that
  * finished long ago would otherwise be told the answer just completed, so the
- * text is set on the *transition* from running rather than on the state.
+ * text is set only on the transition to a completed answer. A failed connection
+ * or run is reported by the thread's error alert instead.
  */
-function AnswerAnnouncement({ running }: { running: boolean }) {
+function AnswerAnnouncement({ running, completed }: { running: boolean; completed: boolean }) {
   const t = useT();
   const [announcement, setAnnouncement] = useState("");
   const wasRunning = useRef(running);
 
   useEffect(() => {
-    if (wasRunning.current && !running) {
+    if (running) {
+      setAnnouncement("");
+    } else if (wasRunning.current && completed) {
       setAnnouncement(t("chat.answerReady"));
     }
     wasRunning.current = running;
-  }, [running, t]);
+  }, [running, completed, t]);
 
   return <VisuallyHidden role="status">{announcement}</VisuallyHidden>;
 }
@@ -466,12 +469,15 @@ function AnswerAnnouncement({ running }: { running: boolean }) {
 export function LiveAssistant({
   turn,
   running,
+  completed,
   startedAtMs,
   endedAtMs,
 }: {
   turn: LiveTurn;
   /** False once the stream ended but the turn is still on screen. */
   running: boolean;
+  /** The run finished without a top-level error. */
+  completed: boolean;
   startedAtMs?: number | undefined;
   endedAtMs?: number | undefined;
 }) {
@@ -480,7 +486,7 @@ export function LiveAssistant({
     <Stack gap={4} align="flex-start">
       {/* Outside the running/finished branch below, because a live region has
           to be in the tree *before* the thing it announces happens. */}
-      <AnswerAnnouncement running={running} />
+      <AnswerAnnouncement running={running} completed={completed} />
       {turn.warnings.map((warning, index) => (
         <WarningNote key={`warning-${index}`} text={warning} />
       ))}

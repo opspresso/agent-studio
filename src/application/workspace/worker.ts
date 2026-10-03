@@ -233,6 +233,7 @@ async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState
       await state.save({}, { checks: run.checks.map((value, at) => at === index ? running : value) }, [{ kind: "check", check: running }]);
       continue;
     }
+    const runId = run.id;
     const operationId = run.operationId!;
     let operation = await state.effect(() => deps.provider.operation(sandbox.externalId, operationId));
     if (operation.status === "not-started") {
@@ -248,7 +249,16 @@ async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState
         : prepared!.command(workspace, session, workspaceTaskInput(workspace, run.input), Math.max(1, Math.floor(remaining)));
       await deps.authorize?.(current.workspace.agentName, current.workspace.ownerEmail,
         current.run.actor, current.run.executionGrant, current.run.user);
-      await state.effect(() => deps.provider.start(sandbox.externalId, operationId, command));
+      const started = await state.effect(async latest => {
+        if (latest.run?.id !== runId) throw new WorkspaceLeaseLost();
+        const remaining = deps.runTimeoutMs - (deps.now().getTime() - Date.parse(latest.run.startedAt!));
+        if (latest.run.cancelRequestedAt || latest.workspace.status === "closing" || remaining <= 0) return false;
+        await deps.provider.start(sandbox.externalId, operationId, {
+          ...command, timeoutMs: Math.min(command.timeoutMs, Math.max(1, Math.floor(remaining))),
+        });
+        return true;
+      });
+      if (!started) continue;
       operation = await state.effect(() => deps.provider.operation(sandbox.externalId, operationId));
     }
     if (operation.status === "missing") {

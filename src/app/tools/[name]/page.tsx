@@ -1,5 +1,6 @@
 "use client";
 
+import { ConfigurationFields } from "@/app/_components/ConfigurationFields";
 import { SecretInput } from "@/app/_components/SecretInput";
 import { PageHeader } from "@/app/_components/PageHeader";
 import { IconTool } from "@tabler/icons-react";
@@ -783,6 +784,7 @@ function EditMcpForm({
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (submitting) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -820,7 +822,7 @@ function EditMcpForm({
 
   return (
     <form onSubmit={submit}>
-      <Stack gap="md">
+      <ConfigurationFields disabled={submitting}>
         {server.runtime === "managed" ? (
           <>
             <TextInput label={t("registry.url")} value={url} readOnly description={t("managed.urlSetByRuntime")} />
@@ -939,7 +941,7 @@ function EditMcpForm({
             {t("common.save")}
           </Button>
         </Group>
-      </Stack>
+      </ConfigurationFields>
     </form>
   );
 }

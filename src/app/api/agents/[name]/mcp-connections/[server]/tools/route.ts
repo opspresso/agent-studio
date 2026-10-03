@@ -1,9 +1,12 @@
+import type { McpTool } from "@/domain/mcp/types";
 import { z } from "zod";
 import { headerRecordSchema } from "@/app/api/_lib/headerRecord";
 import { mcpAuthUseCases } from "@/lib/container";
 import { withMemberAuth } from "@/lib/session";
 import { apiError, invalidRequest, parseName } from "@/app/api/_lib/http";
 import { editorBody } from "@/app/api/_lib/body";
+
+export interface AgentMcpToolsResponse { tools: McpTool[] }
 
 type RouteContext = { params: Promise<{ name: string; server: string }> };
 
@@ -34,7 +37,7 @@ export const POST = withMemberAuth(async (user, request: Request, ctx: RouteCont
     if (!result.ok) {
       return Response.json({ error: result.error }, { status: 502 });
     }
-    return Response.json({ tools: result.tools });
+    return Response.json({ tools: result.tools } satisfies AgentMcpToolsResponse);
   } catch (error) {
     return apiError(error);
   }

@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { daySpan, isUtcDay } from "@/shared/date";
-
-export const MAX_RANGE_DAYS = 184;
+import { MAX_USAGE_RANGE_DAYS } from "@/shared/usageRange";
 
 // `isUtcDay`, not a shape regex: `2026-02-31` must not reach `inclusiveDays` as
 // March 3rd and answer for a range the caller never asked about.
@@ -17,7 +16,7 @@ export const summaryQuerySchema = z
     message: "from must be on or before to",
     path: ["from"],
   })
-  .refine((v) => daySpan(v.from, v.to) <= MAX_RANGE_DAYS, {
-    message: `date range must be ${MAX_RANGE_DAYS} days or less`,
+  .refine((v) => daySpan(v.from, v.to) <= MAX_USAGE_RANGE_DAYS, {
+    message: `date range must be ${MAX_USAGE_RANGE_DAYS} days or less`,
     path: ["to"],
   });

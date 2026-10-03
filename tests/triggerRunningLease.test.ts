@@ -40,7 +40,7 @@ afterEach(() => { try { expect(vi.getTimerCount()).toBe(0); } finally { vi.useRe
 
 async function fixture(review = true) {
   const webhook: WebhookTrigger = { agentName: agent.name, triggerId: "webhook", kind: "webhook", description: "",
-    enabled: true, allowConcurrent: false,
+    allowConcurrent: false,
     ...(review ? { githubReview: { scope: "accessible" as const } } : {}), createdAt: agent.createdAt, updatedAt: agent.updatedAt };
   await triggers.create(webhook);
   const load = vi.fn(async (target: { repository: string; number: number; headSha: string }) => ({ status: "ready" as const,

@@ -145,7 +145,8 @@ describe("deployment capability visibility", () => {
       mcpDocs: [], skippedAttachments: [], badSkillDirs: [],
     }] };
     const report = await syncPluginsFromSnapshot({ plugins: pluginRepository, pluginRows: createPluginUseCases(pluginRepository),
-      skillRepo: rawSkills, skills: createSkillUseCases(rawSkills), mcps }, snapshot, "admin@example.test");
+      skillRepo: rawSkills, skills: createSkillUseCases(rawSkills), mcps,
+      findBindings: async () => ({ skills: new Map(), mcpServers: new Map() }) }, snapshot, "admin@example.test");
     expect(report.plugins[0]?.skills.overwritten).toContainEqual(expect.objectContaining({ name: "deploy" }));
     expect((await pluginRepository.get("devops"))?.commitSha).toBe("updated");
     expect((await rawSkills.get("deploy"))?.content).toBe("New deployment instructions");

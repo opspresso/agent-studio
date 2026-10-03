@@ -4,9 +4,8 @@
  *
  * Five standard fields (minute hour day-of-month month day-of-week) with `*`,
  * lists, ranges and steps; three-letter names for month and weekday;
- * day-of-week 0–7 where both 0 and 7 are Sunday; the classic quirk that a
- * restricted day-of-month and a restricted day-of-week match as *either*, not
- * both.
+ * day-of-week 0–7 where both 0 and 7 are Sunday. A day field starting with `*`
+ * combines day-of-month and day-of-week with AND; two explicit fields use OR.
  *
  * An occurrence is a UTC minute boundary whose *wall clock* in the trigger's
  * timezone matches the fields. Keying occurrences by UTC instant settles the
@@ -25,6 +24,8 @@ export interface CronSpec {
   month: CronField;
   /** Normalised to 0–6; a written `7` becomes `0` at parse time. */
   dayOfWeek: CronField;
+  /** A day field starting with `*` (including steps) requires both fields to match. */
+  dayMatch: "both" | "either";
 }
 
 const MONTH_NAMES: Record<string, number> = {
@@ -123,22 +124,6 @@ function normalizeSunday(field: CronField): CronField {
   return values;
 }
 
-// A set that allows every value the field can take is `*` in disguise, and the
-// dom/dow OR quirk must not read it as a restriction: `0 0 1 * */1` means "the
-// 1st of the month", not "every day" — which is what a restricted-looking
-// full-range day-of-week would turn it into.
-function fullRangeAsAny(field: CronField, min: number, max: number): CronField {
-  if (field === "any") {
-    return field;
-  }
-  for (let value = min; value <= max; value += 1) {
-    if (!field.has(value)) {
-      return field;
-    }
-  }
-  return "any";
-}
-
 /** Parse a five-field cron expression, or say it is not one. */
 export function parseCron(expr: string): CronSpec | null {
   const fields = expr.trim().split(/\s+/);
@@ -155,12 +140,12 @@ export function parseCron(expr: string): CronSpec | null {
     return null;
   }
   return {
-    minute: fullRangeAsAny(minute, 0, 59),
-    hour: fullRangeAsAny(hour, 0, 23),
-    dayOfMonth: fullRangeAsAny(dayOfMonth, 1, 31),
-    month: fullRangeAsAny(month, 1, 12),
-    // Sunday first: `0-7` covers the effective 0–6 domain only once 7 folds in.
-    dayOfWeek: fullRangeAsAny(normalizeSunday(dayOfWeek), 0, 6),
+    minute,
+    hour,
+    dayOfMonth,
+    month,
+    dayOfWeek: normalizeSunday(dayOfWeek),
+    dayMatch: domRaw.startsWith("*") || dowRaw.startsWith("*") ? "both" : "either",
   };
 }
 
@@ -248,11 +233,8 @@ function cronMatches(spec: CronSpec, clock: WallClock): boolean {
   ) {
     return false;
   }
-  // The standard quirk: when *both* day fields are restricted, matching either
-  // is enough — "0 0 13 * 5" is the 13th and every Friday, not Friday the 13th.
-  const domRestricted = spec.dayOfMonth !== "any";
-  const dowRestricted = spec.dayOfWeek !== "any";
-  if (domRestricted && dowRestricted) {
+  // Preserve syntax: wildcard steps use AND, explicit lists/ranges use OR.
+  if (spec.dayMatch === "either") {
     return (
       fieldMatches(spec.dayOfMonth, clock.dayOfMonth) ||
       fieldMatches(spec.dayOfWeek, clock.dayOfWeek)

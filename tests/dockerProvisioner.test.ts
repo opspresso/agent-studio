@@ -11,6 +11,10 @@ const cli = vi.hoisted(() => ({
   envFileSeen: null as null | { mode: number; content: string },
   fail: null as null | Record<string, unknown>,
   failCommand: "run",
+  owner: "true",
+  ownerName: "my-tool",
+  absentBeforeStart: false,
+  missingLocalImage: false,
 }));
 
 vi.mock("node:child_process", async () => {
@@ -19,6 +23,10 @@ vi.mock("node:child_process", async () => {
   const execFile = Object.assign(vi.fn(), {
     [promisify.custom]: async (_command: string, args: string[]) => {
       cli.calls.push(args);
+      if (cli.absentBeforeStart && args[0] === "inspect" && args.at(-1) === "my-tool") {
+        throw { stderr: "Error: No such container: my-tool", code: 1 };
+      }
+      if (cli.missingLocalImage && args[0] === "image") throw { stderr: "No such image", code: 1 };
       if (args[0] === "run") {
         const at = args.lastIndexOf("--env-file");
         const path = at >= 0 ? args[at + 1] : undefined;
@@ -32,7 +40,8 @@ vi.mock("node:child_process", async () => {
       if (cli.fail && args[0] === cli.failCommand) {
         throw Object.assign(new Error(`Command failed: docker ${args.join(" ")}`), cli.fail);
       }
-      return { stdout: args[0] === "inspect" ? "abc123 true" : "", stderr: "" };
+      return { stdout: args[0] === "inspect" ? `${"a".repeat(64)} true running ${cli.owner} ${cli.ownerName}`
+        : args[0] === "run" ? "a".repeat(64) : "", stderr: "" };
     },
   });
   return { execFile };
@@ -52,9 +61,56 @@ beforeEach(() => {
   cli.envFileSeen = null;
   cli.fail = null;
   cli.failCommand = "run";
+  cli.owner = "true";
+  cli.ownerName = "my-tool";
+  cli.absentBeforeStart = false;
+  cli.missingLocalImage = false;
 });
 
 describe("docker provisioner", () => {
+  it("creates a labeled container when the name is free", async () => {
+    cli.absentBeforeStart = true;
+    await expect(createDockerProvisioner().start(spec)).resolves.toMatchObject({ identity: "a".repeat(64), running: true });
+    expect(cli.calls.some(args => args[0] === "rm")).toBe(false);
+    expect(cli.calls.find(args => args[0] === "run")).toContain("agent-studio.mcp-name=my-tool");
+  });
+
+  it("refuses an unlabeled container without removing it", async () => {
+    cli.owner = "";
+    cli.ownerName = "";
+    await expect(createDockerProvisioner().stop(spec.name)).rejects.toThrow("not owned by this managed MCP server");
+    expect(cli.calls.some(args => args[0] === "rm")).toBe(false);
+  });
+
+  it.each(["start", "stop", "inspect"] as const)("refuses an unowned container during %s", async operation => {
+    cli.owner = "false";
+    const provisioner = createDockerProvisioner();
+    await expect(operation === "start" ? provisioner.start(spec) : provisioner[operation](spec.name))
+      .rejects.toThrow("not owned by this managed MCP server");
+    expect(cli.calls.some(args => ["rm", "run", "pull"].includes(args[0]!))).toBe(false);
+  });
+
+  it("refuses another managed server's container", async () => {
+    cli.ownerName = "other-tool";
+    await expect(createDockerProvisioner().stop(spec.name)).rejects.toThrow("not owned by this managed MCP server");
+    expect(cli.calls.some(args => args[0] === "rm")).toBe(false);
+  });
+
+  it("can use a local image when the registry is unavailable", async () => {
+    cli.failCommand = "pull";
+    cli.fail = { stderr: "registry unavailable", code: 1 };
+    await expect(createDockerProvisioner().start(spec)).resolves.toMatchObject({ running: true });
+    expect(cli.calls).toContainEqual(["image", "inspect", "--format", "{{.Id}}", spec.image]);
+  });
+
+  it("preserves the existing container when the replacement image is unavailable", async () => {
+    cli.failCommand = "pull";
+    cli.fail = { stderr: "registry unavailable", code: 1 };
+    cli.missingLocalImage = true;
+    await expect(createDockerProvisioner().start(spec)).rejects.toThrow("docker pull failed: registry unavailable");
+    expect(cli.calls.some(args => args[0] === "rm" || args[0] === "run")).toBe(false);
+  });
+
   it("hands the environment over as a 0600 env-file, never on the command line", async () => {
     const workload = await createDockerProvisioner().start(spec);
     expect(workload.running).toBe(true);
@@ -76,12 +132,16 @@ describe("docker provisioner", () => {
         "--cap-drop",
         "ALL",
         "--read-only",
+        "agent-studio.managed-mcp=true",
+        "agent-studio.mcp-name=my-tool",
         "--tmpfs",
         "/tmp:rw,noexec,nosuid,size=64m",
       ]),
     );
     // `-e PORT` still beats the file, as the mapping requires.
     expect(run).toContain("PORT=8080");
+    expect(cli.calls.find(args => args[0] === "rm")).toEqual(["rm", "-f", "a".repeat(64)]);
+    expect(cli.calls.filter(args => args[0] === "inspect").at(-1)?.at(-1)).toBe("a".repeat(64));
   });
 
   it("reports the CLI's stderr on failure, without the argv that carried secrets", async () => {
@@ -101,6 +161,14 @@ describe("docker provisioner", () => {
     await expect(
       createDockerProvisioner().start({ ...spec, environment: { TOKEN: "two\nlines" } }),
     ).rejects.toThrow(/line break: TOKEN$/);
+    expect(cli.calls).toEqual([]);
+  });
+
+  it("does not launch a replacement when removing the owned container fails", async () => {
+    cli.failCommand = "rm";
+    cli.fail = { stderr: "permission denied", code: 1 };
+    await expect(createDockerProvisioner().start(spec)).rejects.toThrow("docker rm failed: permission denied");
+    expect(cli.calls.some(args => args[0] === "run")).toBe(false);
   });
 
   it("refuses a control character in argv without echoing the argument", async () => {

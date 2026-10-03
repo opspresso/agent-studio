@@ -120,8 +120,6 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
   const downloads: string[] = [];
   const profileLookups: string[] = [];
   const profiles = new Map<string, RunCaller>();
-  /** Slack id → address, for the artifact owner the run files its output under. */
-  const emails = new Map<string, string>();
   const slack: SlackClientPort = {
     async setSessionStatus(_token, args) {
       calls.push(`session:${args.status}`);
@@ -167,14 +165,14 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
       calls.push("threadReplies");
       // Slack returns everything already in the thread — including whatever
       // this handler posted itself.
-      return [
+      return { messages: [
         ...replies,
         ...posted.map((message, index) => ({
           ts: `100.${index + 1}`,
           bot_id: "B0", user: "U0",
           text: message.text,
         })),
-      ];
+      ], truncated: false };
     },
     async startStream(_token, args) {
       calls.push("startStream");
@@ -217,10 +215,6 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
     },
     // The workspace read tools have their own tests; the handler never calls
     // these, and a fake that omitted them would only be hiding that.
-    async userEmail(_token, userId) {
-      calls.push("userEmail");
-      return emails.get(userId) ?? null;
-    },
     async userDetail() {
       calls.push("userDetail");
       return null;
@@ -256,7 +250,6 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
     replies,
     downloads,
     profiles,
-    emails,
     profileLookups,
     finalText,
   };
@@ -331,6 +324,22 @@ const BINDING = { agentName: "painter", botToken: "tok" };
 /** A run that yields nothing but `done`. */
 const deps0 = (slack: SlackClientPort) => makeDeps([{ done: true }], slack);
 
+describe("Slack output metadata", () => {
+  it.each([["image/jpeg", "jpg"], ["image/webp", "webp"], ["image/gif", "gif"]])("keeps %s uploads identifiable by their extension", async (mimeType, extension) => {
+    const { slack, uploads } = makeSlackFake();
+    await handleSlackEvent(makeDeps([{ image: { b64: "AA==", mimeType } }, { done: true }], slack), EVENT, BINDING);
+    expect(uploads[0]?.filename).toBe(`generated-${NOW}-1.${extension}`);
+  });
+
+  it("bounds image and session titles without splitting a Unicode character", async () => {
+    const { slack, uploads, titles } = makeSlackFake();
+    const deps = makeDeps([{ image: { b64: "AA==", mimeType: "image/png", prompt: "x".repeat(79) + "😀" } }, { done: true }], slack);
+    await handleSlackEvent(deps, { ...DM_EVENT, event: { ...DM_EVENT.event, text: "x".repeat(59) + "😀" } }, BINDING);
+    expect(uploads[0]?.title).toBe("x".repeat(79));
+    expect(titles[0]?.title).toBe("x".repeat(59));
+  });
+});
+
 describe("stopping Slack runs", () => {
   it("checks a stop recorded just before model completion without waiting for a poll tick", async () => {
     const { slack, uploads, finalText } = makeSlackFake();
@@ -389,8 +398,7 @@ describe("stopping Slack runs", () => {
   });
 
   it("applies the private-agent access gate before recording native and command stops", async () => {
-    const { slack, emails } = makeSlackFake();
-    emails.set("U1", "outsider@example.com");
+    const { slack } = makeSlackFake();
     const deps = deps0(slack);
     deps.agents.get = async () => ({ ...agentFixture(), visibility: "private" });
     deps.identities.resolve = async () => null;
@@ -870,6 +878,15 @@ describe("handleSlackEvent", () => {
 
     expect(finalText()).toContain("answer");
     expect(finalText()).toContain(":warning:");
+  });
+
+  it("warns about newer replies omitted by the thread reader's page bound", async () => {
+    const { slack, finalText } = makeSlackFake();
+    slack.threadReplies = async () => ({ messages: [{ ts: "0.1", user: "U1", text: "old exchange" }], truncated: true });
+    await handleSlackEvent(makeDeps([{ delta: { content: "answer" } }, { done: true }], slack),
+      { ...EVENT, event: { ...EVENT.event, thread_ts: "0.1" } }, BINDING);
+    expect(finalText()).toContain("answer");
+    expect(finalText()).toContain("Newer thread replies were not read");
   });
 
   it("sends an attached image to the agent as a content part", async () => {
@@ -2089,8 +2106,8 @@ describe("uploading what the run read", () => {
  * personal usage and Artifact custody. Unlinked senders cannot execute.
  */
 describe("verified Slack caller attribution", () => {
-  it("uses the Studio identity rather than a platform-supplied email or owner permission", async () => {
-    const { slack, emails } = makeSlackFake(); emails.set("U1", "untrusted@example.test");
+  it("uses the verified Studio identity for ownership while preserving the Slack actor", async () => {
+    const { slack } = makeSlackFake();
     const deps = deps0(slack); const run = vi.fn<SlackEventDeps["runAgent"]>(async function* () { yield { done: true }; }); deps.runAgent = run;
     deps.identities.resolve = async () => ({ userId: "verified-user", email: "verified@example.test" });
     deps.agents = withConfigurations({ get: async () => ({ ...agentFixture(), slack: { enabled: true, botToken: "token", signingSecret: "secret" } }) } as never, async () => configurationFixture());
@@ -2098,9 +2115,14 @@ describe("verified Slack caller attribution", () => {
     expect(run.mock.calls[0]?.[0].ownerEmail).toBe("verified@example.test");
     expect(run.mock.calls[0]?.[0].actor).toEqual({ kind: "slack", id: "U1" });
   });
-  it("does not depend on optional Slack email profile lookup", async () => {
-    const { slack, finalText } = makeSlackFake(); slack.userEmail = async () => { throw new Error("missing_scope"); };
-    await handleSlackEvent(makeDeps([{ delta: { content: "linked caller" } }, { done: true }], slack), EVENT, BINDING);
+  it("answers a linked caller when the optional display profile lookup fails", async () => {
+    const { slack, finalText } = makeSlackFake();
+    slack.userProfile = vi.fn(async () => { throw new Error("missing_scope"); });
+    const deps = makeDeps([{ delta: { content: "linked caller" } }, { done: true }], slack);
+    deps.agents = withConfigurations({ get: async () => agentFixture() } as never,
+      async () => ({ ...configurationFixture(), parameters: { callerContext: true } }));
+    await handleSlackEvent(deps, EVENT, BINDING);
+    expect(slack.userProfile).toHaveBeenCalledWith("tok", "U1");
     expect(finalText()).toBe("linked caller");
   });
 });

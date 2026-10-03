@@ -54,7 +54,7 @@ import {
   twips,
   type DesignProfile,
 } from "./theme";
-import { PRODUCER } from "../version";
+import { appPropertiesXml, corePropertiesXml } from "./properties";
 
 /** The same A4 geometry as PDF and HWPX, expressed in twentieths of a point. */
 const PAGE = `<w:pgSz w:w="${twips(PAGE_GEOMETRY.width)}" w:h="${twips(PAGE_GEOMETRY.height)}"/>` +
@@ -682,24 +682,6 @@ function stylesXml(korean: boolean, design: DesignProfile): string {
   );
 }
 
-/**
- * `docProps/app.xml`, whose only job here is to say what wrote the file.
- *
- * OOXML keeps the producer separate from the core properties: `dc:title` and the
- * dates are the document's, `<Application>` is the tool's. Word fills in a dozen
- * more fields — word counts, template names — and none of them are things this
- * renderer knows or a reader needs. When somebody turns up with a file that
- * renders oddly, this is the line that says which release made it.
- */
-function appPropertiesXml(): string {
-  return (
-    '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" ' +
-    'xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">' +
-    `<Application>${escapeXml(PRODUCER)}</Application>` +
-    "</Properties>"
-  );
-}
-
 /** The media types a `<Default>` can carry, keyed by the extension it names. */
 const MEDIA_DEFAULTS: Record<string, string> = {
   png: "image/png",
@@ -754,18 +736,6 @@ function documentRelsXml(rels: readonly DocRelationship[], settings: boolean): s
       )
       .join("") +
     "</Relationships>"
-  );
-}
-
-function corePropertiesXml(title: string, created: string): string {
-  return (
-    '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" ' +
-    'xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" ' +
-    'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' +
-    `<dc:title>${escapeXml(title)}</dc:title>` +
-    `<dcterms:created xsi:type="dcterms:W3CDTF">${created}</dcterms:created>` +
-    `<dcterms:modified xsi:type="dcterms:W3CDTF">${created}</dcterms:modified>` +
-    "</cp:coreProperties>"
   );
 }
 

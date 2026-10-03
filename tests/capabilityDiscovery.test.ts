@@ -275,7 +275,7 @@ describe("capability discovery", () => {
     ]);
   });
 
-  it("refuses an OAuth server this agent has not connected", async () => {
+  it("refuses an OAuth server the caller has not connected", async () => {
     const { deps, opened } = harness({
       catalog: fakeCatalog({ mcpTool: [found("slack", "post")] }),
       servers: [server("slack", OAUTH)],
@@ -286,10 +286,7 @@ describe("capability discovery", () => {
   });
 
   it("offers an OAuth server the caller has connected", async () => {
-    // Authorizing a server in the console says this agent may use it, and
-    // discovery has no business being the one caller that ignores that. The
-    // connection rows answer by being read — resolving the credential would
-    // refresh tokens and make discovery a writer.
+    // Discovery reads the caller's grants without refreshing credentials.
     const { deps, opened } = harness({
       catalog: fakeCatalog({ mcpTool: [found("slack", "post")] }),
       servers: [server("slack", OAUTH)],
@@ -300,14 +297,15 @@ describe("capability discovery", () => {
     expect(resolved.warnings.some((line) => line.includes("has not connected it"))).toBe(false);
   });
 
-  it("treats a connection still awaiting the person as not connected", async () => {
-    // `needs_auth` and `needs_reauth` are rows the console shows as unfinished.
+  it.each(["needs_auth", "needs_reauth"])("does not offer a caller's unfinished %s connection", async (status) => {
     const { deps, opened } = harness({
       catalog: fakeCatalog({ mcpTool: [found("slack", "post")] }),
       servers: [server("slack", OAUTH)],
-      connections: [{ serverName: "slack", status: "needs_reauth" }],
+      connections: [{ serverName: "slack", status }],
     });
-    await resolveRunTools(deps, configuration(), undefined, QUERIES);
+    const listConnections = vi.spyOn(deps.mcpConnections!, "listByUser");
+    await resolveRunTools(deps, configuration(), undefined, QUERIES, { user: { userId: "p", email: "caller@example.test" } });
+    expect(listConnections).toHaveBeenCalledWith("p", expect.any(Number), undefined);
     expect(opened).toEqual([]);
   });
 

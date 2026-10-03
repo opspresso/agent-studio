@@ -81,7 +81,8 @@ export async function loadTranscriptHistory(
 /**
  * Write a turn down for the next question. Best effort: a transcript that
  * could not be written costs the next follow-up its context, and that is not
- * worth failing a run that already answered. An empty turn is not written.
+ * worth failing a run that already answered. Returns false on write failure
+ * so the caller can report the loss. Empty turns and an absent store are skipped.
  */
 export async function rememberTurn(
   transcripts: ConversationTranscriptRepository | undefined,
@@ -89,17 +90,21 @@ export async function rememberTurn(
   conversationKey: string,
   turn: TranscriptTurn,
   scope: LogScope,
-): Promise<void> {
+): Promise<boolean> {
   if (!transcripts || !turn.content) {
-    return;
+    return true;
   }
   const content =
     turn.content.length > MAX_TRANSCRIPT_TURN_CHARS
       ? `${cutCodePoints(turn.content, MAX_TRANSCRIPT_TURN_CHARS)}\n…[truncated]`
       : turn.content;
-  await transcripts
+  return transcripts
     .append(agentName, conversationKey, { ...turn, content })
-    .catch((error) => log.error(scope, "conversation turn could not be recorded", error));
+    .then(() => true)
+    .catch((error) => {
+      log.error(scope, "conversation turn could not be recorded", error);
+      return false;
+    });
 }
 
 /**

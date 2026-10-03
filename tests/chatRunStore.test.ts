@@ -824,4 +824,67 @@ describe("runStore", () => {
       store.abort("c1");
     }
   });
+
+  it.each(["http", "network"] as const)("reports a failed stop request (%s) while the reply keeps streaming", async (failure) => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(sseOpen([{ runId: "run-1" }]));
+    if (failure === "http") fetch.mockResolvedValueOnce(Response.json({ error: "Cancellation unavailable" }, { status: 503 }));
+    else fetch.mockRejectedValueOnce(new Error("Network unavailable"));
+    vi.stubGlobal("fetch", fetch);
+    const store = fresh();
+    try {
+      store.startTurn("c1", PENDING);
+      await settle();
+      store.cancelRun("c1");
+      await settle();
+      expect(store.get("c1")).toMatchObject({ status: "streaming", cancelError: failure === "http" ? "Cancellation unavailable" : "Network unavailable" });
+      expect(fetch.mock.calls[0]?.[1]?.signal?.aborted).toBe(false);
+    } finally { store.abort("c1"); }
+  });
+
+  it("coalesces pending stop requests and allows retry after a refusal", async () => {
+    const pending = Promise.withResolvers<Response>();
+    const fetch = vi.fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(sseOpen([{ runId: "run-1" }]))
+      .mockReturnValueOnce(pending.promise)
+      .mockResolvedValueOnce(Response.json({ cancelled: true }));
+    vi.stubGlobal("fetch", fetch);
+    const store = fresh();
+    try {
+      store.startTurn("c1", PENDING);
+      await settle();
+      store.cancelRun("c1");
+      store.cancelRun("c1");
+      expect(fetch).toHaveBeenCalledTimes(2);
+      pending.resolve(Response.json({ error: "Try again" }, { status: 503 }));
+      await settle();
+      expect(store.get("c1")?.cancelError).toBe("Try again");
+      store.cancelRun("c1");
+      await settle();
+      expect(fetch).toHaveBeenCalledTimes(3);
+      expect(store.get("c1")?.cancelError).toBeUndefined();
+      expect(store.get("c1")?.status).toBe("streaming");
+    } finally { store.abort("c1"); }
+  });
+
+  it("ignores a stop refusal that arrives after the run was replaced", async () => {
+    const pending = Promise.withResolvers<Response>();
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(sseOpen([{ runId: "run-1" }]))
+      .mockReturnValueOnce(pending.promise)
+      .mockResolvedValueOnce(sseOpen([{ runId: "run-2" }])));
+    const store = fresh();
+    try {
+      store.startTurn("c1", PENDING);
+      await settle();
+      store.cancelRun("c1");
+      store.abort("c1");
+      store.startTurn("c1", PENDING);
+      await settle();
+      const replacement = store.get("c1");
+      pending.resolve(Response.json({ error: "Old request failed" }, { status: 503 }));
+      await settle();
+      expect(store.get("c1")).toBe(replacement);
+      expect(store.get("c1")?.cancelError).toBeUndefined();
+    } finally { store.abort("c1"); }
+  });
 });

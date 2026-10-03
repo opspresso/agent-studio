@@ -14,7 +14,7 @@ export type TriggerKind = "webhook" | "schedule";
  * The id an agent's own webhook is stored under.
  *
  * An agent has exactly one webhook, addressed by the agent name alone, so
- * nobody names it — the console turns it on and off. It is still a trigger row,
+ * nobody names it — personal tokens control invocation. It is still a trigger row,
  * because delivery state lives there: the firing history, the idempotency claim, the overlap lease, the agent
  * cascade delete. Reserving one id is what buys all of that without a second
  * entity that would have to re-derive each of them.
@@ -54,8 +54,6 @@ interface TriggerBase {
   /** Slug, unique within the agent; part of the delivery URL for webhooks. */
   triggerId: string;
   description: string;
-  /** A disabled trigger never runs — a webhook's URL stays valid, a schedule's occurrences pass. */
-  enabled: boolean;
   /**
    * Whether a firing may start while a run from this trigger is still going.
    * False is the safer default — a webhook that fires faster than the run takes
@@ -72,6 +70,11 @@ export interface WebhookTrigger extends TriggerBase {
   githubReview?: GitHubReviewConfig;
 }
 
+/** Issuing a personal token initializes shared behavior only when no settings exist. */
+export function defaultWebhookTrigger(agentName: string, createdAt: string): WebhookTrigger {
+  return { agentName, triggerId: AGENT_WEBHOOK_ID, kind: "webhook", description: "", allowConcurrent: false, createdAt, updatedAt: createdAt };
+}
+
 /**
  * Runs the current Agent configuration at cron occurrences. No secret and no payload:
  * nothing external presents credentials — the scan endpoint authenticates the
@@ -79,6 +82,8 @@ export interface WebhookTrigger extends TriggerBase {
  */
 export interface ScheduleTrigger extends TriggerBase {
   kind: "schedule";
+  /** Disabled schedules skip their occurrences; Webhooks use personal credential revocation. */
+  enabled: boolean;
   /** Immutable registering user ID; email is a registration-time display snapshot. */
   createdBy: RunUser;
   /** Five-field cron expression, read in `timezone`. `src/domain/trigger/cron.ts` evaluates it. */

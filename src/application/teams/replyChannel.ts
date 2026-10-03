@@ -6,6 +6,8 @@ import {
 import type { TeamsClientPort, TeamsCredentials } from "@/application/teams/types";
 import type { ReplyChannel } from "@/domain/messaging/reply";
 import { closeOpenFence } from "@/shared/markdownFence";
+import { cutCodePoints } from "@/shared/utf8Text";
+import { savedFileName } from "@/domain/artifact/types";
 
 /**
  * How a Teams reply is delivered — the single owner of that decision.
@@ -110,15 +112,14 @@ export function createTeamsReplyChannel(
       if (bytes.byteLength > MAX_INLINE_IMAGE_BYTES) {
         throw new Error(`picture ${index + 1} is larger than Teams renders inline (${bytes.byteLength} bytes)`);
       }
-      const ext = image.mimeType === "image/png" ? "png" : "jpg";
       await teams.sendActivity(credentials, target.serviceUrl, target.conversationId, {
         type: "message",
-        ...(image.prompt ? { text: image.prompt.slice(0, 1024) } : {}),
+        ...(image.prompt ? { text: cutCodePoints(image.prompt, 1024) } : {}),
         attachments: [
           {
             contentType: image.mimeType,
             contentUrl: `data:${image.mimeType};base64,${image.b64}`,
-            name: `generated-${Date.now()}-${index + 1}.${ext}`,
+            name: savedFileName(`generated-${Date.now()}-${index + 1}`, image.mimeType),
           },
         ],
       });

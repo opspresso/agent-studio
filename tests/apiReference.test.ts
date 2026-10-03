@@ -122,14 +122,14 @@ describe("buildApiReference — code examples (curl + Python + Node.js)", () => 
 });
 
 describe("buildApiReference — agent webhook", () => {
-  it("shows the webhook only once it is switched on (owner view)", () => {
-    expect(ids({ webhook: { enabled: true } })).toContain("webhook");
-    expect(ids({ webhook: { enabled: false } })).not.toContain("webhook");
+  it("shows the webhook only when the viewer has a personal token", () => {
+    expect(ids({ webhook: { configured: true } })).toContain("webhook");
+    expect(ids({ webhook: { configured: false } })).not.toContain("webhook");
     expect(ids({ webhook: null })).not.toContain("webhook");
   });
 
   it("includes the personal credential selector for GitHub delivery authentication", () => {
-    const endpoint = buildApiReference(ctx({ webhook: { enabled: true } })).find(
+    const endpoint = buildApiReference(ctx({ webhook: { configured: true } })).find(
       (e) => e.id === "webhook",
     );
     expect(endpoint?.path).toBe("/api/webhook/my-bot?credential=YOUR_CREDENTIAL_ID");
@@ -144,14 +144,14 @@ describe("buildApiReference — agent webhook", () => {
   it("stays listed with no current configuration, because the address is live either way", () => {
     // The other endpoints are hidden without one; this one answers
     // `no-configuration` at 202, which is the thing worth documenting.
-    expect(ids({ configured: false, webhook: { enabled: true } })).toEqual(["webhook"]);
+    expect(ids({ configured: false, webhook: { configured: true } })).toEqual(["webhook"]);
   });
 
   it("documents every status a 202 can carry", () => {
-    const status = buildApiReference(ctx({ webhook: { enabled: true } }))
+    const status = buildApiReference(ctx({ webhook: { configured: true } }))
       .find((e) => e.id === "webhook")
       ?.responseFields?.find((f) => f.name === "status");
-    for (const value of ["accepted", "disabled", "duplicate", "busy", "no-configuration"]) {
+    for (const value of ["accepted", "duplicate", "busy", "no-configuration"]) {
       expect(status?.description).toContain(value);
     }
   });
@@ -187,7 +187,7 @@ describe("buildApiReference — no real secrets leak into examples", () => {
     const endpoints = buildApiReference(
       ctx({
         slack: { configured: true },
-        webhook: { enabled: true },
+        webhook: { configured: true },
       }),
     );
     return endpoints.flatMap((e) =>
@@ -218,7 +218,7 @@ describe("buildApiReference — no real secrets leak into examples", () => {
         slack: { configured: true },
         telegram: { configured: true },
         teams: { configured: true },
-        webhook: { enabled: true },
+        webhook: { configured: true },
       }),
     );
     const byId = (id: string) => endpoints.find((e) => e.id === id)!;

@@ -208,10 +208,18 @@ describe("acquireRunSlot", () => {
     await expect(acquireRunSlot(instanceB, executionIdentity(user).user)).rejects.toBeInstanceOf(ConcurrencyLimitError);
   });
 
-  it("is disabled when no repository, no limits, or no actor is present", async () => {
-    await expect(acquireRunSlot({}, executionIdentity(user).user)).resolves.toBeDefined();
-    await expect(acquireRunSlot({ limits: LIMITS }, executionIdentity(user).user)).resolves.toBeDefined();
-    await expect(acquireRunSlot(deps(), executionIdentity(undefined).user)).resolves.toBeDefined();
+  it("does not acquire or release a slot when the repository or limits are absent", async () => {
+    const runSlots = { acquire: vi.fn(), renew: vi.fn(), release: vi.fn() };
+    const limits = vi.fn(async () => LIMITS);
+    for (const configuration of [{}, { limits }, { runSlots }]) {
+      const hold = await acquireRunSlot(configuration, executionIdentity(user).user);
+      expect(hold.slot).toBeUndefined();
+      await hold.release();
+    }
+    expect(limits).not.toHaveBeenCalled();
+    expect(runSlots.acquire).not.toHaveBeenCalled();
+    expect(runSlots.renew).not.toHaveBeenCalled();
+    expect(runSlots.release).not.toHaveBeenCalled();
   });
 
   it("treats a zero limit as off rather than as a total block", async () => {

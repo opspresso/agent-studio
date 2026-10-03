@@ -79,6 +79,7 @@ export function reduceChunk(prev: LiveTurn, chunk: StreamChunk): LiveTurn {
         mimeType: chunk.file.mimeType,
         ...(chunk.file.byteSize !== undefined ? { byteSize: chunk.file.byteSize } : {}),
         ...(chunk.file.artifactId ? { artifactId: chunk.file.artifactId } : {}),
+        ...(chunk.file.replacedArtifactIds?.length ? { replacedArtifactIds: chunk.file.replacedArtifactIds } : {}),
       },
     ];
   }

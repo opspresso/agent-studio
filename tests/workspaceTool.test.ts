@@ -15,6 +15,7 @@ import { runAgent } from "@/application/runtime";
 import { FakeChannel, contentChunk, toolCallChunk } from "./fakeChannel";
 import type { CodingApproval, CodingAction, PullRequestInfo } from "@/domain/coding/types";
 import { workspaceCaller } from "@/application/workspace/workspaceCaller";
+import { executionIdentity } from "./runIdentity";
 
 const entropy = vi.hoisted(() => ({ sequence: 0 }));
 vi.mock("node:crypto", async importOriginal => ({
@@ -79,7 +80,7 @@ describe("Workspace Agent capability", () => {
     const run = (await repository.run(workspace.id, first.run_id))!;
     await repository.write({ expectedRevision: workspace.revision,
       workspace: { ...workspace, activeRunId: undefined, revision: workspace.revision + 1 }, run: { ...run, status: "succeeded" } });
-    const caller = workspaceCaller({ ancestry: ["demo"], user: { userId: "studio-user-1", email: owner }, actor: { kind: "slack", id: "U1" }, userEmail: owner })!;
+    const caller = workspaceCaller({ ancestry: ["demo"], ...executionIdentity({ kind: "slack", id: "U1" }, owner, "studio-user-1") })!;
     const tool = createWorkspaceTool({ useCases, authorize, sleep, requestGit, publishGit, attachRepository, pullRequest,
       workdir: WORKSPACE_DIRECTORY, policy: () => policy }, { agentName: "demo", ...caller, occurrence: "later-external-run" });
     expect(JSON.parse((await tool({ request: { operation: "use_workspace", workspace_id: workspace.id } }, "select")).text))
@@ -95,7 +96,8 @@ describe("Workspace Agent capability", () => {
   });
 
   it.each(["agent-token", "slack", "telegram", "teams", "schedule", "webhook"] as const)("persists %s provenance while the verified member manages the Workspace", async kind => {
-    const caller = workspaceCaller({ ancestry: ["demo"], user: { userId: "studio-user-1", email: owner }, actor: { kind, id: kind === "agent-token" ? owner : "external-caller" }, userEmail: owner })!;
+    const id = kind === "agent-token" ? owner : kind === "schedule" || kind === "webhook" ? `demo:${kind}` : "external-caller";
+    const caller = workspaceCaller({ ancestry: ["demo"], ...executionIdentity({ kind, id }, owner, "studio-user-1") })!;
     const tool = createWorkspaceTool({ useCases, authorize, sleep, requestGit, publishGit, attachRepository, pullRequest,
       workdir: WORKSPACE_DIRECTORY, policy: () => policy }, { agentName: "demo", ...caller, occurrence: "external-run" });
     const first = JSON.parse((await tool({ request: start }, "first")).text);

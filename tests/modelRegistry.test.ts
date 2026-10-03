@@ -67,6 +67,26 @@ describe("deployment model registry", () => {
     expect(discovery.list).not.toHaveBeenCalled();
   });
 
+  it("checks availability by the registered wire ID without changing the registry", async () => {
+    const { useCases, discovery, changed } = setup();
+    await settingsRepository.update(() => ({ updatedAt: "", registeredModels: [model] }));
+    expect(await useCases.status(model.id)).toEqual({ available: true });
+    expect(discovery.list).toHaveBeenCalledWith(expect.objectContaining({ name: model.provider }));
+    discovery.list.mockResolvedValue([{ wireId: "other-model" }]);
+    expect(await useCases.status(model.id)).toEqual({ available: false });
+    expect(changed).not.toHaveBeenCalled();
+    expect((await settingsRepository.get())?.registeredModels).toEqual([model]);
+  });
+
+  it("keeps an unknown model and a failed discovery distinct from confirmed absence", async () => {
+    const { useCases, discovery } = setup();
+    await expect(useCases.status(model.id)).rejects.toMatchObject({ status: 404 });
+    expect(discovery.list).not.toHaveBeenCalled();
+    await settingsRepository.update(() => ({ updatedAt: "", registeredModels: [model] }));
+    discovery.list.mockRejectedValue(new Error("provider unavailable"));
+    await expect(useCases.status(model.id)).rejects.toMatchObject({ status: 502, message: "provider unavailable" });
+  });
+
   it("persists explicit models, preserves unrelated settings, and updates instead of duplicating", async () => {
     await settingsRepository.update(() => ({ adminEmails: "admin@example.test", updatedAt: "" }));
     const { useCases, changed } = setup();

@@ -77,7 +77,6 @@ export interface GitHubDeliveryCredential {
 export type AdmitResult =
   | AdmittedDelivery
   | { status: "duplicate" }
-  | { status: "disabled" }
   | { status: "not-configured" }
   | { status: "unauthorized" }
   | { status: "invalid-delivery" }
@@ -113,7 +112,7 @@ async function executionUserAllowed(deps: FiringDeps, trigger: Trigger, grant?: 
 
 async function resolveScheduleUser(deps: FiringDeps, schedule: ScheduleTrigger) {
   const current = await deps.triggers.get(schedule.agentName, schedule.triggerId);
-  if (!current?.enabled || current.kind !== "schedule" ||
+  if (current?.kind !== "schedule" || !current.enabled ||
     current.createdBy.userId !== schedule.createdBy.userId || current.updatedAt !== schedule.updatedAt) {
     throw new ForbiddenError("The schedule changed before execution completed");
   }
@@ -184,9 +183,6 @@ export async function admitDelivery(
   if (trigger.githubReview && !github) return { status: "unauthorized" };
   if (github && (!isGitHubDeliveryId(github.deliveryId) || !github.event || !/^[a-z_]{1,80}$/.test(github.event))) {
     return { status: "invalid-delivery" };
-  }
-  if (!trigger.enabled) {
-    return { status: "disabled" };
   }
   if (github?.event === "ping") return { status: "ping" };
   let reviewTarget: PullRequestReviewTarget | undefined;

@@ -18,19 +18,10 @@ export type AuditAction =
   | "secret.rotate"
   /** A credential was removed. */
   | "secret.revoke"
-  /** An admin used another owner's management authority, including credential reveal. */
-  | "agent.admin-override"
   /** App settings were written — the admin list and the LLM credential live here. */
   | "settings.update"
   /** An agent and everything in its partition were deleted. */
   | "agent.delete"
-  /**
-   * An admin installed a model catalog document by hand, which from then on
-   * decides which models exist and what they cost — or removed it. `detail`
-   * records how many models it carried.
-   */
-  | "catalog.install"
-  | "catalog.remove"
   /** A shared registry entry (skill or MCP server) was deleted. */
   | "registry.delete"
   /**
@@ -61,9 +52,8 @@ export interface AuditEvent {
    */
   target: string;
   /**
-   * Anything the action alone does not say: which fields a settings write
-   * touched, which owner an override acted against. Never a credential, and
-   * never the payload of the thing acted on.
+   * Additional context, such as changed setting names. Never credentials or
+   * the payload of the thing acted on.
    */
   detail?: string;
   createdAt: string;

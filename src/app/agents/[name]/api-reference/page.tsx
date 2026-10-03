@@ -13,9 +13,8 @@ import {
   getAgentSlack,
   getAgentTeams,
   getAgentTelegram,
-  listTriggers,
+  getAgentToken,
 } from "../../lib/api";
-import { AGENT_WEBHOOK_ID } from "@/domain/trigger/types";
 import {
   AUTH_LABEL,
   buildApiReference,
@@ -201,18 +200,12 @@ export default function ApiReferencePage() {
         const agent = await getAgent(name);
         const isOwner = canEditAgent(viewer, agent.ownerEmail);
 
-        const [slack, telegram, teams, triggers] = await Promise.all([
+        const [slack, telegram, teams, webhook] = await Promise.all([
           isOwner ? getAgentSlack(name).catch(() => null) : Promise.resolve(null),
           isOwner ? getAgentTelegram(name).catch(() => null) : Promise.resolve(null),
           isOwner ? getAgentTeams(name).catch(() => null) : Promise.resolve(null),
-          // Owner-gated like Slack: the list carries the webhook's masked secret,
-          // and a viewer who cannot read the secret cannot call the endpoint.
-          isOwner ? listTriggers(name).catch(() => null) : Promise.resolve(null),
+          getAgentToken(name, "webhook"),
         ]);
-        const webhook =
-          triggers?.triggers.find(
-            (trigger) => trigger.triggerId === AGENT_WEBHOOK_ID && trigger.kind === "webhook",
-          ) ?? null;
 
         const ctx: ApiReferenceContext = {
           agentName: agent.name,
@@ -221,7 +214,7 @@ export default function ApiReferencePage() {
           slack: slack ? { configured: slack.configured } : null,
           telegram: telegram ? { configured: telegram.configured } : null,
           teams: teams ? { configured: teams.configured } : null,
-          webhook: triggers ? { enabled: webhook?.enabled === true } : null,
+          webhook: { configured: webhook.configured },
         };
 
         if (!cancelled) {

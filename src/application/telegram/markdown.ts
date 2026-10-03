@@ -20,27 +20,21 @@ export function escapeTelegramHtml(text: string): string {
 }
 
 /**
- * Where a lifted code span sat while the other rules ran. NUL cannot occur in
- * a message Telegram delivered or a model wrote, so it marks a slot and
- * nothing else.
- */
-const SLOT = String.fromCharCode(0);
-const SLOT_PATTERN = new RegExp(`${SLOT}(\\d+)${SLOT}`, "g");
-
-/**
- * Inline rules, applied to escaped text outside code. Code spans go first and
- * are lifted out so nothing below rewrites what is inside them.
+ * Lift code and links before emphasis so neither code nor URL characters are
+ * rewritten as markup. The marker must not collide with literal input.
  */
 function renderInline(escaped: string): string {
-  const codeSpans: string[] = [];
-  let text = escaped.replace(/`([^`\n]+)`/g, (_match, code: string) => {
-    codeSpans.push(`<code>${code}</code>`);
-    return `${SLOT}${codeSpans.length - 1}${SLOT}`;
-  });
-  // A link, only to an address a reader can follow. Anything else stays text.
-  text = text.replace(
-    /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g,
-    (_match, label: string, url: string) => `<a href="${url.replace(/"/g, "&quot;")}">${label}</a>`,
+  let marker = "\0";
+  while (escaped.includes(marker)) marker += "\0";
+  const lifted: string[] = [];
+  let text = escaped.replace(
+    /`([^`\n]+)`|\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g,
+    (_match, code: string | undefined, label: string, url: string) => {
+      lifted.push(code !== undefined
+        ? `<code>${code}</code>`
+        : `<a href="${url.replace(/"/g, "&quot;")}">${renderInline(label)}</a>`);
+      return `${marker}${lifted.length - 1}${marker}`;
+    },
   );
   text = text.replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>");
   text = text.replace(/__([^_\n]+)__/g, "<b>$1</b>");
@@ -48,7 +42,7 @@ function renderInline(escaped: string): string {
   // Italics only where the marker is a marker: `snake_case` and `2*3` are not.
   text = text.replace(/(^|[\s(])\*([^*\s][^*\n]*?)\*(?=[\s.,;:!?)]|$)/g, "$1<i>$2</i>");
   text = text.replace(/(^|[\s(])_([^_\s][^_\n]*?)_(?=[\s.,;:!?)]|$)/g, "$1<i>$2</i>");
-  return text.replace(SLOT_PATTERN, (_match, index: string) => codeSpans[Number(index)] ?? "");
+  return text.replace(new RegExp(`${marker}(\\d+)${marker}`, "g"), (_match, index: string) => lifted[Number(index)]!);
 }
 
 /** Block rules, one line at a time: headings become bold, bullets become bullets. */
@@ -84,7 +78,7 @@ export function markdownToTelegramHtml(markdown: string): string {
     const body = escapeTelegramHtml(code.replace(/\n$/, ""));
     out.push(
       lang
-        ? `<pre><code class="language-${escapeTelegramHtml(lang)}">${body}</code></pre>`
+        ? `<pre><code class="language-${escapeTelegramHtml(lang).replace(/"/g, "&quot;")}">${body}</code></pre>`
         : `<pre>${body}</pre>`,
     );
     last = start + whole.length;

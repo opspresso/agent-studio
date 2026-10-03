@@ -212,8 +212,7 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
       };
     } catch (error) {
       if (error instanceof OAuthGrantError) {
-        // The grant itself is gone; only this warrants making the user
-        // re-authorize. Conditional on the same revision, so a concurrent
+        // The provider explicitly refused this grant. Conditional on the same revision, so a concurrent
         // successful refresh is not overwritten by this failure.
         await deps.connections.updateTokens(
           connection.userId,
@@ -226,8 +225,8 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
           unavailable: `MCP server '${connection.serverName}' needs to be reconnected for this user (${error.code}).`,
         };
       }
-      // A 5xx, a timeout, a proxy page: transient, and must not cost anyone
-      // their connection. The run loses this server's tools and says so.
+      // An uncertain provider/storage outcome goes back to the coordinator,
+      // which prevents reuse of a potentially consumed refresh credential.
       return {
         headers: {},
         unavailable: `MCP server '${connection.serverName}' could not be authorized for this user: ${error instanceof Error ? error.message : String(error)}`,

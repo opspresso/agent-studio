@@ -49,14 +49,21 @@ function assertNativeContext(body: Record<string, unknown>, protocol: NativeMode
   if (Array.isArray(body.tools) && !body.tools.every(safeTool)) refuse();
   const items = protocol === "responses" ? body.input : body.messages;
   if (!Array.isArray(items)) return;
-  for (const value of items) {
+  const pending: unknown[] = [items];
+  while (pending.length > 0) {
+    const value = pending.pop();
+    if (Array.isArray(value)) {
+      for (const child of value) pending.push(child);
+      continue;
+    }
     const item = object(value);
+    const source = object(item.source);
     if (item.type === "item_reference" || (item.id != null && item.type == null && item.role == null)) refuse();
     if (object(item.audio).id != null) refuse();
-    if (!Array.isArray(item.content)) continue;
-    for (const part of item.content) {
-      const content = object(part);
-      if (content.file_id != null || object(content.file).file_id != null || object(content.source).file_id != null || object(content.source).type === "file") refuse();
+    if (item.file_id != null || object(item.file).file_id != null || source.file_id != null || source.type === "file") refuse();
+    // Traverse protocol content containers; tool arguments remain application-defined data.
+    for (const nested of [item.content, item.output, source.content]) {
+      if (nested && typeof nested === "object") pending.push(nested);
     }
   }
 }

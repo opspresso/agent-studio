@@ -1,6 +1,7 @@
 import { setTraceProcessors, setTracingDisabled, type TracingProcessor, type Span, type SpanData } from "@openai/agents";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { TraceSpan } from "@/domain/trace/types";
+import { cutCodePoints } from "@/shared/utf8Text";
 
 export type NativeTraceSink = (span: TraceSpan) => void;
 // Next.js can load this module in separate route bundles. SDK processors are
@@ -89,7 +90,7 @@ function toStudioSpan(span: Span<SpanData>): TraceSpan {
   const endedAt = span.endedAt ?? startedAt;
   return {
     spanId: span.spanId, ...(span.parentId ? { parentSpanId: span.parentId } : {}),
-    kind, name: name.slice(0, 200), ...(author ? { author: author.slice(0, 200) } : {}),
+    kind, name: cutCodePoints(name, 200), ...(author ? { author: cutCodePoints(author, 200) } : {}),
     startedAt, endedAt, durationMs: Math.max(0, Date.parse(endedAt) - Date.parse(startedAt)),
     status: span.error || (data.type === "guardrail" && data.triggered) ? "error" : "ok",
     ...(input ? { input } : {}), output,

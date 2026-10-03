@@ -80,10 +80,12 @@ export function restoreValues(filter: PiiFilter, value: unknown): unknown {
     return value.map((item) => restoreValues(filter, item));
   }
   if (value && typeof value === "object") {
+    // Canonical image bytes cannot contain PII placeholders. Restore arbitrary
+    // tool field names and values too; only masking needs opaque media fields.
     return Object.fromEntries(
       Object.entries(value).map(([key, item]) => [
-        key,
-        OPAQUE_KEYS.has(key) ? item : restoreValues(filter, item),
+        filter.restore(key),
+        restoreValues(filter, item),
       ]),
     );
   }

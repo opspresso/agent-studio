@@ -12,7 +12,7 @@ export interface TraceReadDeps {
 /**
  * An agent's recent traces. Traces hold other users' runtime inputs and
  * outputs, so unlike the shared agent catalog they are readable only by the
- * owner and by admins — the read asserts that before touching the store.
+ * Agent owner — the read asserts that before touching the trace store.
  */
 export async function listAgentTraces(
   deps: TraceReadDeps,

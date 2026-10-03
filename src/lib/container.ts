@@ -66,7 +66,6 @@ import { createAudioJobUseCases, type SubmitAudioJobInput } from "@/application/
 import { createAudioTool } from "@/application/audio/audioTool";
 import { sourceRefreshFingerprint } from "@/application/audio/sourceRefreshIdentity";
 import { createMcpSourceRefresher } from "@/application/execution/refreshMcpSource";
-import { mcpUserEmail } from "@/application/mcpMetadataHeaders";
 import { currentRunContext } from "@/shared/runContext";
 import { createAudioTranscriptionStep } from "@/application/audio/transcribeFile";
 import { createAudioPostprocessStep } from "@/application/audio/postprocess";
@@ -145,7 +144,7 @@ import {
 import { runSlotRepository } from "@/infrastructure/db/repositories/runSlotRepository";
 import { triggerRepository } from "@/infrastructure/db/repositories/triggerRepository";
 import { telegramDestinationRepository } from "@/infrastructure/db/repositories/telegramDestinationRepository";
-import { dbReachable, llmReachable } from "@/infrastructure/health/probes";
+import { dbReachable } from "@/infrastructure/health/probes";
 import { checkReadiness } from "@/application/health/readiness";
 import { createMcpUseCases } from "@/application/mcp/mcpUseCases";
 import { createManagedMcpUseCases } from "@/application/mcp/managedMcpUseCases";
@@ -155,10 +154,10 @@ import { createMcpAuthProvider } from "@/application/mcp/mcpAuthProvider";
 import { createSkillUseCases } from "@/application/skill/skillUseCases";
 import { createPluginUseCases } from "@/application/plugin/pluginUseCases";
 import { createCapabilityVisibility } from "@/application/plugin/capabilityVisibility";
-import { syncPluginsFromSnapshot } from "@/application/plugin/syncPlugins";
+import { createPluginSyncUseCases, type PluginSyncOptions } from "@/application/plugin/pluginSyncUseCases";
 import { findRegistryBindings } from "@/application/plugin/bindingIndex";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
-import { isArchiveSync, type PluginsRepoSnapshot, type PluginSyncSelection } from "@/domain/plugin/sync";
+import type { PluginSyncSelection } from "@/domain/plugin/sync";
 import { pluginRepository } from "@/infrastructure/db/repositories/pluginRepository";
 import {
   pluginSyncLock,
@@ -188,7 +187,6 @@ import type { CatalogSearchDeps } from "@/application/catalog/searchCatalog";
 import { cacheQueryEmbeddings } from "@/application/catalog/queryCache";
 import { probeCapabilityReranker } from "@/application/catalog/probeReranker";
 import { log } from "@/shared/logger";
-import { startSequentialPoll } from "@/shared/sequentialPoll";
 import { openAiEmbeddings } from "@/infrastructure/llm/embeddings";
 import { createReranker } from "@/infrastructure/llm/reranker";
 import { createPgVectorStore } from "@/infrastructure/vector/pgVectorStore";
@@ -479,7 +477,7 @@ const agentGitHubCredentials = createAgentGitHubCredentials({
     if (current.user.email !== user.email) throw new ForbiddenError("The authenticated account changed");
     return current.agent;
   },
-  mcps: capabilityAccess.mcps, auth: mcpAuthProvider, cipher: secretCipher,
+  mcps: capabilityAccess.mcps, auth: mcpAuthProvider,
   target: { apiUrl: config.githubApiUrl, webUrl: config.githubWebUrl ?? "" },
 });
 function agentCodingGitHub(agentName: string, user: import("@/domain/execution/actor").RunUser) {
@@ -605,7 +603,7 @@ export const triggerUseCases = createTriggerUseCases({
   assertReviewReady: async (agentName) => {
     if (!getWorkspaceConfig()) throw new ValidationError("PR review requires a configured Workspace Sandbox backend");
     const agent = await agentRepository.get(agentName);
-    if (!agent || !await agentGitHubCredentials.configured(agent)) throw new ValidationError("PR review requires this Agent to bind a GitHub MCP server");
+    if (!agent || !await agentGitHubCredentials.configured(agent)) throw new ValidationError("PR review requires a bound GitHub MCP server with OAuth for the configured GitHub endpoint");
   },
 });
 export const settingsUseCases = createSettingsUseCases(settingsRepository, secretCipher, process.env, parseProviderConfigs, availableServiceLogos());
@@ -632,102 +630,21 @@ export const modelSelectionUseCases = createModelSelectionUseCases({
     : {}),
 });
 
-/**
- * Pull the Agent Plugins repo and sync every plugin's skills and MCP servers.
- * Assembled here so the route never holds a repository — it only decides how
- * failures map to status codes. The caller passes the config it already
- * resolved: reading it again here would be a second settings load, and one
- * that can straddle the cache TTL and pick a different repo than the caller's
- * own guard checked. Servers go through `mcpUseCases` so a synced entry faces
- * the same URL guard a typed one does.
- */
-/** How long a crashed sync may hold the door shut. Syncs finish in seconds. */
-const PLUGIN_SYNC_LEASE_MS = 5 * 60_000;
-interface PluginSyncOptions { automatic?: boolean }
-
-/**
- * What both entry points share: the lease, the deps bag, the persisted report
- * and the reindex. Only how the snapshot is obtained differs, and keeping that
- * the single variable is what lets the archive path stay the same sync.
- */
-const runPluginSync = async (
-  repo: string,
-  loadSnapshot: () => Promise<PluginsRepoSnapshot>,
-  actorEmail: string,
-  selection?: PluginSyncSelection,
-  options: PluginSyncOptions = {},
-) => {
-  // One sync per repo at a time: a second one would double every GitHub read
-  // and leave two contradicting reports.
-  const lease = await pluginSyncLock.acquire(repo, PLUGIN_SYNC_LEASE_MS);
-  if (!lease) {
-    throw new ConflictError("A plugins sync is already running; wait for it to finish.");
-  }
-  let ownershipFailure: unknown;
-  let renewal: Promise<void> = Promise.resolve();
-  const assertOwnership = async () => {
-    if (ownershipFailure !== undefined) throw ownershipFailure;
-    try {
-      if (!await pluginSyncLock.renew(repo, lease, PLUGIN_SYNC_LEASE_MS)) {
-        throw new ConflictError("Plugin sync lost its execution lease; its remaining changes were not applied.");
-      }
-    } catch (error) { ownershipFailure = error; throw error; }
-  };
-  const stopHeartbeat = startSequentialPoll({
-    intervalMs: PLUGIN_SYNC_LEASE_MS / 3,
-    poll: async () => { renewal = assertOwnership(); await renewal; },
-    onError: () => stopHeartbeat(),
-  });
-  try {
-    const result = await pluginSyncLock.withOwnership(repo, lease, async () => {
-      // The report may change while a tick reads GitHub or waits for its background callback.
-      if (options.automatic) {
-        const last = await pluginSyncReportRepository.get(repo);
-        if (last && isArchiveSync(last.report.commitSha)) {
-          throw new ConflictError("Automatic plugin sync is held by an uploaded archive; run a manual sync to replace it.");
-        }
-      }
-      const snapshot = await loadSnapshot();
-      await assertOwnership();
-      const report = await syncPluginsFromSnapshot(
-        {
-          assertOwnership,
-          plugins: pluginRepository,
-          pluginRows: syncPluginUseCases,
-          skillRepo: skillRepository,
-          skills: syncSkillUseCases,
-          mcps: syncMcpUseCases,
-          ...(managedMcpUseCases ? { managedMcps: managedMcpUseCases } : {}),
-          findBindings: (skills, mcpServers) =>
-            findRegistryBindings(
-              { agents: agentRepository },
-              skills,
-              mcpServers,
-            ),
-        },
-        snapshot,
-        actorEmail,
-        selection,
-      );
-      // Publication shares the lease check with its actual item write.
-      await assertOwnership();
-      await pluginSyncReportRepository.put({
-        repo,
-        report,
-        actorEmail,
-        finishedAt: new Date().toISOString(),
-      });
-      return report;
-    });
-    // Deferred reindex work must not inherit a lease that is about to be released.
-    reindexAfterSync();
-    return result;
-  } finally {
-    stopHeartbeat();
-    await renewal.catch(() => {});
-    await pluginSyncLock.release(repo, lease);
-  }
-};
+/** Both source adapters share the application-owned sync admission and publication flow. */
+const pluginSyncUseCases = createPluginSyncUseCases({
+  lock: pluginSyncLock,
+  reports: pluginSyncReportRepository,
+  sync: {
+    plugins: pluginRepository,
+    pluginRows: syncPluginUseCases,
+    skillRepo: skillRepository,
+    skills: syncSkillUseCases,
+    mcps: syncMcpUseCases,
+    ...(managedMcpUseCases ? { managedMcps: managedMcpUseCases } : {}),
+    findBindings: (skills, mcpServers) => findRegistryBindings({ agents: agentRepository }, skills, mcpServers),
+  },
+  scheduleReindex: () => reindexAfterSync(),
+});
 
 export const syncPluginsFromRepo = async (
   repoConfig: Awaited<ReturnType<typeof getPluginsRepoConfig>>,
@@ -735,7 +652,7 @@ export const syncPluginsFromRepo = async (
   selection?: PluginSyncSelection,
   options?: PluginSyncOptions,
 ) =>
-  runPluginSync(
+  pluginSyncUseCases.run(
     repoConfig.repo ?? "",
     async () =>
       (await import("@/infrastructure/github/pluginsRepoClient")).fetchPluginsRepoSnapshot(repoConfig),
@@ -757,7 +674,7 @@ export const syncPluginsFromArchive = async (
   actorEmail: string,
   selection?: PluginSyncSelection,
 ) =>
-  runPluginSync(
+  pluginSyncUseCases.run(
     repo,
     async () => {
       const { snapshotFromArchive, TarArchiveError } = await import(
@@ -892,8 +809,6 @@ const slackReader: SlackReaderPort = {
     (await import("@/infrastructure/slack/client")).slackClient.userProfile(token, userId),
   userDetail: async (token, userId) =>
     (await import("@/infrastructure/slack/client")).slackClient.userDetail(token, userId),
-  userEmail: async (token, userId) =>
-    (await import("@/infrastructure/slack/client")).slackClient.userEmail(token, userId),
   findUsers: async (token, query, maxPages) =>
     (await import("@/infrastructure/slack/client")).slackClient.findUsers(token, query, maxPages),
   messageReactions: async (token, args) =>
@@ -965,12 +880,8 @@ export const traceUseCases = createTraceUseCases({
   agents: agentRepository,
 });
 
-/** Readiness snapshot for the /api/ready probe (database + LLM channel). */
-export const readinessReport = () =>
-  checkReadiness({ checkDb: dbReachable, checkLlm: async () => {
-    const model = await getDefaultModel();
-    if (model) await llmReachable(() => resolveTarget(model));
-  } });
+/** Core readiness stays independent of model-provider availability. */
+export const readinessReport = () => checkReadiness({ checkDb: dbReachable });
 
 /** All execution sources spend the current Studio account's personal limits. */
 const userLimitsResolver = async (user: RunIdentity["user"]): Promise<TierLimits> => {
@@ -1115,7 +1026,7 @@ export const executionDeps: ExecutionDeps = {
   sourceRefreshIdentity,
   audioTools: async (agentName, origin) => {
     if (!config.objectBucketName) return undefined;
-    const email = mcpUserEmail(origin.actor, origin.userEmail);
+    const email = origin.user?.email;
     if (!email || !origin.user || !origin.actor) return undefined;
     const agent = origin.ancestry[0] ?? agentName;
     const runtime = getAudioRuntime();
@@ -1157,7 +1068,7 @@ export const triggerRunnerDeps: TriggerRunnerDeps = {
   webhookCredentials: webhookTokenUseCases,
   openReviewWorkspace: async (target, grant) => {
     const { agentName, triggerId, email: ownerEmail } = grant;
-    const tool = await executionDeps.workspaceTool?.(agentName, { ancestry: [agentName], actor: triggerActor({ kind: "webhook", agentName, triggerId }), userEmail: ownerEmail, user: { userId: grant.userId, email: grant.email }, executionGrant: grant }, target);
+    const tool = await executionDeps.workspaceTool?.(agentName, { ancestry: [agentName], actor: triggerActor({ kind: "webhook", agentName, triggerId }), user: { userId: grant.userId, email: grant.email }, executionGrant: grant }, target);
     if (!tool) throw new ValidationError("PR review Workspace is unavailable; check the Agent's Workspace enablement, repository policy and Sandbox backend");
     return openReviewWorkspace({ tool, state: async id => {
       const workspace = await workspaceRepository.get(id);
@@ -1332,7 +1243,7 @@ export function getAudioRuntime() {
     await authorize(job.agentName, job.userEmail);
     const configuration = job.destination?.configuration;
     if (!configuration || !job.destination) throw new AudioJobStepError("delivery_configuration_missing", false);
-    const mcp = await buildMcpTools(executionDeps, configuration, signal, { actor: job.actor, user: job.user, userEmail: job.userEmail });
+    const mcp = await buildMcpTools(executionDeps, configuration, signal, { actor: job.actor, user: job.user });
     const required = [...(job.destination.documents ? ["document_ingest", "document_ingest_status", "document_ingest_retry"] : []),
       ...(job.destination.memories ? ["remember"] : [])];
     if (required.some((name) => !mcp.aliasFor?.(job.destination!.serverName, name))) {

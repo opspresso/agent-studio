@@ -12,7 +12,7 @@
  *   - a server that cannot be reached loses only its own tools, and the reason
  *     is reported through {@link ToolManager.warnings} so the run can surface it
  *     — including the two readings that are not "unreachable": a 401 asks the
- *     agent to reconnect, and a server this client cannot speak to asks for a
+ *     caller to reconnect, and a server this client cannot speak to asks for a
  *     fix on one side or the other,
  *   - discovery is served from {@link ../discoveryCache the discovery cache} when
  *     it is warm, which also leaves the session to connect lazily on its first
@@ -111,7 +111,7 @@ export class ToolManager {
 
   /**
    * Servers that answered 401. Separate from {@link warnings} because it asks
-   * for something specific — the agent must re-authorize — while every other
+   * for something specific — the caller must re-authorize — while every other
    * discovery failure asks the operator to look at the server.
    */
   get unauthorizedServers(): readonly string[] {
@@ -195,8 +195,8 @@ export class ToolManager {
           const reason = error instanceof Error ? error.message : String(error);
           const unusable = unusableServerReason(error);
           // A 403 that names scopes is not the server being down and not the
-          // token being refused outright: it is the agent's grant being too
-          // narrow, which the agent can fix — with the scopes the server named.
+          // token being refused outright: it is the caller's grant being too
+          // narrow, which the caller can fix — with the scopes the server named.
           const stepUp = scopeChallengeOf(error);
           log.warn(
             "mcp",
@@ -294,7 +294,7 @@ export class ToolManager {
       this._warnings.push(
         failure.scope
           ? `MCP server '${serverName}' needs a wider grant (${failure.scope}); it needs to be reconnected before its tools are available.`
-          : `MCP server '${serverName}' rejected this agent's credentials; it needs to be reconnected before its tools are available.`,
+          : `MCP server '${serverName}' rejected the caller's credentials; it needs to be reconnected before its tools are available.`,
       );
       return;
     }
@@ -317,7 +317,7 @@ export class ToolManager {
   }
 
   /**
-   * Note that a server rejected this agent's credentials.
+   * Note that a server rejected this caller's credentials.
    *
    * The single owner of that list, because two paths reach it and they are not
    * the same moment: discovery, and a call made against a session the discovery

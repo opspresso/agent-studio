@@ -55,14 +55,13 @@ function typeOf(entry: RecordValue, wireId: string): RegistryModelType | undefin
   if (outputs.includes("image")) return "image";
   if (outputs.includes("text")) return "text";
   if (outputs.length) return undefined;
-  if (outputs.includes("embeddings") || methods.includes("embedContent") || /^(embedding|embeddings)$/.test(explicit ?? "") || /embed/i.test(wireId)) return "embedding";
-  if (explicit === "rerank" || /rerank/i.test(wireId)) return "rerank";
-  if (explicit === "transcription" || /whisper|transcrib/i.test(wireId)) return "transcription";
-  if (outputs.includes("image") || /(^|[-/])(imagen|dall-e|gpt-image)|image(-generation)?/i.test(wireId)) return "image";
-  if (explicit === "decision") return "decision";
+  if (methods.includes("embedContent") || explicit === "embeddings" || /embed/i.test(wireId)) return "embedding";
+  if (/rerank/i.test(wireId)) return "rerank";
+  if (/whisper|transcrib/i.test(wireId)) return "transcription";
+  if (/(^|[-/])(imagen|dall-e|gpt-image)|image(-generation)?/i.test(wireId)) return "image";
   // Unsupported audio/video/realtime protocols must not masquerade as chat models.
-  if (outputs.some((v) => v === "audio" || v === "video") || /tts|realtime|audio|video|moderation/i.test(wireId)) return undefined;
-  if (outputs.includes("text") || methods.includes("generateContent") || /^(text|llm|vlm)$/.test(explicit ?? "") || /^(gpt-|o\d|claude-|gemini-|grok-)/.test(wireId)) return "text";
+  if (/tts|realtime|audio|video|moderation/i.test(wireId)) return undefined;
+  if (methods.includes("generateContent") || /^(llm|vlm)$/.test(explicit ?? "") || /^(gpt-|o\d|claude-|gemini-|grok-)/.test(wireId)) return "text";
   return undefined;
 }
 

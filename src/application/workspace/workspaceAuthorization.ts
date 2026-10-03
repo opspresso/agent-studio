@@ -58,8 +58,7 @@ export async function authorizeWorkspaceExecution(
   const sourceAgentName = actor.id.slice(0, separator);
   const triggerId = actor.id.slice(separator + 1);
   const trigger = separator > 0 ? await deps.triggers.get(sourceAgentName, triggerId) : null;
-  if (!trigger?.enabled || trigger.agentName !== sourceAgentName || trigger.triggerId !== triggerId ||
-    trigger.kind !== actor.kind) {
+  if (trigger?.kind !== "schedule" || !trigger.enabled || trigger.agentName !== sourceAgentName || trigger.triggerId !== triggerId) {
     throw new ValidationError("The trigger's Workspace execution permission is no longer authorized");
   }
   if (trigger.kind === "schedule") {

@@ -5,6 +5,7 @@ import { runAgent } from "@/application/runtime";
 import type { AgentDeps, RunAgentInput } from "@/application/runtime/types";
 import type { EngineChunk } from "@/domain/llm/types";
 import { randomUUID } from "node:crypto";
+import { Runner } from "@openai/agents";
 import { reduceChunk } from "@/app/chats/_lib/stream";
 import { EMPTY_TURN } from "@/app/chats/_lib/types";
 
@@ -101,6 +102,43 @@ describe("native SDK delegation", () => {
     expect(chunks.filter((chunk) => chunk.authorDone).map((chunk) => chunk.transferId)).toEqual(expect.arrayContaining(["call_0", "call_1"]));
     expect(chunks.at(-1)).toMatchObject({ done: true });
     expect(f.requests.filter((body) => body.model === CHILD)).toHaveLength(2);
+  });
+
+  it("keeps concurrent invocations' output formats independent", async () => {
+    const f = fixture((body, index) => index === 0
+      ? calls({ name: "delegate_child", input: "structured" }, { name: "delegate_child", input: "plain" })
+      : body.model === CHILD ? answer('{"answer":"ok"}') : answer("both done"));
+    f.loadAgent.mockImplementation(async (name, task) => ({
+      deps: { createToolSchemaValidator, channel: f.models }, close: f.closed, warnings: [],
+      input: { agentName: name, model: CHILD, maxTurn: 4, messages: [{ role: "user", content: task.message }], signal: task.signal,
+        ...(task.message === "structured" ? { parameters: { structuredOutput: true,
+          jsonSchema: { type: "object", properties: { answer: { type: "string" } }, required: ["answer"], additionalProperties: false } } } : {}) },
+    }));
+    await collect(runAgent(f.deps, f.input));
+    const requests = f.requests.filter(body => body.model === CHILD);
+    const forInput = (text: string) => requests.find(body =>
+      (body.messages as Array<{ role: string; content: unknown }>).some(message => message.role === "user" && message.content === text));
+    const structured = forInput("structured");
+    const plain = forInput("plain");
+    expect(requests).toHaveLength(2);
+    expect(plain).toBeDefined();
+    expect(structured?.response_format).toMatchObject({ type: "json_schema" });
+    expect(plain?.response_format).not.toMatchObject({ type: "json_schema" });
+  });
+
+  it("passes each concurrent invocation's own turn limit to its SDK runner", async () => {
+    const f = fixture((body, index) => index === 0
+      ? calls({ name: "delegate_child", input: "short" }, { name: "delegate_child", input: "long" })
+      : body.model === CHILD ? answer("child done") : answer("both done"));
+    f.loadAgent.mockImplementation(async (name, task) => ({
+      deps: { createToolSchemaValidator, channel: f.models }, close: f.closed, warnings: [],
+      input: { agentName: name, model: CHILD, maxTurn: task.message === "short" ? 1 : 4,
+        messages: [{ role: "user", content: task.message }], signal: task.signal },
+    }));
+    const sdkRuns = vi.spyOn(Runner.prototype, "run");
+    await collect(runAgent(f.deps, f.input));
+    expect(sdkRuns.mock.calls.filter(([agent]) => agent.name === "child").map(([, , options]) => options?.maxTurns).sort())
+      .toEqual([1, 4]);
   });
 
   it.each([

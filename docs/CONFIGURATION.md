@@ -45,8 +45,8 @@ DB를 읽기 전 필요한 키·DB 주소·로그인 설정과 Sandbox 인프라
 
 로그인 수단은 Keycloak·표준 OIDC·Google의 필수 변수 묶음 또는 `AUTH_PASSWORD=true`다.
 빈 `ALLOWED_EMAIL_DOMAINS`는 모든 도메인 허용 정책이며 정상 부팅한다. 빈 `ADMIN_EMAILS`는
-공유 레지스트리·설정 작업의 관리자 제한을 없애므로 `local`에서만 허용한다.
-Agent 소유권을 넘는 관리자 권한과는 구분한다. [인증과 접근 제어](#인증과-접근-제어)를 따른다.
+member 이상에게 공유 레지스트리·설정의 초기 관리 권한을 허용하므로 `local`에서만 허용한다.
+guest는 읽기 전용이며 Agent 소유권을 대신하지 않는다. [인증과 접근 제어](#인증과-접근-제어)를 따른다.
 
 부팅은 이어서 advisory lock 아래 스키마를 준비하고 비밀번호 bootstrap 계정·감사 sink·
 등록 모델을 초기화한다. DB 또는 필수 초기화 실패는 부팅 실패다. 공개 모델 가격 갱신과
@@ -61,14 +61,14 @@ Agent 소유권을 넘는 관리자 권한과는 구분한다. [인증과 접근
 |---|---|---|---|
 | `STAGE` | production 밖에서는 `local` | — | `local` \| `alpha` \| `prod`. 그 밖의 값은 부팅 시 throw 하며, 프로덕션 프로세스는 이 값을 명시적으로 설정해야 한다. 위의 접근 제어 검사를 게이트한다. |
 | `SERVICE_NAME` | `Agent Studio` | **runtime** | 화면·브라우저 제목·안내 문구, MCP OAuth 클라이언트 이름, Slack 매니페스트의 기본 설명에 표시할 이름. 앞뒤 공백을 제거한 한 줄, 최대 80자. `SERVICE_LOGO`와 독립적으로 설정한다. |
-| `SERVICE_LOGO` | `agent-studio` | **runtime** | `public/brands/<값>/` 자산 폴더 선택자. 내장 폴더는 `agent-studio`, `agentops`다. 소문자·숫자·하이픈만 허용하며 `logo.png`, `favicon.ico`, `favicon-32.png`, `icon-192.png`, `apple-touch-icon.png`가 모두 없으면 부팅을 거부한다. 새 브랜드도 같은 파일을 추가해 선택한다. 예: `SERVICE_NAME=AgentOps`, `SERVICE_LOGO=agentops`. |
+| `SERVICE_LOGO` | `agent-studio` | **runtime** | `public/brands/<값>/` 자산 폴더 선택자. 내장 폴더는 `agent-studio`, `agentops`다. 소문자·숫자·하이픈만 허용하며 `logo.png`, `favicon.ico`, `favicon-32.png`, `icon-192.png`, `apple-touch-icon.png` 중 하나라도 없으면 부팅을 거부한다. 새 브랜드도 같은 파일을 추가해 선택한다. 예: `SERVICE_NAME=AgentOps`, `SERVICE_LOGO=agentops`. |
 | `DATABASE_URL` | — (필수) | — | PostgreSQL 접속 문자열 (`postgres://user:pass@host:5432/db`). 이 앱의 모든 행. 아이템 테이블, Better Auth 의 테이블, capability 카탈로그의 벡터. 이 여기 있다. 서버에 `pgvector` 확장을 *만들 수 있어야* 한다 (`CREATE EXTENSION IF NOT EXISTS vector` 를 부팅 때 앱이 실행한다). 스키마는 부팅 때 마이그레이션된다. |
-| `DATABASE_POOL_SIZE` | `10` | — | 프로세스 하나의 최대 DB connection 수, 하한 1. 웹 replica와 worker별 pool을 합산해 DB의 접속 한도 안에 배치한다. 모델 응답을 기다리는 동안 DB connection을 계속 점유하지 않는다. |
+| `DATABASE_POOL_SIZE` | `10` | — | 프로세스의 일반 DB pool 상한, 하한 1. 별도로 readiness에 최대 1개, 파일 내용 lock에 최대 4개 connection을 사용한다. 웹 replica와 worker별 pool을 모두 합산해 DB의 접속 한도 안에 배치한다. 모델 응답을 기다리는 동안 일반 pool connection을 계속 점유하지 않는다. |
 | `AWS_REGION` | `ap-northeast-2` | — | AWS SDK client·credential 설정과 S3 주소에 사용하는 리전. Bedrock SigV4의 실제 서명 리전은 요청 endpoint에서 읽는다. |
 | `AES_ENCRYPTION_KEY` | — (필수) | — | 32바이트 base64. 저장되는 모든 시크릿을 암호화하고, proxied 오브젝트 주소의 서명 키도 여기서 HKDF 로 파생된다. [SECURITY.md](SECURITY.md#저장된-시크릿) 를 보라. |
 | `S3_BUCKET_NAME` | 미설정 | — | Artifacts의 공통 버킷. 일반 생성 파일은 `artifacts/<kind>/`, 비공개 오디오·전사·요약은 `source-files/`에 저장한다. 어느 S3 호환 스토어든 된다 (MinIO, Garage, Ceph RGW, AWS S3). 행에는 오브젝트 키가 저장되고 URL 은 절대 저장되지 않는다. 자격증명은 스토어 자신의 `S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY` 쌍이고, 비어 있으면 SDK 기본 체인(`AWS_*`, 인스턴스 역할, AWS 자신에는 이것이 맞다)이다; 그 주체에게는 (레거시 `images/*` 만이 아니라) **`artifacts/*`와 `source-files/*`**의 put·get·delete와 비공개 파일의 multipart 업로드 권한이 있어야 한다. 설정하지 않으면 영속화가 통째로 꺼진다: 런은 여전히 그림을 그리고, 바이트는 표면까지 도달했다가 거기서 멈추며, artifact 갤러리는 404 로 답한다. |
 | `S3_ENDPOINT` | 미설정 | — | AWS 가 아닌 스토어의 주소 (`http://minio:9000`). 설정되면 path-style 로 주소를 만든다. 자체 호스팅 엔드포인트는 버킷 서브도메인을 해석하지 못하는 것이 보통이다. 비어 있으면 SDK 자신의 리전·자격증명 해석으로 AWS S3 에 간다. |
-| `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | 미설정 | — | 오브젝트 스토어의 키 쌍. `AWS_*` 에 넣지 않는다. 그 쌍은 프로세스의 다른 모든 AWS 클라이언트(Bedrock 채널·Cohere 임베딩)가 읽으므로, MinIO 의 키를 거기 두면 AWS 에 MinIO 키로 서명하게 된다. 비어 있으면 SDK 기본 체인을 따른다. |
+| `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | 미설정 | — | 오브젝트 스토어의 키 쌍. `AWS_*` 에 넣지 않는다. 그 쌍은 Bedrock SigV4 등 다른 AWS 기능도 읽으므로, MinIO 의 키를 거기 두면 AWS 에 MinIO 키로 서명하게 된다. 비어 있으면 SDK 기본 체인을 따른다. |
 | `S3_PUBLIC_BASE_URL` | 미설정 | **runtime** | `public` 모드에서 독자가 오브젝트에 닿는 base 가 앱이 업로드하는 엔드포인트와 다를 때 (리버스 프록시 뒤의 MinIO). 비어 있으면 `S3_ENDPOINT`/`<bucket>`, 그것도 없으면 AWS 의 virtual-host 형태. |
 | `ARTIFACT_ACCESS_MODE` | `authenticated` | **runtime** | 독자가 저장된 오브젝트에 어떻게 닿는가. **`proxied`**. 앱 자신의 주소 `PUBLIC_BASE_URL/api/objects/<key>?exp=&sig=[&dl=]` 를 건네고 앱이 바이트로 답한다(`PUBLIC_BASE_URL` 이 없으면 경로만, 콘솔은 같은 origin 이라 닿지만 Slack 같은 외부 독자에게는 주소가 아니다). 모델 입력 이미지는 URL이 아니라 저장소에서 읽은 bounded inline bytes로 전달된다. 스토어는 앱에게만 닿으면 되므로 설치형의 선택이다. 토큰이 증명하는 것과 수명은 [SECURITY.md](SECURITY.md#데이터-노출과-보존). **`authenticated`**. 유효 기간이 있는 스토어의 pre-signed URL. 브라우저가 스토어에 직접 닿을 수 있어야 한다. **`public`**. 영구적인 직접 URL. 버킷 정책이 `artifacts/*` 와 레거시 `images/*` 의 공개 읽기를 허용할 때만 동작한다. **다운로드 링크는 `public` 에서도 pre-signed 다**: 브라우저가 저장할 파일명이 요청 서명에 실려 가는데 S3 는 익명 GET 에서 `response-*` 오버라이드를 거부하기 때문이다. 그래서 `public` 모드에서 문서의 주소는 유효 기간이 있고 이미지의 주소는 영구로 남는다. public 모드는 갤러리 메타데이터와 삭제가 인증을 유지하더라도 URL 을 손에 넣은 누구에게나 오브젝트를 노출한다. 모르는 값은 `authenticated` 로 fail-closed 된다. |
 | `CATALOG_ENABLED` | `false` | — | `true` 면 이 배포가 capability 카탈로그를 갖는다. 벡터는 데이터베이스의 `catalog_vectors` 에 있고 따로 가리킬 것은 없다. 설정하지 않으면 `POST /api/catalog/reindex` 는 503 으로 답하고, 런은 자기 설정에 바인딩한 것만 제공한다. 그 503 에는 원인이 둘 있고 토큰 검사가 먼저 돌므로, `SCHEDULE_SCAN_TOKEN` 이 설정되지 않은 경우에도 메시지만 다른 같은 상태 코드가 나온다. 기본이 꺼짐인 이유: 카탈로그에는 배포의 채널이 서빙하는 임베딩 모델이 필요한데 부팅 때 그것을 확인할 길이 없다. 켜는 것은 그 모델이 있다는 선언이다. |
@@ -203,7 +203,7 @@ Text·Image 등 출력 유형과 Tools·Vision·Reasoning 기능은 각각 표�
 `selfhosted` 모델은 저장된 요율을 사용하며 가격이 없으면 기본 요율 0을 적용한다.
 
 기본 모델은 새 Agent와 모델 선택기의 첫 선택에 적용한다. 이미 저장한 Agent 설정은 유지한다.
-기본·Workspace·Embedding·Rerank에 지정된 모델은 사용 설정을 먼저 변경해야 삭제할 수 있다.
+기본·결정·Workspace·Embedding·Rerank·라우팅 tier에 지정된 모델은 사용 설정을 먼저 변경해야 삭제할 수 있다.
 삭제된 모델을 사용하는 새 실행은 거부된다. 공개 API와 하위 Agent도 등록된 모델만 호출한다.
 
 검색 모델 선택은 `CATALOG_ENABLED=true`인 배포에서 사용한다. Embedding 변경은 명시적인
@@ -294,7 +294,7 @@ sync는 선언된 이름의 항목을 갱신하고 사라진 항목은 orphan으
 | `SLACK_LOADING_INDICATOR` | `:hourglass_flowing_sand:` | **runtime** | Slack 답변이 아직 쓰이고 있는 동안 뒤에 붙였다가 마지막 편집에서 떼어 내는 표시. **edit-in-place 폴백에서만 그렇다**. 스트리밍되는 답변은 Slack 자신이 아직 도착 중이라고 표시해 준다. 자기 spinner 이모지를 가진 워크스페이스는 여기에 그 이름을 적는다. 기본값이 내장돼 있는 이유는, 워크스페이스가 정의하지 않은 커스텀 이름은 글자 그대로 렌더링되기 때문이다. |
 
 Agent별 Slack 설정. 봇 토큰, signing secret, 추천 프롬프트, 그리고 멘션 없이 봇을 깨우는
-**채널 키워드**. 는 환경이 아니라 Agent에 산다 (`/agents/{name}/settings`). Agent의
+**채널 키워드**는 환경변수가 아니라 Agent에 저장한다 (`/agents/{name}/integrations`). Agent의
 런이 워크스페이스를 *읽어도* 되는지는 Agent 파라미터(`slackWorkspace`)이고 기본은 꺼짐이다.
 
 채널 후속 응답과 `SlackChannels`에는 생성 매니페스트의 `message.channels`·
@@ -347,7 +347,7 @@ Codex·Claude·OpenCode의 모델은 **Model 사용 설정 → 워크스페이�
 | `WORKSPACE_MODEL_GATEWAY_URL` | 미설정 | Sandbox가 접근할 Studio 주소. Native 모델 실행에 필수이며 command에는 필요 없다. Docker 내부 호스트 주소 또는 Kubernetes Service 주소를 명시한다 |
 
 Agent 저장소·소유자 목록은 각각 최대 100개다. `selected`는 등록한 저장소만,
-`owners`는 목록과 정확한 소유자 범위를, `all`은 해당 Agent의 GitHub MCP 계정으로 접근 가능한 전체를 허용한다.
+`owners`는 목록과 정확한 소유자 범위를, `all`은 호출자의 GitHub MCP 계정으로 접근 가능한 전체를 허용한다.
 `new`는 등록 목록을 유지하고 `Workspace.create_repository`의 실제 생성 성공을 자동 등록한다.
 [정책 계약](design/workspaces.md#저장소-정책-관리)을 따른다. 유휴 시간은 기본 1800초, 범위는 60초~7일이다.
 검사는 `test`, `lint`, `build`별 명령을 최대 하나씩 저장하며 각 Run 뒤 실행한다.
@@ -369,10 +369,10 @@ PR 자동 리뷰의 Agent 실행과 Workspace 검사는 같은 토큰 발급 사
 Workspace worker가 자동 정리와 재시작 복구를 담당한다. 별도 worker를 실행하지 않으면 큐·TTL·승인 결과 전달과 CI 대기가
 진행되지 않는다. Workspace task와 채팅 후속 실행은 각각 workerConcurrency 상한을 적용하는 별도 큐다. 설치·검증 명령은 [INSTALL.md](INSTALL.md#workspace-worker)를 따른다.
 
-코딩 작업은 해당 Agent가 바인딩한 GitHub MCP에 대한 호출자 자신의 인증을 사용한다. OAuth 연결의
-사용자 ID·issuer·resource·공유 client를 검사하고 만료가 가까우면 그 사용자의 토큰을 갱신한다. 정적 인증은 MCP registry 헤더와 Agent의 현재 endpoint에 묶인 헤더 override를
-사용한다. OAuth가 설정됐으면 호출자의 유효한 개인 연결이 필수이며 연결 누락·해제·불일치에는
-정적 인증·다른 사용자·Agent 소유자·Plugin 토큰으로 우회하지 않는다.
+코딩 작업은 해당 Agent가 바인딩한 GitHub MCP에 대한 호출자 자신의 OAuth 연결을 사용한다.
+사용자 ID·issuer·resource·공유 client를 검사하고 만료가 가까우면 그 사용자의 토큰을 갱신한다.
+OAuth 설정과 유효한 개인 연결이 모두 필수다. MCP registry·Agent의 정적 Authorization 헤더,
+다른 사용자·Agent 소유자의 연결 또는 Plugin 토큰은 Workspace Git에 사용하지 않는다.
 `Settings → Plugins → GitHub 인증`과 `GITHUB_TOKEN`은 Plugin 가져오기에만 사용한다.
 
 Git 인증은 서버에서만 수행하고 자격증명이 없는 Git bundle을 Sandbox에 전달한다. 서버에 Git
@@ -381,7 +381,7 @@ API·Git web 주소는 `GITHUB_API_URL`과 `GITHUB_WEB_URL`을 사용하며 OAut
 authority여야 한다. `WORKSPACE_GITHUB_INTERNAL_HOSTS`는 폐쇄망 GitHub Enterprise의
 호스트 접미사를 선언하며, 다른 내부 URL 허용 목록과 공유하지 않는다.
 `WORKSPACE_GITHUB_WEBHOOK_SECRET`은 `/api/workspaces/github/webhook`의 PR 메타데이터 갱신용이다.
-`/api/webhook/{agent}`는 Agent Settings에서 발급한 별도 Trigger 시크릿을 사용한다.
+`/api/webhook/{agent}?credential={credentialId}`는 Integrations에서 각 사용자가 발급한 개인 Webhook 토큰을 사용한다.
 필요한 저장소의 Contents·Pull requests·Actions 쓰기와 Checks·Commit statuses 읽기를 GitHub MCP
 연결 계정에 부여한다. fine-grained 토큰의 저장소 생성에는 Administration 쓰기가 필요하다.
 classic 토큰은 공개 저장소에 `public_repo` 또는 `repo`, 비공개 저장소에 `repo` scope가 필요하다.
@@ -468,6 +468,7 @@ Members의 선택 목록과 Profile은 같은 유효 등급 설정을 읽는다.
 | Chat 재접속 로그와 Session 삭제 tombstone의 보존 | 행을 쓴 시각부터 실행 lease + `15분` | `src/infrastructure/db/ttl.ts`의 `RUN_LOG_TTL_SECONDS` |
 | Webhook·Schedule의 멱등 claim / 메신저 delivery claim 행 TTL | 생성부터 `24시간`; 실제 삭제는 sweep | `src/infrastructure/db/repositories/triggerRepository.ts`, `inboundClaimRepository.ts` |
 | 한 런의 파일 쓰기 시도 수 (`SaveFile`과 `File` 생성·편집 공유) | `10` | `src/application/runtime/tools.ts` |
+| 최종본 저장 전 런별 임시 파일 (`SaveFile`·`File`·MCP·위임 결과 합계) | `100개`, 합계 `100 MiB` | `src/application/artifact/runFileDrafts.ts` |
 | 카탈로그 검색 하나가 런에 더할 수 있는 capability 수 (Skill / MCP 서버) | `5` / `3` | `src/application/execution/bindings.ts` |
 | 각 MCP 인덱스에 요청하는 카탈로그 매치 수. 그 상한을 넘겨 oversampling 한다. 여러 도구 행이 한 서버로 합쳐지고, 런이 바인딩할 수 없는 후보가 슬롯을 잡아먹어서는 안 되기 때문이다 | MCP 서버 상한의 `4×`(tool 인덱스) / `3×`(server 인덱스) | `src/application/execution/bindings.ts` |
 | 카탈로그 검색어 (요청 없을 때의 시스템 프롬프트 / 최근 사용자 턴 / 최신 요청 + 관련 기억) | `2,000` 자 / `3` 턴 / `2,000` 자(각 절반 최대 `1,000` 자) | `src/application/execution/bindings.ts` |
@@ -554,7 +555,7 @@ Members의 선택 목록과 Profile은 같은 유효 등급 설정을 읽는다.
 | Teams 메시지 하나 (더 긴 답변은 다음 메시지로 이어진다) / inline 그림 (Teams 가 문서화한 상한) | `20,000` 자 / `1 MiB` | `src/application/teams/replyChannel.ts` |
 | Teams 답변 편집 주기 / typing 갱신 | `2s` / `3s` | `src/application/teams/replyChannel.ts` |
 | Telegram·Teams 대화의 턴을 유지하는 기간 | `7` 일 | `src/infrastructure/db/ttl.ts` |
-| usage 요약 질의 범위 | `184` 일 | `src/app/api/usages/summary/validation.ts` |
+| usage 요약·차트 기간 | `184` 일 | `src/shared/usageRange.ts` |
 | Agent 호출자 usage 한 요청의 원시 행 / 반환·Slack 프로필 해석 수 | `10,000` / `100` | `src/application/usage/listActors.ts` |
 | schedule 따라잡기 창 (장애가 한 번에 발화시킬 수 있는 양에 한계를 둔다) | `10` 분 | `src/application/trigger/scanSchedules.ts` |
 | scan tick 하나가 동시에 굴리는 schedule 발화 수 | `8` | `src/application/trigger/scanSchedules.ts` |

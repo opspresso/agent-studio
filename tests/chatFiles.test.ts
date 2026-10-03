@@ -67,6 +67,19 @@ describe("resolveFileUrl", () => {
 });
 
 describe("resolveMessageFiles", () => {
+  it("omits retired artifact references on reload without signing their deleted objects", async () => {
+    const signer = vi.fn(signed);
+    const messages = [assistantWith([
+      { artifactId: "old", key: "old-key", name: "report.html", mimeType: "text/html" },
+      { artifactId: "final", key: "new-key", name: "report.html", mimeType: "text/html", replacedArtifactIds: ["old"] },
+    ])];
+    const resolved = await resolveMessageFiles(messages, signer, 60, {
+      get: async id => id === "final" ? { artifactId: id } as never : null,
+    });
+    expect(signer).toHaveBeenCalledExactlyOnceWith("new-key", 60, { downloadAs: "report.html" });
+    expect(resolved.messages[0]).toMatchObject({ files: [{ artifactId: "final", replacedArtifactIds: ["old"] }] });
+  });
+
   it("gives the reader an address and keeps what the row is for", async () => {
     const { messages } = await resolveMessageFiles(
       [assistantWith([{ key: "artifacts/document/x.pdf", name: "summary.pdf", mimeType: "application/pdf", byteSize: 1_605_516 }])],
@@ -144,20 +157,20 @@ describe("collectGeneratedFiles", () => {
     expect(warnings).toEqual([]);
   });
 
-  it("keeps the artifact id for a file a browser can be shown, and only then", () => {
-    // The id is what an open link is built from, so it rides along for a page
-    // and is left off everything else: a PDF row carrying one would offer a
-    // view that answers 400.
+  it("preserves artifact identity for every file type without inventing an absent ID", () => {
+    // Preview eligibility belongs to the file card; persistence retains every stored ID.
     const { stored } = collectGeneratedFiles(
       [
         { key: "artifacts/document/p.html", artifactId: "p", name: "r.html", mimeType: "text/html" },
-        { key: "artifacts/document/d.pdf", name: "d.pdf", mimeType: "application/pdf" },
+        { key: "artifacts/document/d.pdf", artifactId: "d", name: "d.pdf", mimeType: "application/pdf" },
+        { key: "artifacts/document/old.pdf", name: "old.pdf", mimeType: "application/pdf" },
       ],
       true,
     );
 
     expect(stored[0]).toMatchObject({ artifactId: "p", mimeType: "text/html" });
-    expect(stored[1]).not.toHaveProperty("artifactId");
+    expect(stored[1]).toMatchObject({ artifactId: "d", mimeType: "application/pdf" });
+    expect(stored[2]).not.toHaveProperty("artifactId");
   });
 
   /**
@@ -241,7 +254,7 @@ describe("runAndPersist", () => {
     }
   }
 
-  it("puts a produced file on the assistant message", async () => {
+  it("preserves a PDF's identity through persistence and its signed display read", async () => {
     const fixture = deps();
 
     await drain(fixture.deps, [
@@ -252,6 +265,7 @@ describe("runAndPersist", () => {
           source: "mcp: render_document",
           byteSize: 1_605_516,
           key: "artifacts/document/c74d33ff.pdf",
+          artifactId: "c74d33ff",
         },
       },
       { delta: { content: "made it" } },
@@ -261,11 +275,21 @@ describe("runAndPersist", () => {
     expect(assistant?.role === "assistant" && assistant.files).toEqual([
       {
         key: "artifacts/document/c74d33ff.pdf",
+        artifactId: "c74d33ff",
         name: "deployment-method-summary.pdf",
         mimeType: "application/pdf",
         byteSize: 1_605_516,
       },
     ]);
+    const { messages } = await resolveMessageFiles(fixture.messages, signed, VIEW_URL_TTL_SECONDS);
+    const displayed = messages.find((message) => message.role === "assistant");
+    expect(displayed?.role === "assistant" && displayed.files).toEqual([{
+      artifactId: "c74d33ff",
+      name: "deployment-method-summary.pdf",
+      mimeType: "application/pdf",
+      byteSize: 1_605_516,
+      url: `https://signed.example/artifacts/document/c74d33ff.pdf?ttl=${VIEW_URL_TTL_SECONDS}&as=deployment-method-summary.pdf`,
+    }]);
   });
 
   it("keeps the reference a chunk carried, not the chunk's own payload object", async () => {
@@ -327,10 +351,10 @@ describe("runAndPersist", () => {
 describe("the live turn", () => {
   it("folds a file chunk into the turn without bytes or an address", () => {
     const turn = reduceChunk(EMPTY_TURN, {
-      file: { name: "a.pdf", mimeType: "application/pdf", byteSize: 99, key: "k" },
+      file: { name: "a.pdf", mimeType: "application/pdf", byteSize: 99, key: "k", artifactId: "pdf-1" },
     });
 
-    expect(turn.files).toEqual([{ name: "a.pdf", mimeType: "application/pdf", byteSize: 99 }]);
+    expect(turn.files).toEqual([{ name: "a.pdf", mimeType: "application/pdf", byteSize: 99, artifactId: "pdf-1" }]);
   });
 
   it("does not mistake a file for a picture", () => {

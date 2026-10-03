@@ -304,4 +304,17 @@ describe("a Telegram reply", () => {
 
     expect(photos).toEqual([{ filename: `generated-${NOW}-1.png`, caption: "a cat" }]);
   });
+
+  it.each([["image/jpeg", "jpg"], ["image/webp", "webp"], ["image/gif", "gif"]])("names %s uploads with their media extension", async (mimeType, extension) => {
+    const { telegram, photos } = makeTelegramFake();
+    await createTelegramReplyChannel(telegram, "tok", TARGET).sendImage({ b64: "AA==", mimeType }, 0);
+    expect(photos[0]!.filename).toBe(`generated-${NOW}-1.${extension}`);
+  });
+
+  it("bounds an image caption without splitting its final Unicode character", async () => {
+    const { telegram, photos } = makeTelegramFake();
+    await createTelegramReplyChannel(telegram, "tok", TARGET).sendImage({ b64: "AA==", mimeType: "image/png", prompt: "x".repeat(1023) + "😀" }, 0);
+    expect(photos[0]!.caption?.isWellFormed()).toBe(true);
+    expect(photos[0]!.caption).toBe("x".repeat(1023));
+  });
 });

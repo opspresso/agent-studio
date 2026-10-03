@@ -203,20 +203,25 @@ export function sectionsOf(paths: Iterable<string>): string[] {
     .map((entry) => entry.path);
 }
 
-function inflate(stream: Uint8Array, compressed: boolean, what: string): Uint8Array {
-  if (!compressed) {
-    return stream;
+function inflate(stream: Uint8Array, compressed: boolean, what: string, remainingBytes: number): Uint8Array {
+  const overBudget = () => new HwpError(`the HWP expanded body exceeds the ${MAX_EXPANDED_BYTES.toLocaleString("en-US")} byte limit`);
+  let section = stream;
+  if (compressed) {
+    try {
+      // HWP has no declared expanded size. Spend the document's remaining
+      // budget while inflating; Node requires a positive maxOutputLength.
+      section = inflateRawSync(stream, { maxOutputLength: Math.max(1, remainingBytes) });
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ERR_BUFFER_TOO_LARGE") {
+        throw overBudget();
+      }
+      throw new HwpError(
+        `${what} could not be decompressed — ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
-  try {
-    // Raw deflate: HWP stores the bare stream without a zlib header. The output
-    // cap is the whole defence here — unlike a zip, nothing declares up front
-    // what this expands to.
-    return inflateRawSync(stream, { maxOutputLength: MAX_EXPANDED_BYTES });
-  } catch (error) {
-    throw new HwpError(
-      `${what} could not be decompressed — ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
+  if (section.byteLength > remainingBytes) throw overBudget();
+  return section;
 }
 
 /**
@@ -266,8 +271,11 @@ export function hwpToBlocks(bytes: Uint8Array): HwpBlocks {
   }
   const blocks: ReadBlock[] = [];
   const observed = new Set<string>();
+  let remainingBytes = MAX_EXPANDED_BYTES;
   for (const path of paths) {
-    for (const paragraph of paragraphRecordsOf(inflate(streams.get(path)!, compressed, path))) {
+    const section = inflate(streams.get(path)!, compressed, path, remainingBytes);
+    remainingBytes -= section.byteLength;
+    for (const paragraph of paragraphRecordsOf(section)) {
       // A paragraph below the body level sits inside a control — a table cell,
       // a drawing, a footnote. Which one, and where in it, is what the record
       // layouts would say and what is not verified here; that it was inside

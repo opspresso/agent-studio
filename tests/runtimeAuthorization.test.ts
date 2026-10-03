@@ -3,6 +3,7 @@ import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { NoopTrace, withTrace, type ModelRequest } from "@openai/agents";
 import { createRunModel } from "@/application/runtime/model";
 import { createRuntimeModelTask } from "@/application/runtime/modelTask";
+import { createRuntimeRouter } from "@/application/runtime/modelRouting";
 import type { AgentDeps, RunAgentInput, RuntimeTurn } from "@/application/runtime/types";
 import { createToolResultBudget, MAX_TOOL_RESULT_CHARS_PER_TURN } from "@/application/llm/toolResultBudget";
 import { ImageRegistry } from "@/application/llm/agentAssembly";
@@ -26,6 +27,65 @@ afterEach(() => { vi.useRealTimers(); replaceModelRegistry(originalModels); });
 const deny = () => { throw new ForbiddenError("Caller permission revoked"); };
 
 describe("runtime authorization before paid model attempts", () => {
+  it.each(["response", "stream"] as const)("does not start %s after cancellation during authorization", async mode => {
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const controller = new AbortController();
+    const channel = new FakeChannel([[contentChunk("must not run")]]);
+    const getModel = vi.spyOn(channel, "getModel");
+    const model = createRunModel({ channel, authorizeExecution: async () => { entered.resolve(); await release.promise; } }, input, turn(), () => {});
+    const executing = withTrace(new NoopTrace(), async () => {
+      const pending = { ...request, signal: controller.signal };
+      if (mode === "response") await model.getResponse(pending);
+      else for await (const _event of model.getStreamedResponse(pending)) { /* drain */ }
+    }).catch(error => error);
+    await entered.promise;
+    const stopped = new Error("Run stopped");
+    controller.abort(stopped);
+    release.resolve();
+    expect(await executing).toBe(stopped);
+    expect(getModel).not.toHaveBeenCalled();
+  });
+
+  it("does not start a focused ModelTask after cancellation during authorization", async () => {
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const controller = new AbortController();
+    const channel = new FakeChannel([[contentChunk("must not run")]]);
+    const getModel = vi.spyOn(channel, "getModel");
+    const task = createRuntimeModelTask({ channel,
+      authorizeExecution: async () => { entered.resolve(); await release.promise; },
+      modelRoutingPolicy: DEFAULT_CALL_ROUTING_POLICY,
+      callRouting: { canUseModel: async () => true, selectedDecisionModel: async () => undefined, decision: { choose: vi.fn() } },
+    }, { ...input, signal: controller.signal, parameters: { modelRouting: false } }, turn(), new ImageRegistry(), () => {});
+    const executing = withTrace(new NoopTrace(), () => task({ purpose: "summary", prompt: "Summarize", image_ids: [] })).catch(error => error);
+    await entered.promise;
+    const stopped = new Error("Run stopped");
+    controller.abort(stopped); release.resolve();
+    expect(await executing).toBe(stopped);
+    expect(getModel).not.toHaveBeenCalled();
+  });
+
+  it("does not contact the routing decision model after cancellation during authorization", async () => {
+    replaceModelRegistry([...listModels(), { ...listModels()[0]!, id: "local/decision",
+      capabilities: { ...listModels()[0]!.capabilities, decision: true } }]);
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const controller = new AbortController();
+    const choose = vi.fn();
+    const router = createRuntimeRouter({ channel: new FakeChannel([]),
+      authorizeExecution: async () => { entered.resolve(); await release.promise; },
+      modelRoutingPolicy: { ...DEFAULT_CALL_ROUTING_POLICY, tiers: { fast: input.model, general: input.fallbackModel } },
+      callRouting: { canUseModel: async () => true, selectedDecisionModel: async () => "local/decision", decision: { choose } },
+    }, { ...input, parameters: { modelRouting: true } }, turn(), () => {}, async () => {});
+    const executing = withTrace(new NoopTrace(), () => router.select({ purpose: "general", prompt: "Answer", imageCount: 0, maxOutputTokens: 256 }, controller.signal)).catch(error => error);
+    await entered.promise;
+    const stopped = new Error("Run stopped");
+    controller.abort(stopped); release.resolve();
+    expect(await executing).toBe(stopped);
+    expect(choose).not.toHaveBeenCalled();
+  });
+
   it.each([429, 502, 503])("does not fall back after authorization fails with HTTP %s", async status => {
     const channel = new FakeChannel([[contentChunk("must not run")]]);
     const authorizeExecution = vi.fn(async () => { throw new AppError("Authorization unavailable", status); });

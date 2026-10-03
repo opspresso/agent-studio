@@ -32,7 +32,7 @@ import {
  *   reads text it did not write and is steered by it, so a workspace where the
  *   same run can also post is one where a message in a channel can make the bot
  *   speak somewhere else.
- * - **Never an email.** `users:read.email` is granted too, and this is the same
+ * - **Never an email.** Existing grants may return one; this is the same
  *   rule `callerFrom` already applies to the caller block: a name, a timezone,
  *   nothing that identifies a person outside Slack.
  * - **Ids are resolved to names.** A transcript of `<@U04B7QK9E>` is not
@@ -143,7 +143,7 @@ function countArg(args: Record<string, unknown>, name: string): number {
   if (!Number.isFinite(parsed) || parsed <= 0) {
     return DEFAULT_MESSAGES;
   }
-  return Math.min(Math.floor(parsed), MAX_MESSAGES);
+  return Math.max(1, Math.min(Math.floor(parsed), MAX_MESSAGES));
 }
 
 /**
@@ -260,12 +260,13 @@ export function createSlackWorkspaceReader(
           return `Error: ${SLACK_THREAD_TOOL_NAME} requires a channel id and a thread_ts.`;
         }
         // Already oldest-first from Slack, unlike a channel's history.
-        const messages = await slack.threadReplies(token, {
+        const { messages, truncated } = await slack.threadReplies(token, {
           channel,
           ts: threadTs,
           limit: countArg(args, "limit"),
         });
-        return await transcript(slack, token, messages);
+        const text = await transcript(slack, token, messages);
+        return truncated ? `${text}\n(More thread replies were not read; this result is incomplete.)` : text;
       }
       case SLACK_USER_TOOL_NAME: {
         const userId = stringArg(args, "user");

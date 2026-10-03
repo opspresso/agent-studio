@@ -107,9 +107,8 @@ export class PostgresArtifactRepository implements ArtifactRepository {
         GSI1PK: keys.artifactAgentPartition(artifact.agentName),
         GSI1SK: artifactCursor(artifact),
       } : {}),
-      // Sparse on purpose: a row that names no mailbox writes no GSI2
-      // attributes, so a trigger artifact simply is not in the owner
-      // index rather than sitting there under a placeholder nobody can query.
+      // Personal ownership comes from the resolved caller. Rows without it
+      // and canonical deduplication records are absent from the owner index.
       ...(ownerEmail && !artifact.canonicalArtifactId
         ? {
             GSI2PK: keys.artifactOwnerPartition(ownerEmail),

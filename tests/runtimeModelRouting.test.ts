@@ -140,6 +140,23 @@ describe("native runtime call routing", () => {
     expect(JSON.stringify(channel.seenParams[0]?.messages)).toContain("Pass ids in image_ids to `ModelTask`");
   });
 
+  it("returns tool images to the selected vision model even when the configured base is text-only", async () => {
+    const base = model("local/base");
+    base.capabilities.imageInput = false;
+    replaceModelRegistry([base, model("local/vision")]);
+    const image = { b64: "aW1hZ2U=", mimeType: "image/png" };
+    const channel = new FakeChannel([[toolCallChunk(0, "picture", "picture", "{}")], [contentChunk("I can see the image")]]);
+    const policy: CallRoutingPolicy = { ...config, tiers: { vision: "local/vision" }, policies: { general: "vision" } };
+    const chunks = [];
+    for await (const chunk of runAgent({ ...deps(channel, [], policy), callMcpTool: async () => ({ text: "Picture", images: [image] }) }, {
+      agentName: "test", model: "local/base", messages: [{ role: "user", content: "Read the picture tool result" }],
+      parameters: { modelRouting: true }, mcpTools: [{ type: "function", function: { name: "picture", parameters: { type: "object" } } }],
+    })) chunks.push(chunk);
+    expect(channel.seenParams.map(params => params.model)).toEqual(["local/vision", "local/vision"]);
+    expect(JSON.stringify(channel.seenParams[1]?.messages)).toContain(`data:image/png;base64,${image.b64}`);
+    expect(chunks.some(chunk => chunk.toolResult?.content.includes("not to you"))).toBe(false);
+  });
+
   it("blocks invalid arguments, absent image handles and calls beyond the quota without contacting another model", async () => {
     const channel = new FakeChannel([
       [toolCallChunk(0, "invalid", "ModelTask", JSON.stringify({ purpose: "invented", prompt: "hi", model: null, image_ids: [] }))],

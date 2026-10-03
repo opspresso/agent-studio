@@ -1,12 +1,8 @@
 import { cutUtf8Bytes } from "@/shared/utf8Text";
 import type { AgentInputItem } from "@openai/agents";
+import { elidedToolArgument } from "@/application/llm/toolArgumentElision";
 
 const MAX_TOOL_ARG_BYTES = 16 * 1024;
-
-/** What stands in for a value too large to keep. Its size, which is the fact. */
-function elidedArg(bytes: number): string {
-  return `[${bytes} bytes, elided — the call was made with the whole value]`;
-}
 
 /**
  * Bound values retained for display and completed native call history. Dispatch
@@ -47,8 +43,8 @@ export function boundToolArgsPair(
     }
     wire ??= { ...args };
     display ??= { ...displayArgs };
-    wire[key] = elidedArg(wireSize);
-    display[key] = elidedArg(displaySize);
+    wire[key] = elidedToolArgument(wireSize);
+    display[key] = elidedToolArgument(displaySize);
   }
   return { wire: wire ?? args, display: display ?? displayArgs };
 }

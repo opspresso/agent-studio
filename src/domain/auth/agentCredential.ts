@@ -14,7 +14,8 @@ export interface AgentCredential {
 export interface AgentCredentialRepository {
   get(agentName: string, purpose: AgentCredentialPurpose, tokenId: string): Promise<AgentCredential | null>;
   forUser(agentName: string, purpose: AgentCredentialPurpose, userId: string): Promise<Omit<AgentCredential, "token"> | null>;
-  /** Rotate only this user's credential, fenced against concurrent rotation and Agent deletion. */
+  /** Rotate only this user's credential, fenced against concurrent rotation and Agent deletion.
+   * Webhook issuance atomically initializes missing shared settings without changing existing behavior. */
   replace(token: AgentCredential, previousTokenId: string | null): Promise<void>;
   revoke(agentName: string, purpose: AgentCredentialPurpose, userId: string, tokenId: string): Promise<void>;
 }

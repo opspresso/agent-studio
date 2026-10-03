@@ -18,7 +18,7 @@ const reviewContext = { ...target, baseSha: "b".repeat(40), title: "Change", bod
 
 function fixture(chunks: EngineChunk[] = [{ delta: { content: "확인된 결함은 없습니다." } }, { done: true }]) {
   let trigger: WebhookTrigger = { agentName: "review", triggerId: "webhook", kind: "webhook", description: "",
-    enabled: true, allowConcurrent: true, createdAt: "2026-09-23T00:00:00Z", updatedAt: "2026-09-23T00:00:00Z",
+    allowConcurrent: true, createdAt: "2026-09-23T00:00:00Z", updatedAt: "2026-09-23T00:00:00Z",
     githubReview: { scope: "accessible" } };
   const identity = webhookCredentialFixture("review", "test-secret", "caller@example.test");
   const claimed = new Set<string>();
@@ -48,7 +48,7 @@ function fixture(chunks: EngineChunk[] = [{ delta: { content: "확인된 결함�
     return { kind: "github" as const, credentialId: WEBHOOK_CREDENTIAL_ID, body, deliveryId, event: "pull_request", signature: "sha256=" + createHmac("sha256", "test-secret").update(body).digest("hex") };
   }
   return { identity, deps, load, read, reply, calls, rows, claimed, credential, openWorkspace, closeWorkspace, ensureIdle,
-    disable: () => { trigger = { ...trigger, enabled: false }; } };
+    disableReviews: () => { trigger = { ...trigger, githubReview: undefined }; } };
 }
 
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-09-23T00:00:00Z")); });
@@ -241,7 +241,7 @@ describe("signed PR review firing", () => {
     const f = fixture();
     const admitted = await admitDelivery(f.deps, "review", f.credential(), null);
     if (admitted.status !== "accepted") throw new Error("not admitted");
-    f.disable(); await executeDelivery(f.deps, admitted, payload);
+    f.disableReviews(); await executeDelivery(f.deps, admitted, payload);
     expect(f.reply).not.toHaveBeenCalled();
     expect(f.rows[0]).toMatchObject({ status: "skipped", review: { status: "skipped" } });
     const g = fixture(); g.reply.mockRejectedValue(new Error("transport outcome unknown"));

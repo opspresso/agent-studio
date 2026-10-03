@@ -7,16 +7,15 @@ import {
 } from "@/application/messaging/editInPlaceReply";
 import type { ReplyChannel } from "@/domain/messaging/reply";
 import { closeOpenFence } from "@/shared/markdownFence";
+import { cutCodePoints } from "@/shared/utf8Text";
+import { savedFileName } from "@/domain/artifact/types";
 
 /**
  * How a Telegram reply is delivered — the single owner of that decision.
  *
- * Telegram has one way to put a growing answer on screen: send a message, then
- * edit it. There is no streaming call and no status line; what it offers
- * instead is the typing indicator, which lasts five seconds and says only that
- * the bot is doing *something*. So progress is the typing indicator kept alive,
- * and the answer is a message edited in place, paced to what a chat accepts —
- * the shared edit-in-place machinery, told Telegram's caps and calls.
+ * Studio sends a message and edits it as the answer grows. Progress uses the
+ * typing indicator, kept alive while the run works. The shared edit-in-place
+ * machinery owns pacing and splitting under Telegram's limits.
  *
  * Two of Telegram's limits shape the rest. A message holds **4,096 characters**
  * — a long answer becomes several messages, each opened as the one before it
@@ -116,13 +115,12 @@ export function createTelegramReplyChannel(
     },
 
     async sendImage(image, index) {
-      const ext = image.mimeType === "image/png" ? "png" : "jpg";
       await telegram.sendPhoto(token, {
         chatId: target.chatId,
         ...thread,
         photo: Buffer.from(image.b64, "base64"),
-        filename: `generated-${Date.now()}-${index + 1}.${ext}`,
-        ...(image.prompt ? { caption: image.prompt.slice(0, 1024) } : {}),
+        filename: savedFileName(`generated-${Date.now()}-${index + 1}`, image.mimeType),
+        ...(image.prompt ? { caption: cutCodePoints(image.prompt, 1024) } : {}),
       });
     },
 

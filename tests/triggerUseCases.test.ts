@@ -110,9 +110,10 @@ describe("GitHub review trigger configuration", () => {
   });
   it("reports missing Workspace setup and lets the owner disable reviews", async () => {
     const f = fixture(async () => {}, { ...agent, configuration: { ...agent.configuration!, parameters: { piiFiltering: false } } });
-    await f.useCases.create("p", { triggerId: "webhook", enabled: false, githubReview: { scope: "accessible" } }, agent.ownerEmail);
+    await f.useCases.create("p", { triggerId: "webhook" }, agent.ownerEmail);
+    f.storedWebhook("webhook").githubReview = { scope: "accessible" };
     expect((await f.useCases.list("p", agent.ownerEmail))[0]?.reviewIssue).toContain("Workspace");
-    await expect(f.useCases.update("p", "webhook", { enabled: true }, agent.ownerEmail)).rejects.toThrow("Workspace");
+    await expect(f.useCases.update("p", "webhook", { githubReview: { scope: "accessible" } }, agent.ownerEmail)).rejects.toThrow("Workspace");
     expect((await f.useCases.update("p", "webhook", { githubReview: null }, agent.ownerEmail)).reviewIssue).toBeUndefined();
   });
 });
@@ -178,12 +179,21 @@ describe("shared Webhook configuration", () => {
   it("returns settings without personal credentials on creation, updates and reads", async () => {
     const { useCases } = fixture();
     const created = await useCases.create("p", { triggerId: AGENT_WEBHOOK_ID }, "owner@example.com");
-    const updated = await useCases.update("p", AGENT_WEBHOOK_ID, { enabled: false }, "owner@example.com");
+    const updated = await useCases.update("p", AGENT_WEBHOOK_ID, { allowConcurrent: true }, "owner@example.com");
     const listed = await useCases.list("p", "owner@example.com");
-    expect(created.enabled).toBe(true); expect(updated.enabled).toBe(false);
+    expect(updated.allowConcurrent).toBe(true);
     for (const view of [created, updated, ...listed]) {
+      expect(view).not.toHaveProperty("enabled");
       expect(view).not.toHaveProperty("secret"); expect(view).not.toHaveProperty("secretMasked"); expect(view).not.toHaveProperty("executionEmail");
     }
+  });
+
+  it("refuses a separate Webhook activation switch or removal of shared history", async () => {
+    const { useCases } = fixture();
+    await expect(useCases.create("p", { triggerId: AGENT_WEBHOOK_ID, enabled: true }, agent.ownerEmail)).rejects.toThrow("personal tokens");
+    await useCases.create("p", { triggerId: AGENT_WEBHOOK_ID }, agent.ownerEmail);
+    await expect(useCases.update("p", AGENT_WEBHOOK_ID, { enabled: false }, agent.ownerEmail)).rejects.toThrow("personal tokens");
+    await expect(useCases.remove("p", AGENT_WEBHOOK_ID, agent.ownerEmail)).rejects.toThrow("personal Webhook tokens");
   });
 });
 

@@ -1,4 +1,5 @@
 import { buildFileTool } from "@/application/document/fileTool";
+import type { ReadRunFile } from "@/application/artifact/runFileDrafts";
 import type { AgentConfiguration } from "@/domain/agent/types";
 import { descend, type RunOrigin } from "@/domain/execution/actor";
 import { imageDataUrl } from "@/domain/llm/types";
@@ -25,6 +26,7 @@ export async function buildAgentDeps(
   deps: ExecutionDeps, configuration: AgentConfiguration, agentName: string, recordUsage: RecordUsageFn,
   origin: RunOrigin, signal?: AbortSignal, callMcpTool?: AgentDeps["callMcpTool"],
   runtime?: RuntimeTurnPersistence,
+  readRunFile?: ReadRunFile,
 ): Promise<AgentDeps> {
   if (configuration.parameters.modelRouting !== undefined && typeof configuration.parameters.modelRouting !== "boolean") throw new ValidationError("Agent model routing must be a boolean");
   const routingConfigured = configuration.parameters.modelRouting !== undefined;
@@ -41,12 +43,12 @@ export async function buildAgentDeps(
     ...common,
     ...(callMcpTool ? { callMcpTool } : {}),
     canDelegate: (configuration.subagentList?.length ?? 0) > 0,
-    loadAgent: (name, request) => prepareSubagent(deps, configuration, name, request, recordUsage, origin, runtime),
+    loadAgent: (name, request) => prepareSubagent(deps, configuration, name, request, recordUsage, origin, runtime, readRunFile),
     generateImage: buildImageGenerator(deps, imageModel, agentName, recordUsage, signal),
     editImage: buildImageEditor(deps, imageModel, agentName, recordUsage, signal),
     fetchUrl: buildUrlFetcher(deps, configuration),
     saveFile: buildFileSaver(deps),
-    fileTool: buildFileTool(deps, agentName, origin, signal),
+    fileTool: buildFileTool({ ...deps, readRunFile }, agentName, origin, signal),
     audioTools: configuration.parameters.audioProcessing ? await deps.audioTools?.(agentName, origin) : undefined,
     workspaceTool: configuration.parameters.workspaceTools ? await deps.workspaceTool?.(agentName, origin) : undefined,
     readSlack: await buildSlackReader(deps, configuration, agentName),
@@ -58,6 +60,7 @@ export async function prepareSubagent(
   deps: ExecutionDeps, parent: AgentConfiguration, name: string, task: AgentTask,
   recordUsage: RecordUsageFn, parentOrigin: RunOrigin,
   runtime?: RuntimeTurnPersistence,
+  readRunFile?: ReadRunFile,
 ): Promise<PreparedAgent> {
   task.signal?.throwIfAborted();
   await executionAuthorization(deps, name, parentOrigin)();
@@ -89,7 +92,7 @@ export async function prepareSubagent(
   const resolved = await resolveRunTools(deps, configuration, task.signal, discoveryQueries(configuration, [task.message], memory.input.remembered), origin, recordUsage);
   try {
     runtime?.checkBinding(`${task.invocationId ?? name}/tools`, runtimeFingerprint([resolved.mcp.signature, resolved.subagents, resolved.skills]));
-    const childDeps = await buildAgentDeps(deps, resolved.configuration, name, recordUsage, origin, task.signal, resolved.mcp.callMcpTool, runtime);
+    const childDeps = await buildAgentDeps(deps, resolved.configuration, name, recordUsage, origin, task.signal, resolved.mcp.callMcpTool, runtime, readRunFile);
     return {
       deps: childDeps,
       input: { ...baseInput, ...memory.input, skills: resolved.skills, subagents: resolved.subagents, mcpTools: resolved.mcp.mcpTools, mcpServers: resolved.mcp.mcpServers, canDispatch: false },

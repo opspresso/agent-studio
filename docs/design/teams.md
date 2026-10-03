@@ -17,12 +17,14 @@ masked·빈 client secret은 기존 값을 유지한다. 저장은 Microsoft를 
 | 경계 | 검사 |
 |---|---|
 | 서명 | RS256, Bot Framework discovery가 제공한 JWKS의 키 |
+| 채널 | activity의 channelId는 `msteams`. 서명 키에 비어 있지 않은 endorsements가 있으면 `msteams`를 포함해야 함 |
 | issuer·audience | `https://api.botframework.com`, 이 봇의 App ID(GUID 대소문자 무관) |
 | 시간 | 유한한 exp와 선택적 nbf, 5분 skew |
 | 답변 주소 | token의 serviceurl과 activity의 serviceUrl 정규화 값이 같아야 함 |
 
 Emulator token은 받지 않는다. 서명 키는 하루 캐시하며 조회 시도는 실패해도 최소 1분 간격으로
 제한한다. 동시 호출은 같은 조회를 기다리며 metadata HTTP 실패와 만료된 캐시 키는 인증에 쓰지 않는다.
+endorsements가 없거나 빈 키는 [공식 SDK의 규칙](https://github.com/microsoft/botbuilder-js/blob/main/libraries/botframework-connector/src/auth/jwtTokenExtractor.ts)에 따라 채널 제한이 없는 키로 취급한다.
 
 app token은 지정한 tenant 또는 기본 `botframework.com` tenant에서 받는다.
 캐시는 App ID·tenant·secret hash로 구분하고 만료 1분 전에 폐기한다.
@@ -66,7 +68,8 @@ ACK 후 유실을 자동 재실행하지 않으며 외부 효과의 exactly-once
 
 앱은 Bot Framework에서 과거 activity를 조회하지 않는다. `runRememberedTurn`이 Telegram과
 같은 [transcript 계약](telegram.md#히스토리)으로 질문·답과 파일만 전달한 턴을 기록한다.
-읽기 실패·문맥 생략은 warning, 기록 실패는 로그로 확인한다.
+읽기 실패·문맥 생략은 warning으로 알린다. 기록 실패는 답변 뒤 별도 warning과 로그로 알리며,
+warning 전송 실패로 완료한 실행을 다시 처리하지 않는다.
 
 conversation은 `teams:{conversation.id}`다. actor와 화자 식별은 aadObjectId를 우선하고
 없으면 from.id를 사용한다. tenant ID도 필수이며

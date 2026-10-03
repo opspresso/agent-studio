@@ -78,7 +78,7 @@ export async function preparePullRequestReview(
       throw error;
     }
     const [current, agent] = await Promise.all([deps.triggers.get(agentName, triggerId), deps.agents.get(agentName)]);
-    return current?.kind === "webhook" && current.enabled && agent !== null &&
+    return current?.kind === "webhook" && agent !== null &&
       !reviewSetupIssue(agent) && reviewAllowsRepository(current.githubReview, target.repository);
   }
   if (!await currentAuthorization()) return { status: "skipped", reason: "Review automation or its personal Webhook caller is no longer authorized." };

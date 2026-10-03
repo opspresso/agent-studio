@@ -150,6 +150,22 @@ describe("settingsUseCases.update access-control guards", () => {
 });
 
 describe("settingsUseCases.update", () => {
+  it.each(["not a URL", "javascript:alert(1)", "https://user:secret@studio.example.com", "https://studio.example.com?token=secret", "https://studio.example.com#fragment"])("refuses an unusable public deployment URL before saving: %s", async (publicBaseUrl) => {
+    const initial = { publicBaseUrl: "https://studio.example.com", updatedAt: "2026-01-01T00:00:00Z" };
+    const { repo, current } = fakeRepo(initial);
+    await expect(createSettingsUseCases(repo).update({ publicBaseUrl }, ADMIN)).rejects.toThrow("Public deployment URL");
+    expect(current()).toBe(initial);
+  });
+
+  it("accepts internal HTTP deployment URLs and permits clearing the override", async () => {
+    const { repo, current } = fakeRepo();
+    const useCases = createSettingsUseCases(repo);
+    await useCases.update({ publicBaseUrl: " http://studio.internal:3000/ " }, ADMIN);
+    expect(current()?.publicBaseUrl).toBe("http://studio.internal:3000/");
+    await useCases.update({ publicBaseUrl: "" }, ADMIN);
+    expect(current()?.publicBaseUrl).toBeUndefined();
+  });
+
   it("accepts installed branding and rejects unavailable assets or invalid names", async () => {
     process.env.SERVICE_NAME = "Environment Name";
     const { repo, current } = fakeRepo();

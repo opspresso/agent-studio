@@ -9,6 +9,7 @@ import type { RuntimeTurn } from "./types";
 import type { RuntimeEmitter } from "./output";
 import { modelResponseUsage, modelResponseIsTruncated } from "./modelUsage";
 import { withoutNativeTracing } from "./tracing";
+import { authorizeRuntimeEffect } from "./policy";
 
 /** Focused inference inside the admitted Run, with no tools, credentials or second Agent loop. */
 export function createRuntimeModelTask(deps: AgentDeps, input: RunAgentInput, turn: RuntimeTurn, images: ImageRegistry, emit: RuntimeEmitter) {
@@ -45,7 +46,7 @@ export function createRuntimeModelTask(deps: AgentDeps, input: RunAgentInput, tu
             ...(purpose === "reasoning" ? { reasoning: { effort: input.parameters?.reasoningEffort ?? "medium" } } : {}),
           },
         };
-        await deps.authorizeExecution?.();
+        await authorizeRuntimeEffect(deps, input.signal);
         const native = await withoutNativeTracing(async () => (await deps.channel.getModel(model)).getResponse(request));
         const usage = modelResponseUsage(model, native);
         generation.spanData.usage = { input_tokens: usage.inputTokens, output_tokens: usage.outputTokens, cost_usd: usage.costUsd,

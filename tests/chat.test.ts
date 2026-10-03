@@ -922,20 +922,19 @@ describe("chat image attachments", () => {
    * Setup failures after claiming the run lease must release it before returning
    * the error; no executable run exists for a Stop request to cancel.
    */
-  it("releases the run lease when setup fails after claiming it", async () => {
+  it.each(["create", "send"])("releases the lease without uploading attachments when %s cannot reserve a sequence", async action => {
     const { repo, state } = makeChatRepo(chatFixture("owner@x.com"));
     repo.reserveMessageSeq = async () => {
       throw new Error("item store unavailable");
     };
-
-    await expect(
-      sendMessage(makeDeps(repo, { agents: withConfigurations(availableAgents, (savedConfigurations).get) }), {
-        chatId: "c1",
-        content: "hey",
-        user: { userId: "studio-user-1", email: "owner@x.com" },
-      }),
-    ).rejects.toThrow("item store unavailable");
-
+    const { storage, puts } = fakeArtifacts();
+    const deps = makeDeps(repo, { artifacts: storage, agents: withConfigurations(availableAgents, savedConfigurations.get) });
+    const user = { userId: "studio-user-1", email: "owner@x.com" };
+    const pending = action === "create"
+      ? createChat(deps, { agentName: "p1", firstMessage: "hey", images: [PNG], user })
+      : sendMessage(deps, { chatId: "c1", content: "hey", images: [PNG], user });
+    await expect(pending).rejects.toThrow("item store unavailable");
+    expect(puts).toEqual([]);
     expect(state.activeRunId).toBeUndefined();
   });
 

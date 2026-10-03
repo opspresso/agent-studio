@@ -35,6 +35,14 @@ test("runs inside one paragraph join without a gap", () => {
   assert.equal(documentXmlToText(paragraph("한", "글", " 문서")).text, "한글 문서");
 });
 
+test.each([
+  ["a ", " b", "a b"],
+  ["a\t", " b", "a\tb"],
+  ["a ", "\tb", "a\tb"],
+])("whitespace normalization crosses adjacent identical runs: %j %j", (first, second, expected) => {
+  assert.equal(documentXmlToText(paragraph(first, second)).text, expected);
+});
+
 test("tabs and breaks survive as themselves", () => {
   const xml = "<w:p><w:r><w:t>a</w:t><w:tab/><w:t>b</w:t><w:br/><w:t>c</w:t></w:r></w:p>";
   // A `w:br` ends the block: a second line inside one paragraph is a line the

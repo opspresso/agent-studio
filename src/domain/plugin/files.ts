@@ -6,19 +6,21 @@
  */
 
 import type { SkillRoot, SkillTreeEntry } from "@/domain/skill/files";
-
-/**
- * This org's reverse-domain client-extension namespace, per the spec's
- * convention. `mcp/<server>.md` inside it carries what the closed mcp.json
- * schema has no field for: the server's model-facing description and the
- * operator notes. Other clients ignore the directory entirely.
- */
-export const AGENT_STUDIO_EXTENSION_DIR = "org.opspresso.agent-studio";
+import { STUDIO_PLUGIN_EXTENSION } from "./types";
 
 export interface PluginRoot {
   /** Directory holding plugin.json, "" for the repository root. */
   rootPath: string;
   manifestPath: string;
+}
+
+/** Closest strict ancestor, with the repository root represented by an empty path. */
+function ancestorRoot(path: string, roots: ReadonlySet<string>): string | undefined {
+  for (let at = path.lastIndexOf("/"); at > 0; at = path.lastIndexOf("/", at - 1)) {
+    const parent = path.slice(0, at);
+    if (roots.has(parent)) return parent;
+  }
+  return path !== "" && roots.has("") ? "" : undefined;
 }
 
 /**
@@ -47,12 +49,9 @@ export function selectPluginRoots(entries: SkillTreeEntry[]): {
 
   const roots: PluginRoot[] = [];
   const nested: PluginRoot[] = [];
+  const paths = new Set(all.map(root => root.rootPath));
   for (const candidate of all) {
-    const inside = all.some(
-      (other) =>
-        other !== candidate &&
-        (other.rootPath === "" || candidate.rootPath.startsWith(`${other.rootPath}/`)),
-    );
+    const inside = ancestorRoot(candidate.rootPath, paths) !== undefined;
     (inside ? nested : roots).push(candidate);
   }
   return { roots, nested };
@@ -85,14 +84,10 @@ export function groupEntriesByRoot(
     wholeTree.push(...entries);
     return byRoot;
   }
+  const paths = new Set(byRoot.keys());
   for (const entry of entries) {
-    for (let at = entry.path.lastIndexOf("/"); at > 0; at = entry.path.lastIndexOf("/", at - 1)) {
-      const owner = byRoot.get(entry.path.slice(0, at));
-      if (owner) {
-        owner.push(entry);
-        break;
-      }
-    }
+    const owner = ancestorRoot(entry.path, paths);
+    if (owner !== undefined) byRoot.get(owner)!.push(entry);
   }
   return byRoot;
 }
@@ -105,12 +100,8 @@ export function excludeSubtrees(
   if (roots.length === 0) {
     return entries;
   }
-  return entries.filter(
-    (entry) =>
-      !roots.some(
-        (root) => root.rootPath === "" || entry.path.startsWith(`${root.rootPath}/`),
-      ),
-  );
+  const paths = new Set(roots.map(root => root.rootPath));
+  return entries.filter(entry => ancestorRoot(entry.path, paths) === undefined);
 }
 
 /**
@@ -146,8 +137,8 @@ export function selectPluginSkillRoots(
 export function mcpDocServerName(path: string, root: PluginRoot): string | null {
   const prefix =
     root.rootPath === ""
-      ? `${AGENT_STUDIO_EXTENSION_DIR}/mcp/`
-      : `${root.rootPath}/${AGENT_STUDIO_EXTENSION_DIR}/mcp/`;
+      ? `${STUDIO_PLUGIN_EXTENSION}/mcp/`
+      : `${root.rootPath}/${STUDIO_PLUGIN_EXTENSION}/mcp/`;
   if (!path.startsWith(prefix) || !path.endsWith(".md")) {
     return null;
   }

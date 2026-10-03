@@ -24,7 +24,7 @@ import { attributeOf, localName, walkXml, type XmlHandler } from "../xml";
 import { openZip } from "../zip";
 import { DocumentError } from "../errors";
 import { xmlElements } from "../edit/xmlElements";
-import { drawnMarker, type ReadBlock, type ReadCell, type ReadRow } from "./blocks";
+import { drawnMarker, ReadListBuilder, type ReadBlock, type ReadCell, type ReadRow } from "./blocks";
 import { partOfTarget, relationshipsOf } from "./docx";
 import { collapseRuns } from "./lines";
 import { blocksToMarkdown } from "./serialize";
@@ -125,6 +125,7 @@ function on(attributes: string, name: string): boolean {
 
 class Extractor implements XmlHandler {
   private readonly blocks: ReadBlock[] = [];
+  private readonly lists = new ReadListBuilder(this.blocks);
   private runs: Run[] = [];
   private pending = "";
   private emphasis: Emphasis = {};
@@ -146,8 +147,6 @@ class Extractor implements XmlHandler {
   private numbering: { scheme: string; start?: number } | undefined;
   /** DrawingML numbers each paragraph level within its text body. */
   private readonly autoNumbers = new Map<number, { scheme: string; next: number }>();
-  /** Numbers expected by the current Markdown list, one counter per level. */
-  private nextNumbers: number[] = [];
   readonly observed = new Set<string>();
 
   constructor(private readonly rels: Map<string, string>) {}
@@ -234,27 +233,8 @@ class Extractor implements XmlHandler {
         }
       }
       const ordered = numbering !== undefined || drawn?.ordered === true;
-      const last = this.blocks[this.blocks.length - 1];
       const item = { runs, depth: Math.min(level, 4) };
-      // Markdown counts within each level. An explicit restart that differs
-      // from that counter starts a new block, preserving the stated number.
-      const continues = start === undefined || start === (this.nextNumbers[item.depth] ?? 1);
-      if (last?.kind === "list" && last.ordered === ordered && continues) {
-        last.items.push(item);
-        this.nextNumbers.length = item.depth + 1;
-        this.nextNumbers[item.depth] = (start ?? this.nextNumbers[item.depth] ?? 1) + 1;
-        return;
-      }
-      this.nextNumbers = [];
-      this.nextNumbers[item.depth] = (start ?? 1) + 1;
-      this.blocks.push({
-        kind: "list",
-        ordered,
-        items: [item],
-        // The number the deck drew, so a list continued on a second slide is
-        // not renumbered into saying it started over.
-        ...(start !== undefined && start !== 1 ? { marks: { start } } : {}),
-      });
+      this.lists.append(ordered, item, start);
       return;
     }
     this.blocks.push({ kind: "paragraph", runs, ...marks });

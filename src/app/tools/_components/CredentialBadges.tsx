@@ -3,16 +3,8 @@ import { BADGE } from "@/app/_components/badgeColors";
 import type { McpServer } from "../api";
 
 /**
- * How an entry can be authenticated, at a glance.
- *
- * Both badges can appear at once, and the order is the order they are tried at
- * dispatch: an agent's OAuth connection first, the entry's own headers as the
- * fallback for agents that have not connected. Neither badge means the entry
- * sends no credential at all, which is worth seeing.
- *
- * Colour carries whether a credential is there; the text carries which kind. An
- * entry that sends none is the one worth spotting, so it is the only one that is
- * not green.
+ * Registered credential settings. OAuth requires the caller's personal grant;
+ * the header badge counts registry defaults. Connection status is checked separately.
  */
 export function CredentialBadges({ server }: { server: McpServer }) {
   const headerCount = Object.keys(server.headers ?? {}).length;

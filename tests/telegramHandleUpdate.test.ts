@@ -501,6 +501,36 @@ describe("handleTelegramUpdate", () => {
     expect(answer.endsWith("…[truncated]")).toBe(true);
   });
 
+  it.each(["user", "assistant"] as const)("reports a failed %s history write after keeping the delivered answer", async role => {
+    const { telegram, sent, finalText } = makeTelegramFake();
+    const { deps, runs } = makeDeps([{ delta: { content: "Delivered answer" } }, { done: true }], telegram);
+    const append = vi.spyOn(deps.transcripts!, "append").mockImplementation(async (_agent, _key, turn) => {
+      if (turn.role === role) throw new Error("private storage detail");
+    });
+    await handleTelegramUpdate(deps, dispositionOf({ update_id: 1, message: message() }), BINDING);
+    expect(finalText()).toBe("Delivered answer");
+    expect(append).toHaveBeenCalledTimes(2);
+    expect(runs).toHaveLength(1);
+    const warnings = sent.filter(item => /history.*could not.*saved/i.test(item.text));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]!.text).not.toContain("private storage detail");
+  });
+
+  it("does not make an answered update replayable when the history warning cannot be delivered", async () => {
+    const { telegram, finalText } = makeTelegramFake();
+    const { deps, runs } = makeDeps([{ delta: { content: "Delivered answer" } }, { done: true }], telegram);
+    vi.spyOn(deps.transcripts!, "append").mockRejectedValue(new Error("storage unavailable"));
+    const send = telegram.sendMessage;
+    const sent = vi.spyOn(telegram, "sendMessage").mockImplementation(async (token, args) => {
+      if (/history.*could not.*saved/i.test(args.text)) throw new Error("Telegram unavailable");
+      return send(token, args);
+    });
+    await expect(handleTelegramUpdate(deps, dispositionOf({ update_id: 1, message: message() }), BINDING)).resolves.toBeUndefined();
+    expect(finalText()).toBe("Delivered answer");
+    expect(runs).toHaveLength(1);
+    expect(sent.mock.calls.filter(([, args]) => /history.*could not.*saved/i.test(args.text))).toHaveLength(1);
+  });
+
   it("still answers, and says so, when the history cannot be read", async () => {
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     vi.spyOn(console, "log").mockImplementation(() => {});

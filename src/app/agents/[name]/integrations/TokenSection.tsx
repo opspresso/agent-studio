@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Alert, Badge, Group, Stack, Text } from "@mantine/core";
+import { Alert, Badge, Stack, Text } from "@mantine/core";
 import { CopyableUrl } from "@/app/_components/CopyableUrl";
 import { agentWebhookPath } from "@/domain/trigger/types";
 import type { AgentCredentialPurpose } from "@/domain/auth/agentCredential";
@@ -12,7 +12,10 @@ import { generateAgentToken, getAgentToken, revealAgentToken, revokeAgentToken, 
 import { useLocale, useT } from "@/app/_i18n/provider";
 import { formatDate } from "@/shared/date";
 
-export function TokenSection({ agentName, purpose, onSelect, selected, embedded = false }: { agentName: string; purpose: AgentCredentialPurpose; onSelect?: () => void; selected?: boolean; embedded?: boolean }) {
+export function TokenSection({ agentName, purpose, onSelect, selected, onChange, children }: {
+  agentName: string; purpose: AgentCredentialPurpose; onSelect?: () => void; selected?: boolean;
+  onChange?: () => void; children?: React.ReactNode;
+}) {
   const t = useT();
   const locale = useLocale();
   const label = t(purpose === "api" ? "pset.apiToken" : "webhook.personalToken");
@@ -38,15 +41,15 @@ export function TokenSection({ agentName, purpose, onSelect, selected, embedded 
       onGenerate={async () => {
         const result = await generateAgentToken(agentName, purpose);
         setStatus({ configured: true, masked: result.masked, credentialId: result.credentialId, createdAt: result.createdAt, canIssue: true });
+        onChange?.();
         return result.token;
       }}
-      onRevoke={async () => { await revokeAgentToken(agentName, purpose); setStatus({ configured: false, canIssue: status.canIssue }); }} />
+      onRevoke={async () => { await revokeAgentToken(agentName, purpose); setStatus({ configured: false, canIssue: status.canIssue }); onChange?.(); }} />
       {purpose === "webhook" && status.credentialId && <>
         <CopyableUrl url={`${window.location.origin}${agentWebhookPath(agentName, status.credentialId)}`} />
         <Text size="sm" c="dimmed">{t("webhook.githubHint")}</Text>
       </>}
     </Stack>;
-  if (embedded) return <Stack gap="sm"><Group justify="space-between"><Text size="sm" fw={600}>{label}</Text>{badge}</Group>{content}</Stack>;
-  return <CollapsibleSection title={label} onSelect={onSelect} selected={selected}
-    selectLabel={onSelect ? t("pint.historyView") : undefined} badge={badge}>{content}</CollapsibleSection>;
+  return <CollapsibleSection title={purpose === "webhook" ? t("webhook.section") : label} onSelect={onSelect} selected={selected}
+    selectLabel={onSelect ? t("pint.historyView") : undefined} badge={badge}><Stack gap="md">{content}{children}</Stack></CollapsibleSection>;
 }

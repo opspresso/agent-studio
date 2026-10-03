@@ -50,7 +50,8 @@ export const runtimeSessionRepository: RuntimeSessionRepository = {
   },
   async sweepExpired(now) {
     const rows = await sql<{ session_id: string }>(
-      `DELETE FROM runtime_sessions WHERE session_id IN
+      // Recheck the target row after a lock wait; the candidate list uses an older snapshot.
+      `DELETE FROM runtime_sessions WHERE expires_at <= $1 AND session_id IN
        (SELECT session_id FROM runtime_sessions WHERE expires_at <= $1 ORDER BY expires_at LIMIT 1000)
        RETURNING session_id`, [now],
     );

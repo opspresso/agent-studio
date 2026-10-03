@@ -58,10 +58,7 @@ export function parseImageBytes(
  * this deployment cannot apply its DNS and redirect policy.
  */
 export function isInlineImageDataUrl(url: string): boolean {
-  const match = /^data:([^;,]+)(?:;[^;,]*)*;base64,(.+)$/s.exec(url);
-  const mimeType = match?.[1];
-  const b64 = match?.[2];
-  return Boolean(mimeType && b64 && parseImageBytes({ b64, mimeType }));
+  return parseImageDataUrl(url) !== null;
 }
 
 /** Encode image bytes as the `data:` URL an `image_url` content part carries. */
@@ -76,11 +73,8 @@ export function imageDataUrl(image: { b64: string; mimeType: string }): string {
 export function parseImageDataUrl(
   url: string,
 ): { b64: string; mimeType: SupportedImageType } | null {
-  if (!isInlineImageDataUrl(url)) {
-    return null;
-  }
   const match = /^data:([^;,]+)(?:;[^;,]*)*;base64,(.+)$/s.exec(url);
-  const mimeType = match?.[1] as SupportedImageType | undefined;
+  const mimeType = match?.[1];
   const b64 = match?.[2];
-  return mimeType && b64 ? { b64, mimeType } : null;
+  return mimeType && b64 ? parseImageBytes({ b64, mimeType }) : null;
 }

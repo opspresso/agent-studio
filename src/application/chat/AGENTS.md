@@ -7,6 +7,8 @@ there are no framework, adapter or composition-root imports here. Read
 ## Ownership
 
 - `run.ts` folds display output and persists it. Admission reads the Agent’s current configuration.
+- `startChatTurn.ts` prepares new user turns for both creation and subsequent sends: claim, sequence,
+  attachments, user-row persistence and lazy execution. Approval resume adds no user turn.
 - `runLease.ts` claims one active run per chat; `runLog.ts` owns terminal logging and release.
 - `replayRunLog.ts` replays/follows a detached run; `cancelRun.ts` persists and polls cancellation.
 - `workspaceContinuation.ts` consumes durable Workspace action results once, claims the source chat lease,
@@ -69,6 +71,8 @@ there are no framework, adapter or composition-root imports here. Read
   images and image-edit handles; remote URLs never become provider-managed fetches.
 - The run bracket captures generated image/file bytes. Chat stores references and signs them
   per reader. Original attachments go through the artifact use case with their user actor.
+- File drafts stay private to the run until the last successful version is published. Preserve
+  `replacedArtifactIds` so reads, live display and tail merges remove earlier generated attachments.
 - Files and images are separate axes. Files do not enter model context. A file-only run must
   persist its message; a failed file store reports that no download exists.
 - Artifact storage absence/failure is visible. Session model bytes do not provide a downloadable

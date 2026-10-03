@@ -20,8 +20,8 @@ type RouteContext = { params: Promise<{ name: string }> };
  * comes from the registry, so the SSRF surface is a run's.
  *
  * Preview requires member access because arbitrary draft bindings can issue
- * outbound discovery requests. Guests may read stored registries and run an
- * accessible Agent, but do not probe external services with editor drafts.
+ * outbound discovery requests. Guests have read-only access to stored registries
+ * and accessible Agents.
  *
  * When the draft enables memory recall and supplies a preview request, this
  * route also makes the same read-only recall call as a run. That does not widen

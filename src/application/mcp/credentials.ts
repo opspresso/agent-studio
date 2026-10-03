@@ -14,7 +14,7 @@ export interface McpCredentials {
   unavailable?: string;
 }
 
-/** One credential policy for Agent execution, personal probes and native GitHub operations. */
+/** One credential policy for Agent MCP execution and personal probes. */
 export async function resolveMcpCredentials(
   deps: { cipher: SecretCipher; auth?: McpAuthProvider },
   agentName: string | undefined,

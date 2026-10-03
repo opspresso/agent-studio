@@ -183,12 +183,10 @@ function decodeDeclared(bytes: Uint8Array, charset: string | undefined): string 
     return decodeUtf8Text(bytes);
   }
   try {
-    // `fatal` off: a legacy page with a stray byte is still worth reading, and
-    // unlike the UTF-8 path there is no round-trip that could confirm it anyway.
+    // Legacy web encodings tolerate malformed bytes; attachments require valid UTF-8.
     return new TextDecoder(normalized).decode(bytes);
   } catch {
-    // An encoding label this runtime does not know. UTF-8 is the better guess
-    // than nothing, and its round trip still refuses genuine binary.
+    // Unsupported charset labels fall back to strict UTF-8 validation.
     return decodeUtf8Text(bytes);
   }
 }

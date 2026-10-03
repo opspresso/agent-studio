@@ -63,7 +63,7 @@ export interface AgentTeamsResult {
 }
 
 /**
- * Owner or admin, unlike the shared agent catalog: this exposes the masked
+ * Owner-only, unlike the shared agent catalog: this exposes the masked
  * secret. Checked here rather than at the route so no verb can be added
  * without it.
  */
@@ -155,8 +155,8 @@ export function resolveAgentTeamsRuntime(
 }
 
 /**
- * Prove the stored registration works: acquire a token with it. Owner-gated by
- * the caller; `authenticate` is injected so this stays free of the HTTP client.
+ * Check ownership and acquire a token with the stored registration.
+ * `authenticate` is injected so this stays free of the HTTP client.
  */
 export async function testAgentTeams(
   repo: AgentRepository,

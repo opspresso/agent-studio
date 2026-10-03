@@ -1,6 +1,7 @@
 "use client";
 
-import { Alert, Button, Group, Modal, Stack, Text } from "@mantine/core";
+import { ConfigurationFields } from "@/app/_components/ConfigurationFields";
+import { Alert, Button, Group, Modal, Text } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
 
 /**
@@ -48,7 +49,7 @@ export function FormModal({
           if (!submitting && !submitDisabled) onSubmit();
         }}
       >
-        <Stack gap="md">
+        <ConfigurationFields disabled={submitting}>
           {children}
 
           {error && (
@@ -75,7 +76,7 @@ export function FormModal({
               {submitLabel}
             </Button>
           </Group>
-        </Stack>
+        </ConfigurationFields>
       </form>
     </Modal>
   );

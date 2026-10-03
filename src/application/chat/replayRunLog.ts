@@ -11,8 +11,8 @@
  *
  * - a terminal entry — the run finished, and the assistant message is already
  *   written (see the ordering `runLog.ts` keeps);
- * - the claim is gone or names another run — the run finished without ever being
- *   left, so it wrote no log at all and its answer is in the conversation;
+ * - the claim is gone or names another run — drain the last committed log rows;
+ *   a run that stayed connected wrote no replay log and its answer is in the conversation;
  * - the claim is there but expired — the instance running it died. Nothing will
  *   ever finish this, and saying so is the only honest ending.
  */
@@ -97,6 +97,7 @@ async function* replayRunLog(
   let nextSeq = 0;
   let quietSince = Date.now();
   let noticed = false;
+  let finalDrain = false;
 
   for (;;) {
     const entries = await deps.runLog.read(
@@ -133,6 +134,10 @@ async function* replayRunLog(
       }
     }
 
+    if (finalDrain) {
+      if (entries.length === RUN_LOG_PAGE_SIZE) continue;
+      return;
+    }
     if (entries.length > 0) {
       quietSince = Date.now();
       if (entries.length === RUN_LOG_PAGE_SIZE) {
@@ -145,10 +150,10 @@ async function* replayRunLog(
       // it doubled the cost of exactly the iterations that were going well.
       const active = await deps.chats.getActiveRun(input.chatId);
       if (active === null || active.runId !== input.runId) {
-        // No terminal entry and no claim: the run finished with a reader
-        // attached, so it never wrote itself down. Its answer is in the
-        // conversation, which the client fetches once this stream ends.
-        return;
+        // Terminal logging precedes lease release. The empty read can predate
+        // that final write, so drain once more before declaring the log complete.
+        finalDrain = true;
+        continue;
       }
       if (!isLiveClaim(active, Date.now())) {
         yield { error: LOST_RUN_ERROR };

@@ -22,6 +22,13 @@ export interface SlackChannelListing {
   truncated: boolean;
 }
 
+export interface SlackThreadListing {
+  /** Oldest first, within the inspected pages. */
+  messages: SlackMessage[];
+  /** Later replies remain unread after a result or page bound. */
+  truncated: boolean;
+}
+
 /**
  * The reads a run's Slack tools are served from.
  *
@@ -42,7 +49,7 @@ export interface SlackReaderPort {
   threadReplies(
     token: string,
     args: { channel: string; ts: string; limit?: number },
-  ): Promise<SlackMessage[]>;
+  ): Promise<SlackThreadListing>;
   /** Filter before the result limit; the adapter bounds page inspection and reports omissions. */
   listChannels(token: string, args?: SlackChannelQuery): Promise<SlackChannelListing>;
   /**
@@ -63,12 +70,6 @@ export interface SlackReaderPort {
    * agent using caller context and this tool should not pay for it twice.
    */
   userDetail(token: string, userId: string): Promise<SlackUserDetail | null>;
-  /**
-   * Resolve the address behind a Slack user ID for artifact ownership, never
-   * for a prompt. Return null when email is unavailable; the Agent index still
-   * keeps unattributed outputs accessible to their managers.
-   */
-  userEmail(token: string, userId: string): Promise<string | null>;
   /**
    * People whose name or handle contains `query`.
    *

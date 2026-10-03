@@ -550,7 +550,7 @@ describe("beginAuthorization", () => {
     );
   });
 
-  it("refuses a non-owner", async () => {
+  it("refuses an email inconsistent with the authenticated account", async () => {
     const uc = createMcpAuthUseCases(harness({ connection: {} }).deps);
     await expect(uc.beginAuthorization("p", "slack", { userId: "p", email: "someone@example.com" })).rejects.toThrow(
       ForbiddenError,
@@ -761,7 +761,7 @@ describe("completeAuthorization", () => {
   });
 });
 
-describe("provider accounts for existing Agent connections", () => {
+describe("provider accounts for existing personal MCP connections", () => {
   it.each(["disabled", "different_client", "different_lookup"] as const)(
     "validates cached identities for a connection needing reauthorization after %s",
     async (change) => {
@@ -882,7 +882,7 @@ describe("provider accounts for existing Agent connections", () => {
     expect(read).not.toHaveBeenCalled();
   });
 
-  it("does not query private provider identity for a non-owner", async () => {
+  it("rejects an account email mismatch before provider identity lookup", async () => {
     const h = connected();
     const read = vi.fn();
     h.deps.accounts.read = read;
@@ -1319,9 +1319,7 @@ describe("listing a server's tools as the agent", () => {
     expect(h.probes).toHaveLength(3);
   });
 
-  it("sends the agent's token, not just the registry entry's headers", async () => {
-    // The registry probe carries only the entry's static headers, so against an
-    // OAuth server it can do nothing but 401 — the credential is the agent's.
+  it("sends the caller's personal token when listing OAuth server tools", async () => {
     const h = harness({ connection: {} });
     const uc = createMcpAuthUseCases(h.deps);
 
@@ -1354,7 +1352,7 @@ describe("listing a server's tools as the agent", () => {
     const h = harness({
       connection: {},
       server: { ...SERVER, headers: { Authorization: "enc:Bearer registry-pat" } },
-      authHeaders: { headers: {}, unavailable: "slack has not been connected by this agent." },
+      authHeaders: { headers: {}, unavailable: "slack has not been connected by this caller." },
     });
     const uc = createMcpAuthUseCases(h.deps);
 
@@ -1365,7 +1363,7 @@ describe("listing a server's tools as the agent", () => {
   it("layers the binding's header overrides the way a run does", async () => {
     // The override editor and this list sit in the same dialog. A list assembled
     // from the registry entry alone would answer a question nobody asked — and
-    // the agent's Authorization still goes on last, so an Agent binding
+    // the caller's Authorization still goes on last, so an Agent binding
     // cannot substitute its own.
     const h = harness({
       connection: {},
@@ -1429,7 +1427,7 @@ describe("listing a server's tools as the agent", () => {
     expect(h.unauthorized).toEqual([]);
   });
 
-  it("refuses a non-owner", async () => {
+  it("refuses an email inconsistent with the authenticated account", async () => {
     const uc = createMcpAuthUseCases(harness({ connection: {} }).deps);
     await expect(uc.listTools("p", "slack", { userId: "p", email: "someone@example.com" })).rejects.toThrow(ForbiddenError);
   });

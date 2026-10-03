@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 const { behavior, readinessSql } = vi.hoisted(() => ({
   behavior: { mode: "ok" as "ok" | "boom" },
@@ -16,14 +16,7 @@ vi.mock("@/infrastructure/db/client", () => ({
   },
 }));
 
-// The channel config is injected, so the probe reaches no settings module.
-const loadChannelConfig = async () => ({ baseUrl: "http://llm.test/v1", apiKey: "k" });
-
-const { dbReachable, llmReachable } = await import("@/infrastructure/health/probes");
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
+const { dbReachable } = await import("@/infrastructure/health/probes");
 
 describe("dbReachable", () => {
   it("resolves when the datastore responds", async () => {
@@ -35,24 +28,5 @@ describe("dbReachable", () => {
   it("rejects when the datastore errors", async () => {
     behavior.mode = "boom";
     await expect(dbReachable()).rejects.toThrow("throttled");
-  });
-});
-
-describe("llmReachable", () => {
-  it("resolves on any HTTP response and probes /models without a completion", async () => {
-    const fetchMock = vi.fn(async () => new Response("{}", { status: 404 }));
-    vi.stubGlobal("fetch", fetchMock);
-    await expect(llmReachable(loadChannelConfig)).resolves.toBeUndefined();
-    expect(fetchMock).toHaveBeenCalledWith("http://llm.test/v1/models", expect.anything());
-  });
-
-  it("rejects on a network error", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => {
-        throw new Error("ECONNREFUSED");
-      }),
-    );
-    await expect(llmReachable(loadChannelConfig)).rejects.toThrow("ECONNREFUSED");
   });
 });

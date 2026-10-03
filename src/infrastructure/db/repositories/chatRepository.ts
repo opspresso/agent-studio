@@ -1,4 +1,4 @@
-import { keys } from "@/infrastructure/db/keys";
+import { CHAT_MESSAGE_MAX_SEQ, keys } from "@/infrastructure/db/keys";
 import {
   CONDITIONAL_WRITE_FAILED,
   conditions,
@@ -283,39 +283,15 @@ export const chatRepository: ChatRepository = {
   },
 
   async reserveMessageSeq(chatId) {
-    const key = keys.chat(chatId);
-    // Taken under the row lock every caller competes on, so two reservations
-    // never answer the same number. A row written before the counter existed
-    // has none; it is initialised from the newest message — read only in that
-    // case, since every chat created since carries the counter — and the
-    // reservation retried, because another caller may have initialised it
-    // meanwhile and this one must count from what they wrote.
-    for (;;) {
-      const { before } = await updateItem(
-        key,
-        (row) => (typeof row?.nextSeq === "number" ? { ...row, nextSeq: row.nextSeq + 1 } : { ...row }),
-        chatIsLive,
-      );
-      if (typeof before?.nextSeq === "number") {
-        return before.nextSeq;
+    // Creation owns initialization; reserve from the current row under one lock.
+    const { after } = await updateItem(keys.chat(chatId), row => {
+      const nextSeq = row?.nextSeq;
+      if (typeof nextSeq !== "number" || !Number.isSafeInteger(nextSeq) || nextSeq < 0) {
+        throw new Error("Invalid stored Chat message sequence");
       }
-      const latest = await queryItems({
-        pk: key.PK,
-        sk: { prefix: keys.chatMessagePrefix() },
-        forward: false,
-        limit: 1,
-      });
-      const initial = Number(latest[0]?.seq ?? -1) + 1;
-      await updateItem(
-        key,
-        (row) => ({ ...row, nextSeq: initial }),
-        (row) => chatIsLive(row) && row?.nextSeq === undefined,
-      ).catch((error: unknown) => {
-        // Someone else initialised it first; the retry counts from theirs.
-        if (!lostCondition(error)) {
-          throw error;
-        }
-      });
-    }
+      if (nextSeq > CHAT_MESSAGE_MAX_SEQ) throw new Error("Chat message sequence limit reached");
+      return { ...row, nextSeq: nextSeq + 1 };
+    }, chatIsLive);
+    return (after.nextSeq as number) - 1;
   },
 };

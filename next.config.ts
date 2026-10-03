@@ -15,7 +15,8 @@ const SECURITY_HEADERS = [
 ];
 
 const nextConfig: NextConfig = {
-  allowedDevOrigins: ["localhost:3000"],
+  // Next allows localhost by default and matches additional origins by hostname.
+  allowedDevOrigins: ["127.0.0.1"],
   reactStrictMode: true,
   output: "standalone",
   // `next dev` run from an AI coding agent otherwise appends its own

@@ -29,6 +29,12 @@ import type { AgentSlackResponse } from "@/app/api/agents/[name]/slack/route";
 import type { SlackChannelsResponse } from "@/app/api/agents/[name]/slack/channels/route";
 import type { AgentTelegramResponse } from "@/app/api/agents/[name]/telegram/route";
 import type { AgentTeamsResponse } from "@/app/api/agents/[name]/teams/route";
+import type { AgentTelegramChatsResponse } from "@/app/api/agents/[name]/telegram/chats/route";
+import type { UsageSummaryResponse } from "@/app/api/usages/summary/route";
+import type { AgentTriggersResponse } from "@/app/api/agents/[name]/triggers/route";
+import type { AgentMcpConnectionsResponse } from "@/app/api/agents/[name]/mcp-connections/route";
+import type { AgentMcpToolsResponse } from "@/app/api/agents/[name]/mcp-connections/[server]/tools/route";
+import type { AgentTracesResponse } from "@/app/api/agents/[name]/traces/route";
 import type { PromptPreview } from "@/application/execution/deps";
 import type { AgentCredentialStatus, IssuedAgentCredential } from "@/application/auth/agentCredentialUseCases";
 import type {
@@ -110,7 +116,7 @@ export function listTraces(
   name: string,
   range?: { from?: string; to?: string; actorKind?: import("@/domain/execution/actor").RunActorKind },
   signal?: AbortSignal,
-): Promise<{ traces: Trace[] }> {
+): Promise<AgentTracesResponse> {
   const query = new URLSearchParams();
   if (range?.from) {
     query.set("from", range.from);
@@ -123,7 +129,7 @@ export function listTraces(
   }
   const qs = query.toString();
   return fetch(`/api/agents/${name}/traces${qs ? `?${qs}` : ""}`, { signal }).then((r) =>
-    readJson<{ traces: Trace[] }>(r),
+    readJson<AgentTracesResponse>(r),
   );
 }
 
@@ -169,9 +175,9 @@ export function usageSummary(
   name: string,
   from: string,
   to: string,
-): Promise<{ items: UsageRow[] }> {
+): Promise<UsageSummaryResponse> {
   const query = new URLSearchParams({ agent: name, from, to });
-  return fetch(`/api/usages/summary?${query}`).then((r) => readJson<{ items: UsageRow[] }>(r));
+  return fetch(`/api/usages/summary?${query}`).then((r) => readJson<UsageSummaryResponse>(r));
 }
 
 // --- Execution (SSE) ------------------------------------------------------
@@ -214,7 +220,7 @@ export async function streamAgent(
 
 export type { ActorUsageView };
 
-/** Who spent this agent's budget. Owner/admin only, like traces. */
+/** Who spent this agent's budget. Agent owner only, like traces. */
 export async function usageActors(
   name: string,
   from: string,
@@ -279,8 +285,8 @@ export type { TelegramDestination };
 
 export async function listAgentTelegramChats(
   name: string,
-): Promise<{ chats: TelegramDestination[] }> {
-  return readJson<{ chats: TelegramDestination[] }>(
+): Promise<AgentTelegramChatsResponse> {
+  return readJson<AgentTelegramChatsResponse>(
     await fetch(`/api/agents/${name}/telegram/chats`),
   );
 }
@@ -382,7 +388,7 @@ export type { McpConnectionView };
 
 export function listMcpConnections(name: string): Promise<McpConnectionView[]> {
   return fetch(`/api/agents/${name}/mcp-connections`)
-    .then((r) => readJson<{ connections: McpConnectionView[] }>(r))
+    .then((r) => readJson<AgentMcpConnectionsResponse>(r))
     .then((data) => data.connections);
 }
 
@@ -410,7 +416,7 @@ export async function listAgentMcpTools(
     headers: jsonHeaders,
     body: JSON.stringify({ headerOverrides }),
   });
-  return (await readJson<{ tools: McpTool[] }>(response)).tools;
+  return (await readJson<AgentMcpToolsResponse>(response)).tools;
 }
 
 // --- Triggers --------------------------------------------------------------
@@ -432,9 +438,9 @@ import type {
   UpdateTriggerInput,
 } from "@/application/trigger/triggerUseCases";
 
-export function listTriggers(name: string, signal?: AbortSignal): Promise<{ triggers: TriggerView[] }> {
+export function listTriggers(name: string, signal?: AbortSignal): Promise<AgentTriggersResponse> {
   return fetch(`/api/agents/${name}/triggers`, { signal }).then((r) =>
-    readJson<{ triggers: TriggerView[] }>(r),
+    readJson<AgentTriggersResponse>(r),
   );
 }
 

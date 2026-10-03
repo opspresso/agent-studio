@@ -115,7 +115,8 @@ export const memberRepository = createMemberRepository();
  */
 export async function deleteExpiredSessions(now: Date, limit = 5_000): Promise<number> {
   const rows = await sql<{ id: string }>(
-    `DELETE FROM "session" WHERE "id" = ANY(ARRAY(SELECT "id" FROM "session" WHERE "expiresAt" <= $1 LIMIT $2)) RETURNING "id"`,
+    // Renewal may commit while deletion waits for the row lock.
+    `DELETE FROM "session" WHERE "expiresAt" <= $1 AND "id" = ANY(ARRAY(SELECT "id" FROM "session" WHERE "expiresAt" <= $1 LIMIT $2)) RETURNING "id"`,
     [now, limit],
   );
   return rows.length;

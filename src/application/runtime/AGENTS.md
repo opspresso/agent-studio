@@ -32,6 +32,8 @@ budgets, artifacts and persistence around that runtime. Do not add a second agen
 - `arguments.ts` owns argument elision for display and completed/rejected history. Provider
   requests and persisted Session items use the same bound. Keep unresolved calls intact so
   approval resumes and actual dispatch receive their original arguments.
+  `application/llm/toolArgumentElision.ts` owns the marker and its recognition; file tools
+  reject a marker used as the entire content, while preserving markers quoted within a document.
 - Respect output backpressure and cancellation. A consumer leaving must not leave a child
   generator or MCP connection running; chat connection detachment stays outside this layer.
 - Capture output bytes through the existing run bracket. File bytes never enter model

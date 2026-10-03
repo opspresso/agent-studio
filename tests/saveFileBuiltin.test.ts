@@ -21,6 +21,7 @@ import type {
 import { runAgent, type AgentDeps, type RunAgentInput } from "@/application/runtime";
 import { SAVE_FILE_TOOL_NAME } from "@/application/llm/agentAssembly";
 import { buildFileSaver } from "@/application/execution/saveFileTool";
+import { elidedToolArgument } from "@/application/llm/toolArgumentElision";
 import type { ArtifactStorage } from "@/application/artifact/storeArtifact";
 import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
 
@@ -112,6 +113,7 @@ describe("announcing a call that carries a whole file", () => {
     // Everything else about the call is kept as it was made.
     expect(shown.name).toBe("q3");
     expect(shown.mime_type).toBe("text/html");
+    expect(Buffer.from(chunks.find(chunk => chunk.file)?.file?.b64 ?? "", "base64").toString("utf8")).toBe(BODY);
   });
 
   it("keeps it out of the assistant message the provider gets back too", async () => {
@@ -125,6 +127,7 @@ describe("announcing a call that carries a whole file", () => {
     const sent = sentBack(channel, "c1");
     expect(sent.content).not.toBe(BODY);
     expect(String(sent.content)).toContain("elided");
+    expect(String(sent.content)).toContain("Never reuse this placeholder");
     // The model is not deprived: the tool result on the same turn already said
     // the file exists and what it is called.
     expect(sent.name).toBe("q3");
@@ -163,6 +166,23 @@ describe("announcing a call that carries a whole file", () => {
 });
 
 describe("what the run yields for a saved file", () => {
+  it.each([
+    "[28235 bytes, elided — the call was made with the whole value]",
+    elidedToolArgument(28235),
+  ])("returns an error for a copied history placeholder and saves the corrected full HTML: %s", async placeholder => {
+    const channel = new FakeChannel([
+      [saveCall("bad", placeholder), usageChunk(10, 5)],
+      [saveCall("fixed", BODY), usageChunk(10, 5)],
+      [contentChunk("done"), usageChunk(4, 2)],
+    ]);
+    const chunks = await collect(runAgent({ createToolSchemaValidator, ...saver(), channel }, input()));
+    expect(channel.seenParams[1]?.messages.find(message => message.role === "tool")?.content).toMatch(/^Error:/);
+    expect(chunks.find(chunk => chunk.toolResult?.toolCallId === "bad")?.toolResult?.content).toMatch(/^Error:/);
+    const files = chunks.flatMap(chunk => chunk.file ? [chunk.file] : []);
+    expect(files).toHaveLength(1);
+    expect(Buffer.from(files[0]!.b64 ?? "", "base64").toString("utf8")).toBe(BODY);
+  });
+
   it("names the builtin as the source, not an MCP server", async () => {
     const channel = new FakeChannel([
       [saveCall("c1", "<p>hi"), usageChunk(10, 5)],

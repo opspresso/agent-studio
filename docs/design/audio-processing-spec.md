@@ -66,7 +66,8 @@ schedule 메시지에 둔다. 시스템 프롬프트에는 skill 선택과 사�
 기록할 본문이 잘렸으면 전체 저장으로 보고하지 않는다. 저장 오류나 충돌을 피하려고
 조직 scope로 바꾸거나 새 멱등 키를 무작정 발급하지 않는다.
 
-MCP OAuth는 해당 서버를 호출하는 운영 Agent에 연결한다. 위임을 선택한 구성에서도 원본 참조·작업·
+MCP OAuth grant는 호출자의 Studio 사용자 ID와 MCP 서버에 귀속한다. 운영 Agent는 자신의 binding으로
+해당 사용자의 grant를 사용한다. 위임을 선택한 구성에서도 원본 참조·작업·
 산출물은 메인 Agent에 보관하며, URL 갱신에 사용할 호출 Agent와 연결 세대는 별도로 유지한다.
 Schedule은 등록한 Studio 사용자의 ID와 현재 이메일을 전달하며, cron 기본 요청에는 외부 저장을 포함하지 않는다.
 
@@ -316,6 +317,7 @@ lease generation·file ref·checksum·expiry·segment manifest·output manifest�
   submit해도 초과하지 않는다. 완료 claim은 원본 만료 후에도 유지한다. 재처리는 명시적 revision 또는 종료 작업 삭제 후 새 제출로 요청한다.
 - worker 기본 lease는 2분·heartbeat는 30초·poll은 10초다. 모든 checkpoint는 lease generation으로
   조건부 갱신한다. 소유권을 잃은 worker는 abort하며 외부 요청에는 안정적 idempotency key를 사용한다.
+  각 단계의 권한 조회가 끝난 뒤에도 같은 직렬 큐로 lease를 갱신해 취소·소유권 변경을 확인하고 다음 단계를 시작한다.
 - 일시 오류는 최초 시도 포함 5회, 재시도 간격은 1·5·15·60분이다. 인증·입력 오류는
   즉시 blocked다. 최종 failed/blocked는 slot을 반환하고 명시적 재시도 전 다시 선택하지 않는다.
 - 24시간 실행 구간은 최초 worker claim의 `startedAt`부터 계산하며 큐 대기는 포함하지 않는다.

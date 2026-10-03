@@ -17,6 +17,7 @@ Skill을 교체하면 참고 파일 묶음도 교체하며 생략된 파일은 �
 ### Plugin 동기화
 
 `syncPluginsFromSnapshot`은 GitHub 저장소와 업로드 아카이브의 같은 snapshot을 사용한다.
+`pluginSyncUseCases`가 저장소별 lease와 아카이브 우선권을 확인하고 동기화 결과를 저장한 뒤 재색인을 예약한다.
 `infrastructure/plugin/snapshot.ts`가 Plugin·Skill·확장 문서를 찾고
 `domain/plugin/types.ts`가 manifest를 해석한다.
 
@@ -32,7 +33,9 @@ Skill을 교체하면 참고 파일 묶음도 교체하며 생략된 파일은 �
 GitHub는 트리·파일을 읽고 아카이브는 같은 인터페이스로 파일을 제공한다.
 아카이브 provenance는 설정된 저장소, 없으면 `archive`이며 branch는 `archive`,
 commit은 아카이브 hash다. 내용을 비교해 변경을 판정한다. 아카이브 경로 탈출·과대 전개·잘못된
-텍스트는 거절한다. 입력·보고 형태는 [Plugins API](../API.md#레지스트리연동-오퍼레이션)에 있다.
+텍스트는 거절한다. PAX의 파일별 경로·크기는 지원하지만 전역 경로·크기 재정의는 거절한다.
+파일 내용에 영향을 주지 않는 전역 메타데이터는 형식을 검증한 뒤 건너뛴다.
+입력·보고 형태는 [Plugins API](../API.md#레지스트리연동-오퍼레이션)에 있다.
 
 동기화는 선언된 이름을 소유한다. 수동 항목이나 다른 출처의 같은 이름도 내용과 provenance를
 인수하며, 어떤 Plugin도 선언하지 않은 수동 항목은 보존한다.
@@ -40,6 +43,8 @@ commit은 아카이브 hash다. 내용을 비교해 변경을 판정한다. 아�
 
 저장소에서 사라진 항목은 orphan으로 보고하며 자동 삭제하지 않는다.
 명시적 제거는 해당 유스케이스를 거쳐 권한·감사·managed 컨테이너 정리를 적용한다.
+삭제 후보의 `boundTo`는 연결된 Agent 목록이며, 조회 실패는 `null`로 보고하고 삭제 검토 화면에 표시한다.
+빈 목록은 조회에 성공했으며 연결된 Agent가 없다는 뜻이다.
 읽을 수 없는 manifest를 빈 선언으로 취급해 orphan을 만들지 않는다.
 
 `mcp.json`의 header는 가져오지 않는다. credential은 콘솔에서 설정하고,
@@ -136,7 +141,7 @@ MCP 후보는 tool hit와 server hit를 서버 이름으로 합치고 더 높은
 tool hit가 있으면 그 도구들로 binding을 좁히고 server hit만 있으면 서버를 연결한 뒤 목록을 읽는다.
 후보를 넉넉하게 읽어 삭제됐거나 연결 권한이 없는 후보가 유효한 슬롯을 차지하지 않게 한다.
 
-OAuth 서버는 해당 Agent의 `connected` 연결이 있을 때만 자동 추가한다.
+OAuth 서버는 호출자의 Studio 사용자 ID에 속한 `connected` 연결이 있을 때만 자동 추가한다.
 선택한 추가 목록은 이름순으로 정렬해 alias 배정과 프롬프트 배치가 query 점수에 따라 흔들리지 않게 한다.
 새 capability는 `discovered`로 반환하며 손실인 warning과 구분한다.
 실행은 로그, preview는 별도 목록으로 표시한다.

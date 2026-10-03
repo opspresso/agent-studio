@@ -76,6 +76,8 @@ Docker에서는 지정한 사용자 네트워크에서 호스트 주소를, Kube
 `count_tokens`다. 요청 필드·모델·도구 종류를 제한하며 공유 공급자의 저장 대화·파일·벡터 저장소·prompt
 참조와 hosted 도구는 허용하지 않는다. Responses는 `store: false`를 강제하며 CLI의 자체 이력으로
 재개한다. Codex의 provider 웹 검색도 비활성화한다. 모델·도구 루프 자체는 각 CLI가 소유한다.
+도구 결과의 `content`·`output`과 문서 source 안의 중첩 content도 같은 파일 참조 검사를 통과해야 한다.
+직접 보낸 파일·이미지 bytes와 도구 인자의 일반 데이터 필드는 유지한다.
 
 Gateway는 원래 JSON/SSE를 전달하면서 요청별 공급자 사용량을 정규화한다. 캐시 입력은 총 입력의
 부분집합이며 Anthropic의 cache read/write 입력은 총 입력에 더한다. Native CLI가 출력하는 누적 비용을
@@ -193,7 +195,8 @@ Sandbox가 삭제된 뒤에만 `closed`를 기록한다. chat 행과 Workspace �
 기록하며 늦게 도착한 worker 쓰기는 Workspace를 다시 열 수 없다. 새 요청과 턴 완료는 채팅과
 native Session의 활동·보존 기한을 갱신한다. 완료 시 미결 승인 요청은 거절한다.
 종료된 Workspace의 채팅을 삭제할 때도 소유자의 삭제 의도를 기록하고 남은 체크포인트를 정리한다.
-대기 중 취소는 Sandbox를 만들기 전에 처리하며, 명령 시작 직전에도 취소·종료 의도를 다시 확인한다.
+대기 중 취소는 Sandbox를 만들기 전에 처리한다. Runtime 준비·권한 조회가 끝난 뒤 명령·검사
+시작 직전의 lease 조회 결과로 취소·종료·실행 기한을 다시 확인하고, 준비에 쓴 시간을 명령 timeout에서 뺀다.
 
 ## Git과 승인
 
@@ -205,8 +208,8 @@ Agent 소유자가 저장소, 접근 모드, 기본 Runtime, 유휴 시간, 검�
 기본 저장소는 없으며 Git 작업은 저장소와 기준 브랜치를 명시한다. 모델이 필요한 Runtime은 설정 → Models → 사용 설정의
 전역 Runtime별 선택을 사용한다. Agent 설정과 모델 설정은 환경변수로 관리하지 않는다.
 `repositoryOwners`는 정확한 계정·조직 이름을 대소문자 없이 비교하며 현재·향후 저장소를 허용한다.
-Workspace의 GitHub 작업은 해당 Agent가 바인딩한 GitHub MCP에 대한 호출자의 개인 인증을 사용한다.
-정책 허용이 그 계정의 권한을 늘리지는 않으며 Plugin 가져오기 토큰이나 다른 사용자의 연결을 사용하지 않는다.
+Workspace의 GitHub 작업은 해당 Agent가 바인딩한 GitHub MCP에 대한 호출자의 개인 OAuth 연결을 사용한다.
+정책 허용이 그 계정의 권한을 늘리지는 않는다. 정적 Authorization 헤더·Plugin 토큰·다른 사용자의 연결은 사용하지 않는다.
 GitHub MCP 바인딩이 여러 개면 계정을 임의 선택하지 않고 설정 오류를 반환한다.
 
 | 모드 | 기존 저장소 접근 | 새 저장소 생성 |
@@ -305,7 +308,8 @@ Annotated tag는 최대 8단계까지 commit을 해석하고 순환·비커밋 �
 GitHub API 요청과 clone·push는 원래 호출자의 사용자 ID로 개인 MCP 인증을 dispatch마다 다시 읽는다.
 PR 게시자는 Workspace의 `pullRequestUser`에 기록하며 서명된 GitHub 상태 갱신도 그 사용자로 조회한다.
 OAuth 검증·갱신은 기존 MCP 인증 제공자가 소유한다. 인증된 clone과 push는 서버의 임시 bare
-저장소에서 수행하며, Sandbox에는 자격증명이 없는 Git bundle만 전달한다. 서버는 저장소
+저장소에서 수행하며, Sandbox에는 자격증명이 없는 Git bundle만 전달한다. Sandbox Git 제어기는
+자격증명 필드와 직접 push를 거절하고 새 저장소는 bundle로만 준비한다. 서버는 저장소
 파일을 checkout하거나 hook·build script를 실행하지 않고 호스트의 Git 설정·credential helper를
 상속하지 않는다. 임시 디렉터리는 작업 후 삭제한다. PR publish는 bundle의 정확한 head를
 확인하고 지정된 `agent/` 브랜치만 push한다. [Git bundle](https://git-scm.com/docs/git-bundle)은

@@ -10,6 +10,7 @@ interface Invocation {
   input: RunAgentInput;
   paused: boolean;
   completed: boolean;
+  maxTurns: number;
   observe?: (event: RunStreamEvent) => void;
   filter?: PiiFilter;
 }
@@ -39,6 +40,7 @@ export class BoundAgent extends Agent<unknown, AgentOutputType> {
     Object.defineProperties(this, {
       inputGuardrails: { get: () => invocation.getStore()?.agent.inputGuardrails ?? this.declarations?.inputGuardrails ?? [] },
       outputGuardrails: { get: () => invocation.getStore()?.agent.outputGuardrails ?? this.declarations?.outputGuardrails ?? [] },
+      outputType: { get: () => invocation.getStore()?.agent.outputType ?? this.declarations?.outputType ?? "text" },
     });
   }
 
@@ -53,13 +55,12 @@ export class BoundAgent extends Agent<unknown, AgentOutputType> {
     // Running model/tools always resolve from AsyncLocalStorage below.
     this.tools = agent.tools;
     this.handoffs = agent.handoffs;
-    this.outputType = agent.outputType;
     this.declarations = agent;
   }
 
-  withInvocation<T>(agent: SdkAgent, input: RunAgentInput, execute: () => Promise<T>, observe?: (event: RunStreamEvent) => void, filter?: PiiFilter): Promise<T> {
+  withInvocation<T>(agent: SdkAgent, input: RunAgentInput, execute: () => Promise<T>, options: Pick<Invocation, "maxTurns" | "observe" | "filter">): Promise<T> {
     this.bindDeclarations(agent);
-    return this.invocation.run({ agent, input, paused: false, completed: false, observe, filter }, execute);
+    return this.invocation.run({ ...options, agent, input, paused: false, completed: false }, execute);
   }
 
   override getSystemPrompt(...args: Parameters<SdkAgent["getSystemPrompt"]>): ReturnType<SdkAgent["getSystemPrompt"]> {

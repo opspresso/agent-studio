@@ -142,35 +142,71 @@ describe("recallMemories", () => {
 
   it("a run cancelled mid-recall propagates the cancellation, not a server failure", async () => {
     const controller = new AbortController();
+    const entered = Promise.withResolvers<void>();
     const pending = recallMemories({
       configuration: bound("memory"),
       mcp: {
         mcpServers: [server("memory", ["recall"])],
         aliasFor: () => "recall",
-        callMcpTool: () => new Promise(() => {}),
+        callMcpTool: () => { entered.resolve(); return new Promise(() => {}); },
       },
       query: "q",
       signal: controller.signal,
     });
+    await entered.promise;
     controller.abort(new Error("Stop pressed"));
     await expect(pending).rejects.toThrow("Stop pressed");
   });
 
-  it("does not wait on a signal that was already aborted", async () => {
+  it("does not dispatch recall on a signal that was already aborted", async () => {
     const controller = new AbortController();
     controller.abort();
+    const callMcpTool = vi.fn(async () => ({ text: "must not run" }));
     await expect(
       recallMemories({
         configuration: bound("memory"),
         mcp: {
           mcpServers: [server("memory", ["recall"])],
           aliasFor: () => "recall",
-          callMcpTool: () => new Promise(() => {}),
+          callMcpTool,
         },
         query: "q",
         signal: controller.signal,
       }),
     ).rejects.toThrow();
+    expect(callMcpTool).not.toHaveBeenCalled();
+  });
+
+  it("bounds an unanswered recall and clears its timer", async () => {
+    vi.useFakeTimers();
+    const pending = recallMemories({
+      configuration: bound("memory"),
+      mcp: {
+        mcpServers: [server("memory", ["recall"])], aliasFor: () => "recall",
+        callMcpTool: () => new Promise(() => {}),
+      },
+      query: "q",
+    });
+    await vi.advanceTimersByTimeAsync(10_000);
+    await expect(pending).resolves.toMatchObject({ asked: 1, failed: 1,
+      warnings: [expect.stringContaining("no answer within 10s")] });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("handles a dispatch rejection when cancellation occurs inside the call", async () => {
+    const controller = new AbortController();
+    const stopped = new Error("Stop pressed");
+    await expect(recallMemories({
+      configuration: bound("memory"),
+      mcp: {
+        mcpServers: [server("memory", ["recall"])], aliasFor: () => "recall",
+        callMcpTool: () => {
+          controller.abort(stopped);
+          return Promise.reject(new Error("Transport stopped"));
+        },
+      },
+      query: "q", signal: controller.signal,
+    })).rejects.toBe(stopped);
   });
 
   it("a server that fails, or answers Error:, is a warning — never the end of the run", async () => {

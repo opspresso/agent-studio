@@ -44,6 +44,51 @@ async function fixture() {
     call: (path = "v1/responses", body = { model: "native" }) => gateway.forward(token, path, body, {}, new AbortController().signal) };
 }
 describe("run-scoped native model gateway", () => {
+  it.each([
+    { protocol: "responses" as const, item: { type: "function_call_output", call_id: "call", output: [{ type: "input_file", file_id: "foreign-file" }] } },
+    { protocol: "responses" as const, item: { type: "function_call_output", call_id: "call", output: [{ type: "input_image", file_id: "foreign-image" }] } },
+    { protocol: "messages" as const, item: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu", content: [
+      { type: "document", source: { type: "file", file_id: "foreign-file" } },
+    ] }] } },
+    { protocol: "messages" as const, item: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu", content: [
+      { type: "image", source: { type: "file", file_id: "foreign-image" } },
+    ] }] } },
+    { protocol: "messages" as const, item: { role: "user", content: [{ type: "document", source: { type: "content", content: [
+      { type: "image", source: { type: "file", file_id: "foreign-image" } },
+    ] } }] } },
+  ])("rejects nested provider resource references in $protocol tool results", async ({ protocol, item }) => {
+    const f = await fixture();
+    f.workspace.runtime = protocol === "messages" ? "claude" : "codex";
+    f.deps.selection = async () => ({ model: "selfhosted/native", wireModel: "native", protocol });
+    const { token } = await f.gateway.credential(f.workspace, f.run);
+    await expect(f.gateway.forward(token, "v1/" + protocol, {
+      model: "native", [protocol === "responses" ? "input" : "messages"]: [item],
+    }, {}, new AbortController().signal)).rejects.toMatchObject({ status: 403 });
+    expect(f.transport.forward).not.toHaveBeenCalled();
+    expect(await workspaceModelCalls.get("ws", "run")).toBeNull();
+  });
+
+  it.each(["responses", "messages"] as const)("keeps inline results and ordinary tool arguments in %s", async protocol => {
+    const f = await fixture();
+    f.workspace.runtime = protocol === "messages" ? "claude" : "codex";
+    f.deps.selection = async () => ({ model: "selfhosted/native", wireModel: "native", protocol });
+    const { token } = await f.gateway.credential(f.workspace, f.run);
+    const context = protocol === "responses" ? { input: [
+      { type: "function_call", call_id: "call", name: "read_file", arguments: JSON.stringify({ file_id: "local-value" }) },
+      { type: "function_call_output", call_id: "call", output: [{ type: "input_file", filename: "local.txt", file_data: "data:text/plain;base64,aGVsbG8=" }] },
+    ] } : { messages: [
+      { role: "assistant", content: [{ type: "tool_use", id: "toolu", name: "read_file", input: { file_id: "local-value" } }] },
+      { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu", content: [
+        { type: "document", source: { type: "content", content: [
+          { type: "image", source: { type: "base64", media_type: "image/png", data: "AA==" } },
+        ] } },
+      ] }] },
+    ] };
+    const response = await f.gateway.forward(token, "v1/" + protocol, { model: "native", ...context }, {}, new AbortController().signal);
+    expect(response.ok).toBe(true);
+    expect(f.transport.forward).toHaveBeenCalledWith(expect.objectContaining({ body: expect.objectContaining(context) }));
+  });
+
   it.each(["messages", "chat/completions"] as const)("rejects provider file and audio references in %s messages", async protocol => {
     const f = await fixture();
     f.workspace.runtime = protocol === "messages" ? "claude" : "opencode";

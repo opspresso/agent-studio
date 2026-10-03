@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { slackClient } from "@/infrastructure/slack/client";
-import { clearProfileCache } from "@/infrastructure/slack/profileCache";
+import { clearProfileCache, getCachedProfile } from "@/infrastructure/slack/profileCache";
 
 /**
  * The transport, not the features. Two things had to be true of every Slack call
@@ -29,6 +29,21 @@ afterEach(() => {
 });
 
 describe("how a Slack call fails", () => {
+  it("retains only display profile data even when an existing Slack grant returns an email", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    const request = vi.fn(async () => jsonResponse({ ok: true, user: { profile: { display_name: "Ada", email: "private@example.test" } } }));
+    vi.stubGlobal("fetch", request);
+    try {
+      await expect(slackClient.userDetail(TOKEN, "U1")).resolves.toEqual({ id: "U1", displayName: "Ada" });
+      await expect(slackClient.userProfile(TOKEN, "U1")).resolves.toEqual({ displayName: "Ada" });
+      expect(JSON.stringify(getCachedProfile(TOKEN, "U1"))).not.toContain("private@example.test");
+      expect(request).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("names a rate limit as one, and quotes what Slack asked for", async () => {
     // The body is deliberately not JSON — that is what Slack sends, and reading
     // it first is what produced a parse error in place of a diagnosis.
@@ -62,6 +77,23 @@ describe("how a Slack call fails", () => {
 });
 
 describe("how long a Slack call may take", () => {
+  it("reports unread replies when the bounded thread scan stops", async () => {
+    let page = 0;
+    const request = vi.fn(async () => jsonResponse({ ok: true, messages: [{ ts: String(++page) }],
+      response_metadata: { next_cursor: `next-${page}` } }));
+    vi.stubGlobal("fetch", request);
+    const result = await slackClient.threadReplies(TOKEN, { channel: "C1", ts: "1.0" });
+    expect(result).toMatchObject({ truncated: true, messages: expect.arrayContaining([{ ts: "10" }]) });
+    expect(request).toHaveBeenCalledTimes(10);
+  });
+
+  it("refuses a repeated thread cursor instead of duplicating history", async () => {
+    const request = vi.fn(async () => jsonResponse({ ok: true, messages: [{ ts: "1" }], response_metadata: { next_cursor: "same" } }));
+    vi.stubGlobal("fetch", request);
+    await expect(slackClient.threadReplies(TOKEN, { channel: "C1", ts: "1.0" })).rejects.toThrow("repeated thread pagination cursor");
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
   it("continues channel listings through short and empty pages while a cursor remains", async () => {
     const request = vi.fn(async (url: string) => {
       const cursor = new URL(url).searchParams.get("cursor");
@@ -144,9 +176,10 @@ describe("how long a Slack call may take", () => {
     });
     vi.stubGlobal("fetch", request);
 
-    const messages = await slackClient.threadReplies(TOKEN, { channel: "C1", ts: "1.0", limit: 3 });
+    const { messages, truncated } = await slackClient.threadReplies(TOKEN, { channel: "C1", ts: "1.0", limit: 3 });
 
     expect(messages.map(message => message.ts)).toEqual(["1", "2", "3"]);
+    expect(truncated).toBe(true);
     expect(request.mock.calls.map(([url]) => new URL(url).searchParams.get("limit"))).toEqual(["3", "1"]);
   });
 
@@ -157,7 +190,7 @@ describe("how long a Slack call may take", () => {
     });
     vi.stubGlobal("fetch", request);
 
-    expect((await slackClient.threadReplies(TOKEN, { channel: "C1", ts: "1.0" })).map(message => message.ts)).toEqual(["1", "2"]);
+    expect(await slackClient.threadReplies(TOKEN, { channel: "C1", ts: "1.0" })).toEqual({ messages: [{ ts: "1" }, { ts: "2" }], truncated: false });
     expect(request).toHaveBeenCalledTimes(2);
   });
 

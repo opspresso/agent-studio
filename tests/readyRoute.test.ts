@@ -14,15 +14,15 @@ beforeEach(() => {
 });
 
 describe("GET /api/ready", () => {
-  it("returns 200 when downstreams are reachable", async () => {
-    readinessMock.mockResolvedValue({ ready: true, checks: { db: "ok", llm: "ok" } });
+  it("returns 200 when the database is reachable", async () => {
+    readinessMock.mockResolvedValue({ ready: true, checks: { db: "ok" } });
     const res = await readyGet();
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ ready: true });
   });
 
-  it("returns 503 when a downstream is unreachable", async () => {
-    readinessMock.mockResolvedValue({ ready: false, checks: { db: "unreachable", llm: "ok" } });
+  it("returns 503 when the database is unreachable", async () => {
+    readinessMock.mockResolvedValue({ ready: false, checks: { db: "unreachable" } });
     const res = await readyGet();
     expect(res.status).toBe(503);
   });

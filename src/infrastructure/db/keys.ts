@@ -334,16 +334,13 @@ export const keys = {
   auditDayPartition: (day: string) => `AUDIT#${day}`,
 
   /**
-   * What a run produced. Two indexes, because each reaches rows the other
-   * cannot: a Slack or trigger run names no email, so the agent index is
-   * the only way those are ever listed or deleted; and agents are a shared
-   * catalog, so the owner index is the only way a person finds their own work
-   * without reading someone else's agent.
+   * What a run produced. The Agent index supports Agent-scoped lists and
+   * deletion; the owner index uses resolved personal ownership across Agents.
    */
   artifact: (artifactId: string) => ({ PK: `ARTIFACT#${artifactId}`, SK: "META" }),
   artifactContent: (hash: string) => ({ PK: `ARTIFACTCONTENT#${hash}`, SK: "META" }),
   artifactAgentPartition: (agentName: string) => `ARTIFACTAGENT#${agentName}`,
-  /** Sparse: only rows whose actor names an email carry the GSI2 attributes. */
+  /** Sparse: non-canonical rows with a resolved owner email carry this index. */
   artifactOwnerPartition: (email: string) => `ARTIFACTOWNER#${email}`,
 
   trace: (traceId: string) => ({ PK: `TRACE#${traceId}`, SK: "META" }),

@@ -59,34 +59,55 @@ function looksLikeDate(code: string): boolean {
 /** Cell style index → whether that style formats its number as a date. */
 export function dateStylesOf(xml: string): Set<number> {
   const custom = new Map<number, string>();
-  for (const match of xml.matchAll(/<(?:\w+:)?numFmt\b([^>]*)\/?>/g)) {
-    const attributes = match[1] ?? "";
-    const id = Number(attributeOf(attributes, "numFmtId") ?? "");
-    const code = attributeOf(attributes, "formatCode");
-    if (Number.isInteger(id) && code !== undefined) {
-      custom.set(id, code);
-    }
-  }
+  const styles: Array<{ id: number; applies: boolean }> = [];
+  const parents: string[] = [];
+  walkXml(xml, {
+    text() {},
+    close() { parents.pop(); },
+    open(name, attributes, selfClosing) {
+      const local = localName(name);
+      if (parents.length === 2 && parents[0] === "styleSheet") {
+        const id = Number(attributeOf(attributes, "numFmtId") ?? "");
+        if (local === "numFmt" && parents[1] === "numFmts") {
+          const code = attributeOf(attributes, "formatCode");
+          if (Number.isInteger(id) && code !== undefined) custom.set(id, code);
+        } else if (local === "xf" && parents[1] === "cellXfs") {
+          const applies = attributeOf(attributes, "applyNumberFormat")?.trim();
+          styles.push({ id, applies: applies !== "0" && applies !== "false" });
+        }
+      }
+      if (!selfClosing) parents.push(local);
+    },
+  });
   const dates = new Set<number>();
-  const cellXfs = /<(?:\w+:)?cellXfs\b[^>]*>([\s\S]*?)<\/(?:\w+:)?cellXfs>/.exec(xml);
-  if (!cellXfs?.[1]) {
-    return dates;
-  }
-  let index = 0;
-  for (const match of cellXfs[1].matchAll(/<(?:\w+:)?xf\b([^>]*)\/?>/g)) {
-    const attributes = match[1] ?? "";
-    const id = Number(attributeOf(attributes, "numFmtId") ?? "");
-    const applies = attributeOf(attributes, "applyNumberFormat");
+  for (const [index, { id, applies }] of styles.entries()) {
     if (
-      applies !== "0" &&
+      applies &&
       Number.isInteger(id) &&
       (DATE_FORMATS.has(id) || looksLikeDate(custom.get(id) ?? ""))
     ) {
       dates.add(index);
     }
-    index += 1;
   }
   return dates;
+}
+
+function uses1904Epoch(xml: string): boolean {
+  const parents: string[] = [];
+  let epoch1904 = false;
+  walkXml(xml, {
+    text() {},
+    close() { parents.pop(); },
+    open(name, attributes, selfClosing) {
+      const local = localName(name);
+      if (local === "workbookPr" && parents.length === 1 && parents[0] === "workbook") {
+        const value = attributeOf(attributes, "date1904")?.trim();
+        epoch1904 = value === "1" || value === "true";
+      }
+      if (!selfClosing) parents.push(local);
+    },
+  });
+  return epoch1904;
 }
 
 /**
@@ -523,7 +544,8 @@ function rowText(cells: readonly string[]): string {
   return cells.slice(0, end).join(" | ").trim();
 }
 
-export function xlsxToText(bytes: Uint8Array, maxChars: number): XlsxText {
+/** Text extraction and inspection use the same workbook metadata and value decoding. */
+function openWorkbook(bytes: Uint8Array) {
   const { entries, read } = openZip(bytes);
   const names = entries.map((entry) => entry.name);
   if (!names.includes(WORKBOOK)) {
@@ -532,9 +554,9 @@ export function xlsxToText(bytes: Uint8Array, maxChars: number): XlsxText {
 
   const decoder = new TextDecoder();
   const head = read([WORKBOOK, WORKBOOK_RELS, SHARED_STRINGS, STYLES]);
-  const workbookXml = head.get(WORKBOOK);
+  const workbookXml = decoder.decode(head.get(WORKBOOK)!);
   const sheets = sheetParts(
-    workbookXml ? decoder.decode(workbookXml) : undefined,
+    workbookXml,
     head.get(WORKBOOK_RELS) ? decoder.decode(head.get(WORKBOOK_RELS)!) : undefined,
   );
   if (sheets.length === 0) {
@@ -549,12 +571,12 @@ export function xlsxToText(bytes: Uint8Array, maxChars: number): XlsxText {
   const strings = shared.finish();
   const stylesXml = head.get(STYLES);
   const dates = stylesXml === undefined ? new Set<number>() : dateStylesOf(decoder.decode(stylesXml));
-  // A Mac-authored workbook counts from 1904, where the same serial is four
-  // years and a day later.
-  const epoch1904 = /date1904\s*=\s*["'](?:1|true)["']/.test(
-    workbookXml ? decoder.decode(workbookXml) : "",
-  );
+  const epoch1904 = uses1904Epoch(workbookXml);
+  return { names, read, decoder, sheets, strings, dates, epoch1904 };
+}
 
+export function xlsxToText(bytes: Uint8Array, maxChars: number): XlsxText {
+  const { names, read, decoder, sheets, strings, dates, epoch1904 } = openWorkbook(bytes);
   const visibleSheets = sheets.filter((sheet) => sheet.state === "visible");
   const hiddenSheets = sheets.length - visibleSheets.length;
   const parts = readWorksheets(visibleSheets, names, read);
@@ -614,37 +636,7 @@ export function xlsxToText(bytes: Uint8Array, maxChars: number): XlsxText {
 }
 
 export function inspectXlsx(bytes: Uint8Array, includeHidden = false): XlsxInspection {
-  const { entries, read } = openZip(bytes);
-  const names = entries.map((entry) => entry.name);
-  if (!names.includes(WORKBOOK)) {
-    throw new XlsxError("it has no workbook part — the archive is not an XLSX workbook");
-  }
-
-  const decoder = new TextDecoder();
-  const head = read([WORKBOOK, WORKBOOK_RELS, SHARED_STRINGS, STYLES]);
-  const workbookXml = head.get(WORKBOOK);
-  const sheets = sheetParts(
-    workbookXml ? decoder.decode(workbookXml) : undefined,
-    head.get(WORKBOOK_RELS) ? decoder.decode(head.get(WORKBOOK_RELS)!) : undefined,
-  );
-  if (sheets.length === 0) {
-    throw new XlsxError("the workbook declares no sheets");
-  }
-
-  const shared = new SharedStrings();
-  const sharedXml = head.get(SHARED_STRINGS);
-  if (sharedXml) {
-    walkXml(decoder.decode(sharedXml), shared);
-  }
-  const strings = shared.finish();
-  const stylesXml = head.get(STYLES);
-  const dates = stylesXml === undefined ? new Set<number>() : dateStylesOf(decoder.decode(stylesXml));
-  // A Mac-authored workbook counts from 1904, where the same serial is four
-  // years and a day later.
-  const epoch1904 = /date1904\s*=\s*["'](?:1|true)["']/.test(
-    workbookXml ? decoder.decode(workbookXml) : "",
-  );
-
+  const { names, read, decoder, sheets, strings, dates, epoch1904 } = openWorkbook(bytes);
   const visible = includeHidden ? sheets : sheets.filter((sheet) => sheet.state === "visible");
   const parts = readWorksheets(visible, names, read);
   const inspected: InspectedSheet[] = [];

@@ -115,7 +115,7 @@ function tool, Handoff, MCP 도구 listing과 Guardrail의 native span ID·부�
 
 모델/도구 입력·출력과 credential은 SDK trace 수집에서 제외한다. 이름, SDK 종류/trace ID,
 시간, 상태와 숫자형 사용량만 변환한다. 모델의 실제 비용과 cache/reasoning token을 보존한다.
-`TraceRecorder`는 native 모드에서 청크를 보고 같은 model/tool span을 다시 만들지 않는다.
+`TraceRecorder`는 SDK span을 그대로 수집하며 청크에서 model/tool span이나 사용량을 재구성하지 않는다.
 
 SDK 실행 전 `memory`와 `tools` 준비는 앱 `prepare` span이다. 바인딩·발견한 capability
 개수와 최대 20개의 이름, 손실과 준비 오류를 기록하며 원문 query/description은 기록하지 않는다.
@@ -124,7 +124,7 @@ MCP 준비 실패가 기록되어도 실행이 계속된 경우 Trace 전체를 
 최상위 청크로 전체 종료를 판정하고 경고는 자식의 손실도 수집한다. 하위 Agent의 한도/실패가 부모의 완료를 덮지 않으며,
 승인 대기는 `awaiting-approval`이다. 취소와 실패는 한도 상태보다 우선한다. 최대 span 100개,
 warning 20개를 저장하고, 생략된 span은 `spansDropped`로 센다. 실행 경고/오류 문구는 최대
-1,000자로 제한되며 원문 오류에 민감 정보가 있을 수 있어 소유자와 admin만 읽을 수 있다.
+1,000자로 제한되며 원문 오류에 민감 정보가 있을 수 있어 Agent 소유자만 읽을 수 있다.
 
 선택적인 OTLP exporter와 보존 설정은 [운영](../OPERATIONS.md#트레이싱)을 따른다.
 기본 실행은 공개 OpenAI trace exporter나 외부 tracing 서비스에 의존하지 않는다.

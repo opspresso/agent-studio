@@ -43,29 +43,33 @@ test.beforeEach(async ({ page }) => {
     return route.abort();
   });
   await page.route("**/api/agents/fixture-agent/triggers", route => route.fulfill({ json: { triggers: [{
-    triggerId: "webhook", kind: "webhook", enabled: true, allowConcurrent: false,
+    triggerId: "webhook", kind: "webhook", allowConcurrent: false,
   }] } }));
   await page.goto(base);
 });
 
 test("manages the personal token and URL inside Webhook while keeping shared controls owner-only", async ({ page }) => {
-  await page.getByRole("button", { name: "Webhook enabled", exact: true }).click();
+  await page.getByRole("button", { name: "Webhook Configured", exact: true }).click();
   const token = page.getByRole("group", { name: "My Webhook token", exact: true });
   await expect(token.getByRole("textbox", { name: "My Webhook token" })).toBeVisible();
   const url = page.locator("code[title*='/api/webhook/fixture-agent?credential=']");
   await expect(url).toContainText("credential=personal-webhook-selector");
-  await expect(page.getByRole("switch", { name: "Enabled", exact: true })).toBeVisible();
+  await expect(page.getByRole("switch", { name: "Enabled", exact: true })).toHaveCount(0);
+  await expect(token.getByText("Configured", { exact: true })).toHaveCount(0);
   await token.getByRole("button", { name: "Revoke", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Revoke", exact: true }).click();
   await expect(url).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Webhook Not configured", exact: true })).toBeVisible();
   await token.getByRole("button", { name: "Generate", exact: true }).click();
   await expect(token.getByRole("textbox")).toHaveValue("synthetic-webhook-token");
   await expect(url).toContainText("credential=replacement-webhook-selector");
+  await expect(page.getByRole("button", { name: "Webhook Configured", exact: true })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Webhook behavior", exact: true })).toBeVisible();
 
   let triggerReads = 0;
   page.on("request", request => { if (request.url().endsWith("/triggers")) triggerReads++; });
   await page.getByRole("switch", { name: "Manage shared Webhook settings" }).uncheck();
-  await page.getByRole("button", { name: "Webhook", exact: true }).click();
+  await page.getByRole("button", { name: "Webhook Configured", exact: true }).click();
   await expect(token.getByRole("textbox")).toBeVisible();
   await expect(page.getByRole("switch", { name: "Enabled", exact: true })).toHaveCount(0);
   await expect(url).toContainText("credential=personal-webhook-selector");

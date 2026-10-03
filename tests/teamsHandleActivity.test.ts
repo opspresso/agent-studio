@@ -265,6 +265,19 @@ describe("handleTeamsActivity", () => {
     expect(image && "image_url" in image && image.image_url.url.startsWith("data:image/png;base64,")).toBe(true);
   });
 
+  it("reports both failed history writes once without replacing or rerunning the answer", async () => {
+    const { teams, sent, finalText } = makeTeamsFake();
+    const { deps, runs } = makeDeps([{ delta: { content: "Delivered answer" } }, { done: true }], teams);
+    const append = vi.spyOn(deps.transcripts!, "append").mockRejectedValue(new Error("private storage detail"));
+    await handleTeamsActivity(deps, dispositionOf(activity()), BINDING);
+    expect(finalText()).toBe("Delivered answer");
+    expect(append).toHaveBeenCalledTimes(2);
+    expect(runs).toHaveLength(1);
+    const warnings = sent.filter(item => /history.*could not.*saved/i.test(item.text ?? ""));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]!.text).not.toContain("private storage detail");
+  });
+
   it("remembers the question at the moment it arrived, and an answer that was only a file or nothing at all", async () => {
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     vi.spyOn(console, "log").mockImplementation(() => {});

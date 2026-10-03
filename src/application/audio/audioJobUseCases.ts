@@ -10,6 +10,7 @@ import type { AudioJobConfigRepository } from "@/domain/audio/config";
 import { getModelConfig } from "@/domain/llm/models";
 import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
 import { fileExpiresAt } from "@/application/artifact/fileRetention";
+import { mapWithLimit } from "@/shared/mapWithLimit";
 
 export interface SubmitAudioJobInput {
   task?: AudioJobTask;
@@ -186,12 +187,7 @@ export function createAudioJobUseCases(deps: AudioJobUseCaseDeps) {
     async list(agent: string, email: string, limit: number, after?: string) {
       await deps.authorize(agent, email);
       const jobs = await deps.jobs.list(agent, limit, after, email);
-      const result: AudioJobView[] = [];
-      for (let start = 0; start < jobs.length; start += MAX_CONCURRENT_AUDIO_JOB_VIEWS) {
-        result.push(...await Promise.all(jobs.slice(start, start + MAX_CONCURRENT_AUDIO_JOB_VIEWS)
-          .map((job) => view(job, deps))));
-      }
-      return result;
+      return mapWithLimit(jobs, MAX_CONCURRENT_AUDIO_JOB_VIEWS, job => view(job, deps));
     },
     async cancel(agent: string, id: string, email: string, revision: number) {
       await owned(agent, id, email);

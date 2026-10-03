@@ -235,16 +235,17 @@ describe("configuration reference validation", () => {
   });
 
   it("reports every dangling reference at once", async () => {
-    await expect(
-      writeSettings(
-        settingsFixture(),
-        makeAgentRepo([agentFixture("p", { })]),
-        "p",
-        { ...configurationInput(), mcpList: [{ name: "m1" }], skillList: ["s1"] },
-        OWNER,
-        NO_REFS_EXIST,
-      ),
-    ).rejects.toBeInstanceOf(ValidationError);
+    const pending = writeSettings(
+      settingsFixture(),
+      makeAgentRepo([agentFixture("p", { })]),
+      "p",
+      { ...configurationInput(), mcpList: [{ name: "m1" }], skillList: ["s1"] },
+      OWNER,
+      NO_REFS_EXIST,
+    );
+    await expect(pending).rejects.toBeInstanceOf(ValidationError);
+    await expect(pending).rejects.toThrow('MCP server "m1" does not exist');
+    await expect(pending).rejects.toThrow('Skill "s1" does not exist');
   });
 
   it("keeps a configuration editable when a reference it already had was deleted", async () => {
@@ -621,7 +622,7 @@ describe("updateAgent ownership", () => {
   });
 
   it("still rejects a non-owner while an unrelated admin is configured", async () => {
-
+    vi.stubEnv("ADMIN_EMAILS", "admin@example.test");
     await expect(
       updateAgent(makeAgentRepo([agentFixture("p")]), "p", { displayName: "X" }, OTHER),
     ).rejects.toBeInstanceOf(ForbiddenError);
@@ -692,10 +693,8 @@ describe("agentRepository.delete cascade", () => {
   });
 
   it("leaves META marked, and present, when a child delete fails midway", async () => {
-    // The cascade marks META `deletingAt` first and removes it last, so a
-    // failure in between leaves a row that says a deletion is under way —
-    // never an agent that looks live with half its children gone, and never
-    // one that vanished with children still attached to its name.
+    // A failed cascade retains deletingAt; success replaces META with a tombstone.
+    // Neither state can be read as a live Agent.
     store.rows.clear();
     store.seed([
       { ...row("AGENT#p", "META"), GSI1PK: "TYPE#AGENT", GSI1SK: "p" },

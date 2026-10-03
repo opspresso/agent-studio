@@ -1,5 +1,6 @@
 "use client";
 
+import { ConfigurationFields } from "@/app/_components/ConfigurationFields";
 import { useState } from "react";
 import { Alert, Badge, Button, Group, Radio, Stack, Text } from "@mantine/core";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
@@ -21,6 +22,7 @@ export function VisibilitySection({
   const [error, setError] = useState<string | null>(null);
 
   async function save() {
+    if (saving) return;
     setSaving(true);
     setError(null);
     setSaved(false);
@@ -50,7 +52,7 @@ export function VisibilitySection({
         )
       }
     >
-      <Stack gap="md">
+      <ConfigurationFields disabled={saving}>
         {error && (
           <Alert color="red" variant="light">
             {error}
@@ -58,7 +60,7 @@ export function VisibilitySection({
         )}
         <Radio.Group
           value={visibility}
-          onChange={(value) => setVisibility(value as AgentVisibility)}
+          onChange={(value) => { setVisibility(value as AgentVisibility); setSaved(false); }}
         >
           <Stack gap="xs">
             <Radio
@@ -79,11 +81,11 @@ export function VisibilitySection({
           </Button>
           {saved && (
             <Text fz="sm" c="teal">
-              Saved
+              {t("common.saved")}
             </Text>
           )}
         </Group>
-      </Stack>
+      </ConfigurationFields>
     </CollapsibleSection>
   );
 }

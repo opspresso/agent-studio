@@ -68,9 +68,9 @@ pnpm dev
 3. 현재 설정을 저장하고 요청을 실행한다. 저장한 내용은 다음 실행부터 적용된다.
 4. 영속 대화는 Chats에서, 외부 실행 예제는 Agent의 API Reference 탭에서 확인한다.
 
-Agent → Integrations에서 발급한 API token은 해당 Agent 실행에 쓰는 Bearer credential이다.
-사용자 로그인 세션과 승인 화면을 만들지는 않는다. 로그인한 사용자, Agent 토큰, 메신저와
-자동화는 같은 Agent 설정을 사용해도 권한·이력·승인 경로가 다르다.
+Agent → Integrations에서 본인의 API token을 발급한다. 이 Bearer token은 발급한 사용자의
+현재 계정과 Agent 접근 권한으로 실행하며, 다른 사용자의 토큰과 별도로 관리한다.
+토큰은 브라우저 로그인 세션을 만들지 않는다. 각 실행 창구의 인증·이력·승인 규칙은 별도로 적용된다.
 [실행 API](docs/API.md#실행)와 [실행 창구별 계약](docs/design/workspaces.md#실행-창구별-계약)을 확인하라.
 콘솔의 `/guide`는 첫 Agent부터 파일·오디오·Workspace 사용까지 안내한다.
 

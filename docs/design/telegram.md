@@ -87,7 +87,8 @@ done claim은 보존 중 재획득하지 않으며 TTL 행 삭제에는 DB sweep
 Bot API로 이전 메시지를 다시 읽지 않는다. `runRememberedTurn`은 실행 전
 `ConversationTranscriptRepository`를 읽고 답변 후 질문·답을 기록한다.
 최근 50턴·합계 100,000자 안에서 오래된 순서로 전달하고 생략과 읽기 실패를 warning으로 알린다.
-쓰기 실패는 로그로 확인한다. 한 턴은 최대 20,000자를 기록하고 7일 뒤 만료한다.
+쓰기 실패는 답변 뒤 별도 warning과 로그로 알린다. warning 전송 실패로 완료한 실행을 다시 처리하지 않는다.
+한 턴은 최대 20,000자를 기록하고 7일 뒤 만료한다.
 한도는 `transcriptHistory.ts`, 만료·cascade는 공통 transcript 저장소가 소유한다.
 
 질문은 Telegram의 `date`, 답은 그보다 1ms 뒤로 기록한다. 파일만 보낸 질문은 첨부 이름을,

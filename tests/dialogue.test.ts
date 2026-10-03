@@ -1,7 +1,18 @@
 import { describe, expect, it } from "vitest";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { renderDialogue } from "@/application/audio/dialogue";
 
 describe("source-grounded dialogue rendering", () => {
+  it.each(["- literal item", "+ literal item", "42. literal item", "~~retained words~~"])("keeps transcript syntax literal in the Markdown viewer: %s", text => {
+    const content = renderDialogue({ text });
+    const html = renderToStaticMarkup(createElement(ReactMarkdown, { remarkPlugins: [remarkGfm] }, content));
+    expect(html).not.toMatch(/<(?:ul|ol|li|del)(?:\s|>)/);
+    expect(html).toContain(text);
+  });
+
   it("describes whole-recording labels and submitted interval timing without claiming identities", () => {
     const result = renderDialogue({ text: "안녕", language: "ko", diarizationRevision: "v1",
       segments: [{ text: "안녕", start: 300, end: 301, speaker: "SPEAKER_00" }] });

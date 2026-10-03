@@ -45,6 +45,7 @@ Agent의 비용 정책은 [지출 가드](../OPERATIONS.md#지출-가드와-부�
 
 권한 검사는 각 모델 요청과 도구 실행 직전에 반복한다. 스트리밍·일반 응답·fallback·ModelTask와
 라우팅 결정 모델도 같은 검사를 거친다. 앱의 권한·한도 거절은 다른 모델로 재시도하지 않는다.
+권한 조회 전후에 실행 signal도 확인하므로 조회 중 취소된 실행은 새 효과를 시작하지 않는다.
 
 이 앱은 Agent 운영 Control Plane이며 OpenAI Agents SDK가 기본 Agent Runtime이다.
 앱은 현재 설정·바인딩·권한·자격 증명·한도·저장을 준비하고, SDK의 `Agent`와 `Runner`가
@@ -127,6 +128,7 @@ SDK function tool 동시성은 5다. 실제 실행에 진입한 도구만 결과
 승인 대기·인자 오류로 실행되지 않은 도구가 형제 도구의 완료를 막지 않는다. 텍스트 결과는
 마스킹 → 예산 차감 → 복원한 화면 출력 순으로 처리하고 SDK에는 마스킹된 결과를 돌려준다.
 파일 bytes는 모델 문맥에 넣지 않으며, 이미지는 domain 한도 내 inline bytes만 허용한다.
+도구 이미지의 문맥 전달은 해당 턴에서 실제로 선택한 모델의 `imageInput`을 따른다.
 스트림 소비자의 backpressure와 취소는 자식 실행과 MCP 연결의 정리까지 기다린다.
 호출자 취소와 플랫폼 deadline은 먼저 합성 signal을 중단한 원인으로 구분한다.
 호출자가 먼저 취소했다면 정리 중 deadline이 만료되어도 취소로 유지한다. deadline이 먼저
@@ -232,7 +234,7 @@ Agent-as-Tool은 SDK가 별도 실행을 관리한다. 후자의 요청에는 �
 필요한 로컬 Handoff와 이미지 도구는 자식에도 제공할 수 있다. 자식 실패는 부모의 오류
 도구 결과와 경고가 되고, 부모는 남은 정보로 답할 수 있다.
 
-`BoundAgent`는 SDK identity를 유지하면서 동시 호출의 모델·도구·Guardrail 자원을 분리한다.
+`BoundAgent`는 SDK identity를 유지하면서 동시 호출의 모델·도구·Guardrail·출력 형식·턴 한도를 분리한다.
 각 위임 호출의 tool-call ID 공간도 분리한다. 승인 체크포인트를 읽을 때는 저장된 위임과
 Handoff 선언을 먼저 복원하고, 승인된 SDK 객체를 실제 재개에도 사용한다.
 

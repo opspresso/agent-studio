@@ -64,6 +64,19 @@ beforeEach(async () => {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
 
 describe("personal MCP grants on shared Agents", () => {
+  it.each(["redirectUri", "clientId", "resource", "scopes"] as const)("refuses pending authorization without its stored %s before exchanging the code", async field => {
+    const { authorizeUrl } = await uc.beginAuthorization("shared", server.name, alice);
+    const state = new URL(authorizeUrl).searchParams.get("state")!;
+    const row = (await store.getItem(keys.mcpOAuthState(state)))!;
+    delete row[field];
+    await store.putItem(row);
+
+    await expect(uc.completeAuthorization({ state, code: "must-not-exchange", user: alice }))
+      .rejects.toThrow("expired or was already used");
+    expect(oauth.exchangeCode).not.toHaveBeenCalled();
+    expect(await store.getItem(keys.mcpOAuthState(state))).toBeNull();
+  });
+
   it("lets two non-owners connect and inspect only their own grants", async () => {
     await connect(alice); await connect(bob);
     expect((await auth.headersFor(alice.userId, server.name, server.auth!)).headers.Authorization).toBe("Bearer token-alice-id");
@@ -156,7 +169,7 @@ describe("personal MCP grants on shared Agents", () => {
 
   it("selects the current Git caller's grant even when both callers use the same Agent", async () => {
     await connect(alice); await connect(bob);
-    const git = createAgentGitHubCredentials({ mcps: mcpRepository, cipher: secretCipher, auth,
+    const git = createAgentGitHubCredentials({ mcps: mcpRepository, auth,
       authorize: async (name, user) => (await resolveAgentCaller(access, name, user.userId)).agent,
       target: { apiUrl: "https://api.github.com", webUrl: "https://github.com" } });
     expect(await git.token("shared", alice)).toBe("token-alice-id");

@@ -1,5 +1,6 @@
 import { RateLimitedError, UpstreamError, ValidationError } from "@/application/errors";
 import { MAX_CHOICE_OPTIONS, type AgentRecommendationQuota, type ChoiceDecision, type DecisionModel } from "@/domain/llm/decision";
+import { cutCodePoints } from "@/shared/utf8Text";
 import { PiiFilter } from "@/application/llm/pii";
 
 export type RecommendationSurface = "chat" | "workspace";
@@ -29,8 +30,11 @@ export interface AgentRecommendationDeps {
   candidates(surface: RecommendationSurface, userEmail: string): Promise<AgentCandidate[]>;
 }
 
-function candidateDescription(candidate: AgentCandidate): string {
-  return `${candidate.displayName.slice(0, MAX_DISPLAY_NAME_LENGTH)}: ${candidate.description.slice(0, MAX_DESCRIPTION_LENGTH) || "No description provided"}`;
+function candidateDescription(candidate: AgentCandidate, pii: PiiFilter): string {
+  // Mask complete identifiers before a preview boundary can cut through them.
+  const name = cutCodePoints(pii.mask(candidate.displayName), MAX_DISPLAY_NAME_LENGTH);
+  const description = cutCodePoints(pii.mask(candidate.description), MAX_DESCRIPTION_LENGTH);
+  return `${name}: ${description || "No description provided"}`;
 }
 
 /** All candidate identifiers are assigned here, never inferred from model output. */
@@ -44,7 +48,7 @@ async function chooseFrom(
 ): Promise<{ candidate: AgentCandidate; confidence: number } | undefined> {
   const options = new Map(candidates.map((candidate, index) => [`agent_${index}`, candidate]));
   const criteria = Object.fromEntries([
-    ...[...options].map(([key, candidate]) => [key, pii.mask(candidateDescription(candidate))]),
+    ...[...options].map(([key, candidate]) => [key, candidateDescription(candidate, pii)]),
     ["none", "None of these Agents is suitable for this request"],
   ]);
   let answer: ChoiceDecision;

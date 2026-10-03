@@ -12,6 +12,8 @@ export const WORKSPACE_POLL_MS = 500;
 export const WORKSPACE_RETRY_MS = 15_000;
 export class WorkspaceLeaseLost extends Error {}
 
+interface WorkspaceSnapshot { workspace: Workspace; run: WorkspaceRun | null }
+
 /** All worker writes re-read cancel/close intent and compare the current lease before CAS. */
 export class WorkspaceWorkerState {
   private writes: Promise<void> = Promise.resolve();
@@ -58,10 +60,10 @@ export class WorkspaceWorkerState {
   }
 
   /** Fence the next adapter call after a long or uncertain operation settles. */
-  async effect<T>(operation: () => Promise<T>): Promise<T> {
-    await this.read();
+  async effect<T>(operation: (current: WorkspaceSnapshot) => Promise<T>): Promise<T> {
+    const current = await this.read();
     this.stopping?.throwIfAborted();
-    const result = await operation();
+    const result = await operation(current);
     await this.read();
     this.stopping?.throwIfAborted();
     return result;
@@ -73,7 +75,7 @@ export class WorkspaceWorkerState {
       Date.parse(workspace.leaseUntil ?? "") <= this.deps.now().getTime()) throw new WorkspaceLeaseLost();
   }
 
-  async read(): Promise<{ workspace: Workspace; run: WorkspaceRun | null }> {
+  async read(): Promise<WorkspaceSnapshot> {
     if (this.leaseFailure) throw this.leaseFailure;
     const workspace = await this.deps.repository.get(this.id);
     this.assertOwned(workspace);

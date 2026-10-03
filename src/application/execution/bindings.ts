@@ -234,13 +234,9 @@ export function discoveryQueries(
  * filtered or truncated by this — which is the whole reason an agent can turn
  * discovery on without auditing what it already relies on.
  *
- * **An MCP server that requires OAuth is added only where this agent has
- * already connected it.** Someone authorizing a server in the console is
- * saying this agent may use it, and there is no reason discovery should be
- * the one caller that ignores that. What it must not do is *resolve* the
- * credential to find out: `headersFor` refreshes tokens as a side effect, so
- * asking it a question would make discovery a writer. The connection rows
- * answer the same question by being read.
+ * OAuth candidates require the caller's connected personal grant. Read the
+ * connection rows here; `headersFor` belongs to dispatch because it can refresh
+ * tokens as a side effect.
  *
  * A connection that has gone stale since — a revoked grant, a rotated client —
  * is not this function's problem: `buildMcpTools` resolves it for real at
@@ -285,7 +281,7 @@ async function discoverCapabilities(
       // like any other binding that came back empty.
       //
       // Oversampled past the binding cap, because a candidate the loop below
-      // skips — an OAuth server this agent has not connected, an entry
+      // skips — an OAuth server the caller has not connected, an entry
       // deleted since the index was built — must not cost a slot. Sized at
       // exactly the cap, one unconnected high scorer starved the servers the
       // request actually asked for.
@@ -365,7 +361,7 @@ async function discoverCapabilities(
     }
     if (server.auth && !connected.has(candidate.name)) {
       notes.push(
-        `MCP server '${candidate.name}' matched this request but this agent has not connected it; authorize it from that server's own settings — binding it alone would still leave the run unable to sign in.`,
+        `MCP server '${candidate.name}' matched this request but the caller has not connected it; connect your account in the Agent's MCP settings.`,
       );
       continue;
     }
@@ -467,10 +463,10 @@ export async function resolveRunTools(
   signal?: AbortSignal,
   queries?: readonly string[],
   /**
-   * Where the run came from. MCP resolution names an email actor and the
+   * Where the run came from. MCP resolution names the authenticated user and the
    * conversation to every server as request headers.
    */
-  origin?: Partial<Pick<RunOrigin, "actor" | "user" | "executionGrant" | "userEmail" | "conversation" | "backgroundTask">> & Partial<Pick<RunOrigin, "ancestry">>,
+  origin?: Partial<Pick<RunOrigin, "actor" | "user" | "executionGrant" | "conversation" | "backgroundTask">> & Partial<Pick<RunOrigin, "ancestry">>,
   /** Records billable Rerank calls for a real run; previews leave it absent. */
   recordRerankUsage?: engine.RecordUsageFn,
 ): Promise<{

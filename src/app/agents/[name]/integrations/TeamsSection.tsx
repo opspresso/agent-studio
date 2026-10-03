@@ -130,7 +130,7 @@ export function TeamsSection({
 
 
   return (
-    <BotIntegrationSection title={t("pset.teamsBot")} view={view} error={error} onSelect={onSelect} selected={selected}
+    <BotIntegrationSection title={t("pset.teamsBot")} view={view} error={error} busy={busy} onSelect={onSelect} selected={selected}
       onRetry={() => setReloadKey(key => key + 1)}>
       <Stack gap="sm">
         <Text fz="xs" c="dimmed" lh={1.6}>

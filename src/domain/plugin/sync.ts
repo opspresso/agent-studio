@@ -71,11 +71,11 @@ export interface SyncWrite {
 /**
  * One entry the repository no longer declares, with the Agent bindings that
  * would dangle if it were deleted — the blast radius the delete checkbox
- * needs, as agent names. Empty when nothing binds it.
+ * needs, as agent names. Empty when nothing binds it; null when lookup failed.
  */
 export interface SyncOrphan {
   name: string;
-  boundTo: string[];
+  boundTo: string[] | null;
 }
 
 /** The answers a sync gives about every name, for one kind. */

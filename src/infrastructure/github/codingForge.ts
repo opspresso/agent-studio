@@ -1,4 +1,3 @@
-import { sign } from "node:crypto";
 import type { CodingForge } from "@/domain/coding/forge";
 import type { PullRequestReviewForge, PullRequestReviewTarget, PullRequestReviewFile, ReviewSourceResult } from "@/domain/trigger/pullRequestReview";
 import type { CodingRepository, PullRequestInfo } from "@/domain/coding/types";
@@ -11,18 +10,13 @@ import { fetchSameOrigin } from "@/infrastructure/net/redirectPolicy";
 import { resolvePublicUrl } from "@/infrastructure/net/ssrfGuard";
 import { readBodyText } from "@/shared/httpBody";
 import { decodeUtf8Text } from "@/shared/utf8Text";
-import { verifyGitHubSignature } from "@/shared/githubWebhook";
 import { githubHeaders, GITHUB_TIMEOUT_MS } from "./client";
 
 export interface CodingGitHubConfig {
   apiUrl: string;
   webUrl: string;
-  appId?: string;
-  installationId?: number;
-  privateKey?: string;
   /** Account credentials are used only in the server, including Git bundle transport. */
-  getToken?: () => Promise<string>;
-  webhookSecret?: string;
+  getToken: () => Promise<string>;
   internalHosts: string[];
 }
 
@@ -32,23 +26,20 @@ interface Pull {
   head: { sha: string; ref: string; repo: { full_name: string } };
   base: { ref: string; sha: string; repo: { full_name: string } };
 }
-type Permissions = Record<string, "read" | "write">;
 type GitRef = { ref: string; object: { type: string; sha: string } };
 class GitHubReadError extends Error {
   constructor(readonly status: number, message: string) { super(message); }
 }
 
-/** App private keys and publication credentials remain in the control plane. */
-export function createCodingGitHub(config: CodingGitHubConfig, now = () => new Date()): {
+/** Every operation uses the caller's current GitHub MCP grant on the server. */
+export function createCodingGitHub(config: CodingGitHubConfig): {
   forge: CodingForge;
   reviews: PullRequestReviewForge;
-  credential(repository: string, access: "read" | "write"): Promise<{ token: string; expiresAt: string }>;
-  verifyWebhook(body: string, signature: string | null): boolean;
 } {
   const api = new URL(config.apiUrl);
   const web = new URL(config.webUrl);
   if (![api, web].every(url => ["http:", "https:"].includes(url.protocol) && !url.username && !url.password && !url.search && !url.hash) ||
-    (!config.getToken && (!config.appId || !Number.isSafeInteger(config.installationId) || !config.installationId || config.installationId < 1 || !config.privateKey))) throw new Error("Invalid coding GitHub configuration");
+    typeof config.getToken !== "function") throw new Error("Invalid coding GitHub configuration");
   if ([api, web].some(url => url.protocol !== "https:" && !isDeclaredInternalHost(url.href, config.internalHosts))) throw new Error("Public GitHub endpoints require HTTPS");
   const base = config.apiUrl.replace(/\/+$/, "");
   async function request<T>(path: string, token: string, method = "GET", body?: unknown, graphql = false, expectedStatus?: number): Promise<T> {
@@ -77,30 +68,11 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
     if (response.status === 204) return undefined as T;
     return JSON.parse(await readBodyText(response, 2 * 1024 * 1024)) as T;
   }
-  async function token(repository: string, permissions: Permissions) {
+  async function token(repository: string) {
     if (!isRepositoryName(repository)) throw new Error("Invalid coding repository");
-    if (config.getToken) {
-      const value = await config.getToken();
-      if (!value || /[\r\n]/.test(value)) throw new Error("Agent GitHub MCP credential is not configured");
-      return { token: value, expiresAt: "" };
-    }
-    return appToken(permissions, [repository.split("/")[1]!]);
-  }
-  function appJwt() {
-    const seconds = Math.floor(now().getTime() / 1000);
-    const head = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })).toString("base64url");
-    const payload = Buffer.from(JSON.stringify({ iat: seconds - 60, exp: seconds + 540, iss: config.appId })).toString("base64url");
-    let signature: string;
-    try { signature = sign("RSA-SHA256", Buffer.from(`${head}.${payload}`), config.privateKey!).toString("base64url"); }
-    catch { throw new Error("Invalid GitHub App signing key"); }
-    return `${head}.${payload}.${signature}`;
-  }
-  async function appToken(permissions: Permissions, repositories?: string[]) {
-    const result = await request<{ token: string; expires_at: string }>(`/app/installations/${config.installationId}/access_tokens`,
-      appJwt(), "POST", { ...(repositories ? { repositories } : {}), permissions });
-    if (typeof result.token !== "string" || !result.token || !Number.isFinite(Date.parse(result.expires_at)) ||
-      Date.parse(result.expires_at) <= now().getTime() || Date.parse(result.expires_at) > now().getTime() + 3_700_000) throw new Error("GitHub returned invalid short-lived credentials");
-    return { token: result.token, expiresAt: result.expires_at };
+    const value = await config.getToken();
+    if (!value || /[\r\n]/.test(value)) throw new Error("Agent GitHub MCP credential is not configured");
+    return { token: value };
   }
   const repoPath = (repository: string) => {
     if (!isRepositoryName(repository)) throw new Error("Invalid coding repository");
@@ -129,7 +101,6 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
     return { number: pull.number, url: pull.html_url, headSha: pull.head.sha, baseBranch: pull.base.ref, draft: pull.draft,
       state: pull.merged ? "merged" : pull.state, ci: await ci(repository.repository, pull.head.sha, accessToken) };
   }
-  const readPermissions: Permissions = { contents: "read", pull_requests: "read", checks: "read", statuses: "read" };
   async function tagCommit(repository: string, tag: string, accessToken: string): Promise<string> {
     if (!isGitBranch(tag)) throw new CodingMutationRejectedError("Invalid Git tag");
     const ref = await request<GitRef>(`${repoPath(repository)}/git/ref/tags/${encodeURIComponent(tag)}`, accessToken);
@@ -153,22 +124,13 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
       let path: string;
       let access: { token: string };
       try {
-        if (config.getToken) {
-          access = await token(input.repository, { administration: "write" });
-          const user = await request<{ login: string }>("/user", access.token);
-          if (typeof user.login !== "string" || !user.login) throw new Error("GitHub account identity could not be verified");
-          if (user.login.toLowerCase() === owner.toLowerCase()) path = "/user/repos";
-          else {
-            const org = await request<{ login: string }>(`/orgs/${owner}`, access.token);
-            if (org.login?.toLowerCase() !== owner.toLowerCase()) throw new Error("Repository owner is not the authenticated account or an accessible organization");
-            path = `/orgs/${owner}/repos`;
-          }
-        } else {
-          const installation = await request<{ account: { login: string; type: string } }>(`/app/installations/${config.installationId}`, appJwt());
-          if (installation.account?.type !== "Organization" || installation.account.login.toLowerCase() !== owner.toLowerCase()) {
-            throw new Error("GitHub App repository creation requires its installed organization; personal repositories require an account token");
-          }
-          access = await appToken({ administration: "write" });
+        access = await token(input.repository);
+        const user = await request<{ login: string }>("/user", access.token);
+        if (typeof user.login !== "string" || !user.login) throw new Error("GitHub account identity could not be verified");
+        if (user.login.toLowerCase() === owner.toLowerCase()) path = "/user/repos";
+        else {
+          const org = await request<{ login: string }>(`/orgs/${owner}`, access.token);
+          if (org.login?.toLowerCase() !== owner.toLowerCase()) throw new Error("Repository owner is not the authenticated account or an accessible organization");
           path = `/orgs/${owner}/repos`;
         }
       } catch (error) {
@@ -185,7 +147,7 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
     },
     async checkRepository(repository, baseBranch, sourceRevision) {
       if (!isGitBranch(baseBranch)) throw new Error("Invalid Git base branch");
-      const access = await token(repository, { contents: "read" });
+      const access = await token(repository);
       const path = repoPath(repository);
       if (sourceRevision !== undefined) {
         if (!/^[a-f0-9]{40,64}$/.test(sourceRevision)) throw new Error("Invalid review commit");
@@ -210,17 +172,17 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
       }
     },
     async branches(repository) {
-      const access = await token(repository, { contents: "read" });
+      const access = await token(repository);
       const rows = await request<{ name: string }[]>(`${repoPath(repository)}/branches?per_page=${GITHUB_PAGE_SIZE}`, access.token);
       return { names: rows.map(row => row.name), hasMore: rows.length === GITHUB_PAGE_SIZE };
     },
     async pullRequest(repository, number) {
-      const access = await token(repository.repository, readPermissions);
+      const access = await token(repository.repository);
       const pull = await request<Pull>(`${repoPath(repository.repository)}/pulls/${number}`, access.token);
       return view(repository, pull, access.token);
     },
     async openPullRequest(repository, input) {
-      const access = await token(repository.repository, { ...readPermissions, pull_requests: "write" });
+      const access = await token(repository.repository);
       const path = repoPath(repository.repository);
       const existing = await request<Pull[]>(`${path}/pulls?state=open&head=${encodeURIComponent(`${repository.repository.split("/")[0]}:${repository.branch}`)}&base=${encodeURIComponent(repository.baseBranch)}&per_page=1`, access.token);
       let pull = existing[0];
@@ -245,7 +207,7 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
       if (repository.baseBranch !== "main") throw new Error("Main merge requires a pull request targeting main");
       const current = await forge.pullRequest(repository, number);
       if (current.headSha !== headSha || current.state !== "open" || current.draft || !codingCiAllowsPublication(current.ci)) throw new CodingMutationRejectedError("Pull request head or CI changed since approval");
-      const access = await token(repository.repository, { contents: "write" });
+      const access = await token(repository.repository);
       const result = await request<{ merged: unknown; sha: unknown } | null>(`${repoPath(repository.repository)}/pulls/${number}/merge`, access.token, "PUT", { sha: headSha, merge_method: "merge" });
       if (result?.merged === false) throw new CodingMutationRejectedError("GitHub refused to merge the pull request");
       if (result?.merged !== true || typeof result.sha !== "string" || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(result.sha)) {
@@ -255,7 +217,7 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
     },
     async reviewMainPush(repository, headSha) {
       if (repository.baseBranch !== "main" || !repository.branch.startsWith("agent/") || !/^[a-f0-9]{40,64}$/.test(headSha)) throw new CodingMutationRejectedError("Main push requires this Workspace's exact published head");
-      const access = await token(repository.repository, readPermissions);
+      const access = await token(repository.repository);
       const path = repoPath(repository.repository);
       type Ref = { object: { type: string; sha: string } };
       const [main, branch] = await Promise.all([
@@ -270,13 +232,13 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
     async pushMain(repository, headSha, baseSha) {
       const current = await forge.reviewMainPush(repository, headSha);
       if (current.baseSha !== baseSha || !codingCiAllowsPublication(current.ci)) throw new CodingMutationRejectedError("Main head or CI changed since approval; prepare a new review");
-      const access = await token(repository.repository, { contents: "write" });
+      const access = await token(repository.repository);
       const result = await request<{ object: { sha: string } }>(`${repoPath(repository.repository)}/git/refs/heads/main`, access.token, "PATCH", { sha: headSha, force: false });
       if (result.object.sha !== headSha) throw new Error("GitHub did not confirm the reviewed main head");
       return result.object.sha;
     },
     async releaseTarget(repository, tag) {
-      const access = await token(repository.repository, readPermissions);
+      const access = await token(repository.repository);
       let headSha: string;
       if (tag !== undefined) {
         try { headSha = await tagCommit(repository.repository, tag, access.token); }
@@ -296,7 +258,7 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
       if (!isGitBranch(tag)) throw new CodingMutationRejectedError("Invalid Git tag");
       const current = await forge.releaseTarget(repository);
       if (current.headSha !== headSha || !codingCiAllowsPublication(current.ci)) throw new CodingMutationRejectedError("Main head or CI changed since tag approval");
-      const access = await token(repository.repository, { contents: "write" });
+      const access = await token(repository.repository);
       try {
         const existing = await tagCommit(repository.repository, tag, access.token);
         if (existing !== headSha) throw new CodingMutationRejectedError("Tag already exists on a different commit; tags are never overwritten");
@@ -311,7 +273,7 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
     async createRelease(repository, input, headSha) {
       const current = await forge.releaseTarget(repository, input.tag);
       if (current.headSha !== headSha || !codingCiAllowsPublication(current.ci)) throw new CodingMutationRejectedError("Tag target or CI changed since release approval");
-      const access = await token(repository.repository, { contents: "write" });
+      const access = await token(repository.repository);
       const result = await request<{ id: number; html_url: string; tag_name: string; name: string; body: string | null; draft: boolean; prerelease: boolean }>(
         `${repoPath(repository.repository)}/releases`, access.token, "POST", { tag_name: input.tag, target_commitish: headSha,
           name: input.title, body: input.body, draft: input.draft, prerelease: input.prerelease }, false, 201);
@@ -328,7 +290,7 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
       return url.href;
     },
     async dispatch(repository, workflow, ref, inputs) {
-      const access = await token(repository, { actions: "write" });
+      const access = await token(repository);
       const result = await request<{ workflow_run_id: number; html_url: string } | undefined>(`${repoPath(repository)}/actions/workflows/${encodeURIComponent(workflow)}/dispatches`, access.token, "POST", { ref, inputs });
       return result ? { runId: result.workflow_run_id, url: result.html_url } : {};
     },
@@ -371,7 +333,7 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
   }
   const reviews: PullRequestReviewForge = {
     async load(target) {
-      const access = await token(target.repository, { contents: "read", pull_requests: "read" });
+      const access = await token(target.repository);
       const pull = await currentReviewPull(target, access.token);
       if (!pull) return staleReview();
       if (!/^[a-f0-9]{40,64}$/.test(pull.base.sha) || typeof pull.title !== "string" || (pull.body !== null && typeof pull.body !== "string") ||
@@ -388,7 +350,7 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
     },
     async read(target, input) {
       if (!/^[a-f0-9]{40,64}$/.test(target.baseSha)) throw new Error("Invalid review base revision");
-      const access = await token(target.repository, readPermissions);
+      const access = await token(target.repository);
       const pull = await currentReviewPull(target, access.token);
       if (!pull || pull.base.sha !== target.baseSha) throw new Error("Pull request revisions changed; review source is no longer current");
       const pageNumber = input.operation === "files" ? input.page ?? 1 : 1;
@@ -438,7 +400,7 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
     },
     async reply(target, body) {
       if (!body.trim()) throw new Error("Cannot publish an empty pull request review");
-      const access = await token(target.repository, { pull_requests: "write" });
+      const access = await token(target.repository);
       if (!await currentReviewPull(target, access.token)) return staleReview();
       const posted = await request<{ id: number; html_url: string; commit_id: string; state: string }>(
         `${reviewPath(target)}/reviews`, access.token, "POST", { commit_id: target.headSha, event: "COMMENT", body },
@@ -451,12 +413,5 @@ export function createCodingGitHub(config: CodingGitHubConfig, now = () => new D
       return { status: "posted", url: posted.html_url };
     },
   };
-  return {
-    forge, reviews,
-    credential: (repository, access) => {
-      if (config.getToken) throw new Error("Account credentials cannot be issued to a Sandbox");
-      return token(repository, { contents: access });
-    },
-    verifyWebhook: (body, signature) => verifyGitHubSignature(config.webhookSecret, body, signature),
-  };
+  return { forge, reviews };
 }

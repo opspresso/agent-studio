@@ -208,6 +208,8 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
   await checkSchemaBaseline();
   const { checkRuntimeSessions } = await import("./runtime-session-check");
   await checkRuntimeSessions();
+  const { checkSessionExpiry } = await import("./session-expiry-check");
+  await checkSessionExpiry();
   const { checkWorkspaces } = await import("./workspace-check");
   await checkWorkspaces();
   const { checkMcpRefreshCoordination } = await import("./mcp-refresh-check");
@@ -276,7 +278,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
   const integrationMemberEmail = `${integrationMemberId}@example.com`;
   const vectorTable = `it_vectors_${suffix}`;
   const registerChat = (chatId: string) => cleanup(async () => {
-    // A failed create may not have written META; delete also fences partial rows.
+    // Delete only owned fixture chats that were created; deletion fences late writes.
     if (await getItem(dbKeys.chat(chatId))) await chatRepository.delete(chatId);
   });
 
@@ -469,6 +471,10 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     const [apiCredential, webhookCredential] = await Promise.all([
       personalApi.generate(agentName, integrationMemberId), personalWebhook.generate(agentName, integrationMemberId),
     ]);
+    const initializedWebhook = await triggerRepository.get(agentName, "webhook");
+    assert.equal(initializedWebhook?.kind, "webhook");
+    assert.equal(initializedWebhook?.allowConcurrent, false);
+    assert.ok(!Object.hasOwn(initializedWebhook!, "enabled"));
     assert.equal(await personalApi.verify(agentName, webhookCredential.token), null);
     assert.equal(await personalWebhook.verify(agentName, apiCredential.token), null);
     const signedBody = '{"event":"integration"}';
@@ -477,6 +483,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     assert.deepEqual(await personalWebhook.verifySignature(agentName, webhookCredential.credentialId, signedBody, signature),
       { userId: integrationMemberId, email: integrationMemberEmail, credentialId: webhookCredential.credentialId });
     await personalWebhook.revoke(agentName, integrationMemberId);
+    assert.deepEqual(await triggerRepository.get(agentName, "webhook"), initializedWebhook);
     assert.equal(await personalWebhook.authorize(agentName, webhookCredential.credentialId, integrationMemberId), null);
     assert.ok(await personalApi.authorize(agentName, apiCredential.credentialId, integrationMemberId));
     await personalApi.revoke(agentName, integrationMemberId);
@@ -716,6 +723,9 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
         codeVerifier: encryptSecret("verifier", mcpOAuthStateContext(oauthState)),
         userEmail: "owner@example.com",
         issuer: "https://auth.example.com",
+        redirectUri: "https://studio.example.test/api/mcps/oauth/callback",
+        clientId: "integration-client",
+        resource: "https://mcp.example.test",
         issParameterSupported: true,
         scopes: ["drive.file", "openid", "email"],
         createdAt: now,
@@ -1246,15 +1256,15 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
 
     {
       const reviewTrigger = { agentName, triggerId: "webhook", kind: "webhook" as const,
-        description: "PR reviews", enabled: true, allowConcurrent: true, createdAt: now, updatedAt: now,
+        description: "PR reviews", allowConcurrent: true, createdAt: now, updatedAt: now,
         githubReview: { scope: "repositories" as const, repositories: ["example/agent"] } };
-      await triggerRepository.create(reviewTrigger);
+      await triggerRepository.put(reviewTrigger);
       assert.deepEqual((await triggerRepository.get(agentName, "webhook")), reviewTrigger);
       const review = { repository: "example/agent", number: 42, headSha: "a".repeat(40), status: "posted" as const,
         url: "https://github.com/example/agent/pull/42#pullrequestreview-1", workspaceUrl: "https://studio.example.test/chats/review-workspace" };
       await triggerRepository.finishRun({ ...recentRun, status: "succeeded", endedAt: now, review });
       assert.deepEqual((await triggerRepository.listRuns(agentName, triggerId, 1))[0]?.review, review);
-      pass("PR review scope, Webhook execution grant and publication receipt persist through PostgreSQL");
+      pass("PR review scope and publication receipt persist through PostgreSQL");
     }
 
     // ---------- queued schedule ownership and atomic dispatch ----------
@@ -1325,9 +1335,8 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     pass("audit append + day-partition listing");
 
     // ---------- artifacts (both indexes, and the sparse one staying sparse) ----------
-    // The two indexes are the point: a Slack run names no email, so the agent
-    // index is the only way its output is ever listed or deleted. Mocked doc
-    // clients cannot show that a sparse GSI2 really omits the row.
+    // Rows without a resolved owner email remain visible only in the Agent
+    // index. Real PostgreSQL verifies that the sparse owner index omits them.
     const artifactIds = [`it-art-img-${suffix}`, `it-art-doc-${suffix}`, `it-art-slack-${suffix}`];
     const artifactRows = [
       {
@@ -1385,7 +1394,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     assert.deepEqual(
       byOwner.filter((a) => a.artifactId.endsWith(suffix)).map((a) => a.artifactId),
       [artifactIds[1], artifactIds[0]],
-      "the owner index omits the Slack run, whose actor names no mailbox",
+      "the owner index omits the fixture row with no resolved owner email",
     );
 
     const images = await artifactRepository.listByAgent(agentName, { kind: "image" });
@@ -1517,7 +1526,7 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
 
     // ---------- content deduplication (real PostgreSQL locks, aliases and deletion) ----------
     {
-      const { storeArtifact } = await import("@/application/artifact/storeArtifact");
+      const { storeArtifact, replaceGeneratedArtifact } = await import("@/application/artifact/storeArtifact");
       const { artifactContentKey, contentChecksum } = await import("@/application/artifact/contentIdentity");
       const { artifactContentRepository: content } = await import("@/infrastructure/db/repositories/artifactContentRepository");
       const { createArtifactUseCases } = await import("@/application/artifact/artifactUseCases");
@@ -1564,12 +1573,42 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
         assert.deepEqual((await storage.objects.read(saved.key)).bytes, body, "content references return the matching bytes after an ID race");
       }
       pass("artifacts: SHA-256 deduplication across concurrent writes, reserved-ID aliases and canonical deletion");
+
+      const replacementInput = (label: string) => {
+        const artifactId = `final-file-${label}-${suffix}`;
+        const data = { ...input, artifactId, bytes: new TextEncoder().encode(artifactId) };
+        cleanup(() => artifactRepository.delete(artifactId));
+        cleanup(() => deleteItem(dbKeys.artifactContent(artifactContentKey({ ...context, ...data }, contentChecksum(data.bytes)))));
+        return data;
+      };
+      // More replacements than the lock pool has connections must finish without nested lock acquisition.
+      const originals = await Promise.all(Array.from({ length: 8 }, (_, index) => storeArtifact(storage, context, replacementInput(`original-${index}`))));
+      const results = await Promise.all(originals.map((original, index) => replaceGeneratedArtifact(storage, context,
+        { ...replacementInput(`replacement-${index}`), derivedFrom: original.artifactId }, original.artifactId)));
+      for (const [index, result] of results.entries()) {
+        assert.equal(result.replacedArtifactId, originals[index]!.artifactId);
+        assert.equal(await artifactRepository.get(originals[index]!.artifactId), null);
+        assert.equal(blobs.has(originals[index]!.key), false);
+        assert.ok(await artifactRepository.get(result.artifact.artifactId));
+      }
+      const source = await storeArtifact(storage, context, replacementInput("racing-original"));
+      const replacing = await Promise.allSettled(["a", "b"].map(label => replaceGeneratedArtifact(storage, context,
+        { ...replacementInput(`racing-${label}`), derivedFrom: source.artifactId }, source.artifactId)));
+      assert.equal(replacing.filter(result => result.status === "fulfilled").length, 1);
+      assert.equal(replacing.filter(result => result.status === "rejected").length, 1);
+      assert.equal(await artifactRepository.get(source.artifactId), null);
+      assert.equal(blobs.has(source.key), false);
+      pass("artifact replacement: final-only inventory and objects, bounded lock pool and stale-edit fencing");
     }
 
     // ---------- plugin sync lease fencing ----------
     const { checkPluginSyncLock } = await import("./plugin-sync-lock-check");
     await checkPluginSyncLock(suffix);
     pass("plugin sync lease: owned renewal, stale primitive refusal and atomic row-lock fencing");
+
+    const { checkItemStoreConcurrency } = await import("./item-store-concurrency-check");
+    await checkItemStoreConcurrency(suffix);
+    pass("item store: unconditional writes respect absent-row transactions");
 
     // ---------- transact lock modes (a checked key does not serialise) ----------
     // A `check` op asserts something elsewhere is still live; the exclusive

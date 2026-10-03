@@ -141,13 +141,9 @@ export interface ExecuteAgentInput extends RunIdentity {
   /** Surface-scoped conversation identity. */
   conversation?: RunConversation;
   /**
-   * Which user this run belongs to when the surface resolves an address the
-   * actor does not carry — a Slack actor is a workspace id. It addresses the
-   * output gallery and user-authorized MCP requests.
-   *
-   * Separate from {@link actor} on purpose: that key groups usage by surface and
-   * decides which tier's spend cap and concurrency limit apply, and folding a
-   * mailbox into it would answer a different question than the one this asks.
+   * Optional caller assertion; when supplied, it must equal `user.email`.
+   * RunIdentity.user remains the source for Artifact ownership, personal MCP
+   * authorization, spend caps and concurrency. The actor identifies the source.
    */
   ownerEmail?: string;
   signal?: AbortSignal;

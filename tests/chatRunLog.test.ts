@@ -205,7 +205,7 @@ describe("teeToRunLog", () => {
     const withStorage = recordingDeps({
       artifacts: {} as NonNullable<Parameters<typeof recordingDeps>[0]>["artifacts"],
     });
-    await run(withStorage.deps, [{ image: { b64: "A".repeat(5_000), mimeType: "image/png" } }], {
+    await run(withStorage.deps, [{ image: { b64: "A".repeat(5_000), mimeType: "image/png", key: "artifacts/kept.png" } }], {
       leaveAfter: 1,
     });
     expect(JSON.stringify(withStorage.frames())).not.toContain("AAAA");
@@ -220,6 +220,14 @@ describe("teeToRunLog", () => {
     expect(withoutStorage.frames()).toEqual([
       { warning: expect.stringContaining("only visible on the connection") },
     ]);
+  });
+
+  it.each([false, true])("does not promise a saved image without a captured key even when storage is configured (fetched=%s)", async fetched => {
+    const recorded = recordingDeps({ artifacts: {} as NonNullable<ChatDeps["artifacts"]> });
+    await run(recorded.deps, [{ image: { b64: "aGVsbG8=", mimeType: "image/png", fetched } }], { leaveAfter: 1 });
+    expect(recorded.frames()).toEqual([{ warning: expect.stringContaining("is not kept") }]);
+    expect(recorded.frames()[0].warning).toContain(fetched ? "fetched" : "generated");
+    expect(recorded.messages.find(message => message.role === "assistant")?.images).toBeUndefined();
   });
 
   /**

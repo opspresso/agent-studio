@@ -52,6 +52,8 @@ import type { Trace } from "@/domain/trace/types";
 import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
 import { fakeSkillRepository } from "./fakeSkills";
 import { resetRunMetrics, runMetricsSnapshot } from "@/lib/runMetrics";
+import type { Artifact } from "@/domain/artifact/types";
+import { fakeArtifactContent } from "./fakeArtifactContent";
 
 const DEFAULT_IMAGE_MODEL = listModels().find((m) => m.capabilities.imageGeneration)?.id;
 
@@ -173,6 +175,55 @@ function offersImageTool(channel: FakeChannel): boolean {
 }
 
 describe("sampling parameters", () => {
+  it("inspects and edits run-local HTML drafts while storing and delivering only the final file", async () => {
+    const rows = new Map<string, Artifact>();
+    const objects = new Map<string, Uint8Array>();
+    const channel = new FakeChannel([]);
+    let original = "";
+    let final = "";
+    channel.chatCompletionStream = async function* (params) {
+      this.seenParams.push(params);
+      const last = String(params.messages.filter(message => message.role === "tool").at(-1)?.content ?? "");
+      const call = (name: string, args: unknown) => toolCallChunk(0, `step-${this.calls}`, name, JSON.stringify(args));
+      switch (this.calls++) {
+        case 0: yield call("SaveFile", { name: "report.html", mime_type: "text/html", content: "<p>制御 영역</p>" }); break;
+        case 1:
+          original = /File ID: ([a-f0-9-]+)/.exec(last)![1]!;
+          expect(rows.size).toBe(0); expect(objects.size).toBe(0);
+          yield call("File", { operation: "inspect", file_id: original }); break;
+        case 2:
+          expect(last).toContain("制御 영역");
+          yield call("File", { operation: "edit", file_id: original,
+            edits: [{ operation: "replace_text", part: "text", index: 0, text: "制御", replacement: "제어" }] }); break;
+        case 3:
+          final = /file ID: ([a-f0-9-]+)/.exec(last)![1]!;
+          expect(rows.size).toBe(0); expect(objects.size).toBe(0);
+          yield call("File", { operation: "inspect", file_id: final }); break;
+        default:
+          expect(last).toContain("제어 영역"); expect(last).not.toContain("制御");
+          yield contentChunk("Final report ready.");
+      }
+    };
+    const { deps } = executionDepsFixture(channel);
+    deps.artifacts = { content: fakeArtifactContent(),
+      rows: { put: async value => { rows.set(value.artifactId, value); }, get: async id => rows.get(id) ?? null,
+        delete: async id => { rows.delete(id); }, listByAgent: async () => [...rows.values()], listByOwner: async () => [...rows.values()] },
+      objects: { put: async value => { objects.set(value.key, value.bytes); },
+        read: async () => { throw new Error("Draft bytes must stay in the run"); }, sign: async () => "https://signed.test/file",
+        delete: async key => { objects.delete(key); } },
+    };
+    deps.documents = { extract: async () => ({ text: "" }) };
+    deps.documentRenderer = { create: async () => { throw new Error("HTML uses SaveFile"); } };
+    deps.documentEditor = { inspect: async () => { throw new Error("HTML inspection is local"); }, edit: async () => { throw new Error("HTML edits are local"); } };
+    const chunks = await collect(executeAgent(deps, { ...executionIdentity(), agent: agentFixture(),
+      configuration: configurationFixture({ piiFiltering: false }), messages: [{ role: "user", content: "Write and check an HTML report" }] }));
+    expect(chunks.filter(chunk => chunk.error)).toEqual([]);
+    expect(chunks.flatMap(chunk => chunk.file ? [chunk.file.artifactId] : [])).toEqual([final]);
+    expect(rows.has(original)).toBe(false); expect(rows.size).toBe(1); expect(objects.size).toBe(1);
+    expect(Buffer.from([...objects.values()][0]!).toString()).toBe("<p>제어 영역</p>");
+    expect(chunks.at(-1)).toMatchObject({ done: true });
+  });
+
   it.each(["user", "actor", "authorizeRun"] as const)("refuses an execution with no %s before model or usage effects", async missing => {
     const channel = new FakeChannel([[contentChunk("must not run")]]);
     const fixture = executionDepsFixture(channel);
@@ -1328,7 +1379,6 @@ describe("executeAgent local subagent dispatch", () => {
             ...configurationFixture({ piiFiltering: false }),
             agentName: "summarizer",
             systemPrompt: "You summarize.",
-            userPromptTemplate: "Answer in exactly one sentence.",
           }
         : null) as ExecutionDeps["agents"];
 
@@ -1510,8 +1560,7 @@ describe("executeAgent hands the conversation to a transferred agent", () => {
 
 describe("executeAgent subagent turn budget", () => {
   it("clamps a child's maxTurn to the parent's ceiling", async () => {
-    // The child continues the parent's turn counter, so a child configuration with a
-    // larger maxTurn would raise the limit the whole run started under.
+    // The child's allowance cannot exceed the parent's remaining turn budget.
     const childCall = (id: string) => toolCallChunk(0, id, "GenerateImage", '{"prompt":"fox"}');
     const channel = new FakeChannel([
       [
@@ -1550,8 +1599,7 @@ describe("executeAgent subagent turn budget", () => {
       }),
     );
 
-    // Child starts at turn 1 and stops at the parent's ceiling of 3 — two model
-    // calls. Its own maxTurn of 50 would have let it run until the scripts ran out.
+    // After the parent's first model call, the child receives at most two turns.
     expect(channel.seenParams.filter((params) => params.model === "gpt-child")).toHaveLength(2);
     expect(chunks.some((chunk) => chunk.author === "child" && chunk.warning?.includes("turn limit (2 turns)"))).toBe(true);
     expect(chunks.filter((chunk) => !chunk.author && chunk.delta?.content).map((chunk) => chunk.delta?.content).join("")).toBe("parent recovered");

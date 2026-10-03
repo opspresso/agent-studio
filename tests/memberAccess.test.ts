@@ -91,6 +91,14 @@ describe("getMemberTier", () => {
     expect(getByEmail).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps unrelated cached users through repeated targeted invalidation", async () => {
+    getByEmail.mockResolvedValue(member("member"));
+    expect(await getMemberTier("u@x.com")).toBe("member");
+    for (let index = 0; index < 2_000; index++) invalidateMemberTierCache(`other-${index}@example.test`);
+    expect(await getMemberTier("u@x.com")).toBe("member");
+    expect(getByEmail).toHaveBeenCalledTimes(1);
+  });
+
   it("caches the absence of a member too", async () => {
     getByEmail.mockResolvedValue(null);
     expect(await getMemberTier("machine@x.com")).toBeNull();

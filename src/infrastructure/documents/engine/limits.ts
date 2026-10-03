@@ -14,7 +14,7 @@ export const MAX_MARKDOWN_CHARS = 500_000;
  * archive author's to choose. The zip path checks what the central directory
  * *declares* before inflating anything, so a bomb costs a header read rather
  * than the memory it wanted; the HWP path has no such declaration and caps the
- * inflater's output instead.
+ * inflater's output against the remaining document budget instead.
  */
 export const MAX_ZIP_ENTRIES = 2_000;
 export const MAX_EXPANDED_BYTES = 100 * 1024 * 1024;

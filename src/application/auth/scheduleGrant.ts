@@ -7,7 +7,7 @@ export async function assertScheduleExecutionGrant(
   deps: RunUserDeps & { triggers: Pick<TriggerRepository, "get"> }, grant: ScheduleExecutionGrant,
 ): Promise<void> {
   const trigger = await deps.triggers.get(grant.agentName, grant.triggerId);
-  if (!trigger?.enabled || trigger.kind !== "schedule" || trigger.agentName !== grant.agentName ||
+  if (trigger?.kind !== "schedule" || !trigger.enabled || trigger.agentName !== grant.agentName ||
     trigger.triggerId !== grant.triggerId || trigger.createdBy.userId !== grant.userId || trigger.updatedAt !== grant.revision) {
     throw new ForbiddenError("The schedule's execution permission changed");
   }

@@ -201,6 +201,8 @@ export interface EngineChunk {
     /** Public stable reference on addressed streams. */
     fileId?: string;
     derivedFrom?: string;
+    /** Earlier generated outputs replaced by this successfully stored file. */
+    replacedArtifactIds?: string[];
     b64?: string;
     mimeType: string;
     name: string;

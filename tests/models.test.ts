@@ -99,10 +99,8 @@ describe("offeredModels", () => {
   });
 
   /**
-   * A `selfhosted/` id names an endpoint only its own channel knows — no
-   * router behind the default channel serves that prefix — so where every
-   * other provider's models fall through to the default channel, these stay
-   * out of the offering until their channel is configured (`providerOffered`).
+   * Self-hosted selections require their registered provider connection,
+   * following the same providerOffered rule as every other selected model.
    */
   it("offers a selfhosted model only behind its own channel", () => {
     loadTestCatalog(

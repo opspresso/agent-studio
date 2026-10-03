@@ -24,7 +24,7 @@ import {
 } from "@tabler/icons-react";
 import { readJson } from "@/app/_lib/httpClient";
 import { recentAgents } from "@/app/_lib/overview";
-import type { Chat } from "@/domain/chat/types";
+import type { ChatListResponse } from "@/app/api/chats/route";
 import { listAgents, type SanitizedAgent } from "@/app/agents/lib/api";
 import type { MessageKey } from "@/app/_i18n/messages/en";
 import { useLocale, useT } from "@/app/_i18n/provider";
@@ -35,9 +35,6 @@ import { PageHeader } from "./PageHeader";
 import { SectionHeading } from "./SectionHeading";
 import { Dashboard } from "./Dashboard";
 import classes from "./Overview.module.css";
-
-/** A chat as the list endpoint returns it. Newest first, per `listChats`. */
-type ChatSummary = Pick<Chat, "chatId" | "title" | "agentName" | "updatedAt" | "workspaceId">;
 
 const RECENT_AGENTS = 4;
 const RECENT_CHATS = 7;
@@ -83,7 +80,7 @@ export function Overview({
 
   const [agents, setAgents] = useState<SanitizedAgent[] | null>(null);
   const [agentsLoaded, setAgentsLoaded] = useState(false);
-  const [chats, setChats] = useState<ChatSummary[]>([]);
+  const [chats, setChats] = useState<ChatListResponse["chats"]>([]);
   const [chatsLoaded, setChatsLoaded] = useState(false);
   const [chatsFailed, setChatsFailed] = useState(false);
   /**
@@ -119,10 +116,10 @@ export function Overview({
   useEffect(() => {
     let cancelled = false;
     fetch(`/api/chats?limit=${RECENT_CHATS}`)
-      .then((res) => readJson<{ chats?: ChatSummary[] }>(res))
+      .then((res) => readJson<ChatListResponse>(res))
       .then((data) => {
         if (!cancelled) {
-          setChats(data.chats ?? []);
+          setChats(data.chats);
         }
       })
       .catch(() => {

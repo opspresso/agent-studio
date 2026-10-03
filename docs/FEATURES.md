@@ -72,7 +72,7 @@ Audio 작업은 준비·접수 시점의 설정을 유지하고 새 사용자 �
 | FetchUrl | Agent의 URL 읽기 opt-in. URL guard를 거쳐 웹·PDF·데이터·이미지를 읽는다 |
 | SaveFile / File | Artifact 저장소. 텍스트 파일 저장과 지원 문서 읽기·검사·생성·편집. 문서 엔진에 MCP 바인딩은 필요하지 않다 |
 | ImportFile / TranscribeAudio / AudioJob | Agent의 Audio 기능과 호출자의 member 이상 문맥. 파일은 비공개 저장소에 보관하고 worker가 작업을 처리한다. 전사는 등록된 전사 채널을 추가로 요구한다 |
-| Workspace | Agent의 Workspace 기능, member 이상인 로그인 사용자, Sandbox·worker·실행 정책. 개인 월 한도를 적용한다. 개인 토큰·연결된 메신저·Schedule 등록자의 현재 권한과 Agent 정책을 검사해 제공한다 |
+| Workspace | Agent의 Workspace 기능, member 이상인 Studio 사용자 문맥, Sandbox·worker·실행 정책. 개인 월 한도를 적용한다. 개인 토큰·연결된 메신저·Schedule 등록자의 현재 권한과 Agent 정책을 검사해 제공한다 |
 | Slack 읽기 | Agent의 Slack 읽기 기능과 활성 봇. History·Thread·User(s)·Channels·Reactions를 봇 권한으로 읽으며 이 도구들은 게시하지 않는다 |
 | ModelTask | Agent의 명시적 모델 라우팅 설정. 다른 도구나 두 번째 Agent 루프를 실행하지 않는 보조 모델 호출 |
 
@@ -87,9 +87,9 @@ Audio 작업은 준비·접수 시점의 설정을 유지하고 새 사용자 �
 | Chat 표시·재접속 | Markdown·Reasoning·짝지은 도구 호출/결과·위임 경로·이미지·파일·실행 시간 | 화면 이동은 실행을 중단하지 않는다. Stop은 취소를 요청한다. 재접속은 제한된 실행 로그를 읽고 저장된 답변으로 교체한다 |
 | Chat 승인 | Agent가 지정한 승인 도구와 영속 SDK checkpoint | 전체 인자를 보고 승인·거절한다. 불확실하게 중단된 실행은 폐기할 수 있다. 화면 메시지로 모델 Session을 재구축하지 않는다 |
 | Workspace 실행 | Chats의 Workspace 선택 또는 Agent 도구. Command는 정확한 script, Codex·Claude·OpenCode는 설정된 native 모델 채널과 자연어 작업 | 같은 Workspace에서 후속 작업·stdout/stderr·Diff·설정한 Test/Lint/Build 결과를 확인한다. Command는 Studio 모델 없이 실행한다 |
-| Workspace 영속성 | Docker Sandbox와 별도 worker. 파일·Git·native Session checkpoint, idle suspension·복구 | 작업 취소와 Workspace 종료를 구분한다. 종료 후 보존된 checkpoint로 후속 작업을 시작할 수 있다. 불명확한 외부 작업은 자동 재실행하지 않는다 |
+| Workspace 영속성 | Docker 또는 Kubernetes Sandbox와 별도 worker. 파일·Git·native Session checkpoint, idle suspension·복구 | 작업 취소와 Workspace 종료를 구분한다. 종료 후 보존된 checkpoint로 후속 작업을 시작할 수 있다. 불명확한 외부 작업은 자동 재실행하지 않는다 |
 | 저장소 정책 | Agent의 Workspace 도구 탭에서 저장소·owner·전체 접근·신규 자동 등록 모드, 기본 runtime·idle TTL·검사·workflow 설정 | 기존 저장소 접근과 새 저장소 생성을 구분한다. 권한·정책·각 Git 승인을 현재 설정으로 재검사한다 |
-| Git·배포 검토 | Commit, commit-and-push, 작업 브랜치 push, Draft PR/PR, 병합, 조건부 main fast-forward, 허용 workflow | 정확한 HEAD·파일 트리·Diff·CI에 동작별 승인·거절을 적용한다. 결과·CI 갱신은 요청한 Chat으로 돌아간다. 실패·결과 불명은 게시 성공이 아니다 |
+| Git·배포 검토 | Commit·commit-and-push·작업 브랜치 push·PR은 코딩 요청 권한으로 실행한다. 병합·main fast-forward·태그·릴리스·허용 workflow 배포는 별도 확인이 필요하다 | 각 동작은 검토한 HEAD·파일 트리·Diff·CI에 묶인다. 결과·CI 갱신은 요청한 Chat으로 돌아간다. 실패·결과 불명은 게시 성공이 아니다 |
 | Audio 작업 | 원본 가져오기·전사·후처리·전체 처리, 접수 설정 snapshot·큐·중복 방지·완료 단계 재사용 | 단계별 진행량·시도·오류·재시도·취소를 확인한다. 원본·전사 JSON·요약 Markdown·대화록·구조화 결과는 비공개 Artifact다 |
 | Audio 외부 전달 | 명시적 Documents/Memory 목적지와 수신 MCP의 ingestion·idempotency 계약 | 접수 ID와 처리 완료를 구분한다. 작업 삭제는 중복 방지를 해제하지만 원본·결과의 보존 기간은 유지한다 |
 | Artifact 갤러리 | 개인/Agent 갤러리, 이미지·문서·오디오 필터, 불러온 목록 검색·추가 조회 | 첨부 원본과 생성·수정 결과를 구분하고 크기·시각·Agent·모델·출처를 확인한다. 만료·삭제 파일은 링크 갱신으로 복원하지 않는다 |
@@ -123,7 +123,7 @@ Audio 작업은 준비·접수 시점의 설정을 유지하고 새 사용자 �
 | 기능 | 조건·사용 위치 | 확인할 결과 |
 |---|---|---|
 | Models | guest를 포함한 로그인 사용자가 관리자가 등록한 Text·Image·Embedding·Rerank·Transcription·Decision 모델을 조회한다 | provider·ID·capability·문맥·유형별 가격을 검색·필터·정렬하고 개인 즐겨찾기를 선택기에 반영한다 |
-| 모델 관리 | Settings → Models에서 provider 이름·종류·주소·키와 모델을 등록한다. Self-hosted는 같은 흐름이며 직접 등록도 지원한다 | 전체 provider 목록 조회와 등록을 구분한다. 등록 모델 수정·삭제·제공 상태를 검사하며 listing 성공은 추론 성공을 보장하지 않는다 |
+| 모델 관리 | Settings → Models에서 provider 이름·종류·주소·키와 모델을 등록한다. Self-hosted는 같은 흐름이며 직접 등록도 지원한다 | 제공 모델 목록 조회와 등록을 구분한다. 등록 모델 수정·삭제·제공 상태를 검사하며 listing 성공은 추론 성공을 보장하지 않는다 |
 | 모델 사용 설정 | 기본·결정·Workspace·Embedding·Rerank 모델, 검색 점수, 전역 라우팅과 가격 미지정 정책 | 선택된 모델만 실행한다. 공개 catalog·가격은 오프라인 snapshot과 선택적 갱신을 사용하며 자동 등록하지 않는다. Embedding 변경은 확인 후 재색인한다 |
 | Skills | 관리자 수동 생성·본문 편집·삭제, Plugin 출처와 참고 파일 조회 | 이름·설명이 검색과 모델 선택을 안내하며 본문은 로드 후 전달한다. Plugin 소유 본문·참고 파일은 원본에서 수정한다 |
 | Plugins | 관리자 GitHub 동기화 또는 .tar/.tar.gz/.tgz 업로드, 변경·skipped·실패·출처 인수·고아 항목 보고 | 헤더 credential은 가져오지 않는다. 고아 항목·Plugin은 바인딩 영향과 현재 원본을 확인해 명시적으로 삭제한다. archive hold 중 자동 GitHub 동기화는 진행하지 않는다 |
@@ -136,8 +136,8 @@ Audio 작업은 준비·접수 시점의 설정을 유지하고 새 사용자 �
 | Telegram | token·secret webhook, 활성화 시 자동 등록·해제와 재등록 | 식별된 발신자의 개인 Chat·그룹 mention/봇 답장에 응답하며 /start·/help, 분할 답변·forum topic·관찰한 목적지를 지원한다. 음성 메시지 자동 전사는 제공하지 않는다 |
 | Teams | Azure Bot/Teams 채널, App ID·secret·선택 tenant와 messaging URL | token·serviceUrl을 검증하고 식별된 발신자의 개인 Chat·그룹/채널 mention에 답한다. typing·편집·분할·이미지·문서·알림 목적지를 지원한다 |
 | Webhook | Agent별 주소·secret/서명·활성화·겹침 정책·중복 방지 | JSON 입력을 접수 후 배경 실행한다. 202의 accepted·skipped 사유·ping을 구분하고 이력에서 결과를 확인한다 |
-| GitHub PR 리뷰 | 관리자가 Webhook에 허용 저장소·리뷰 모드를 설정한다 | 서명된 지원 PR 이벤트의 diff를 제한된 Agent로 검토하고 검증한 PR/HEAD에 댓글을 남긴다. 미선택 이벤트는 ignored이며 일반 secret 인증은 거부한다 |
-| Schedules | 다섯 필드 cron·IANA 시간대·메시지·활성화·겹침 정책, 외부 ticker | 현재 설정 실행·중복 tick·제한된 놓친 발생분·유실 상태 복구를 처리한다. owner 문맥과 Slack/Telegram/Teams 전달은 명시적으로 설정하며 실행 성공과 전달 성공을 구분한다 |
+| GitHub PR 리뷰 | Agent 소유자가 Webhook에 허용 저장소·리뷰 모드를 설정한다 | 서명된 지원 PR 이벤트의 diff를 제한된 Agent로 검토하고 검증한 PR/HEAD에 댓글을 남긴다. 미선택 이벤트는 ignored이며 일반 secret 인증은 거부한다 |
+| Schedules | 다섯 필드 cron·IANA 시간대·메시지·활성화·겹침 정책, 외부 ticker | 등록 사용자의 현재 권한과 Agent 설정으로 실행한다. 중복 tick·제한된 놓친 발생분·유실 상태 복구를 처리한다. Slack/Telegram/Teams 전달은 명시적으로 설정하며 실행 성공과 전달 성공을 구분한다 |
 
 근거: [모델 등록](../src/application/llm/modelRegistry.ts), [Plugin 동기화](../src/application/plugin/syncPlugins.ts),
 [MCP 설계](design/mcp.md), [메시징 설계](design/messaging.md), [Trigger 설계](design/triggers.md),

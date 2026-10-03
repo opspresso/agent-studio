@@ -20,7 +20,7 @@ export const teamsActivitySchema = z.object({
   id: z.string().nullish(),
   timestamp: z.string().nullish(),
   serviceUrl: z.string().nullish(),
-  channelId: z.string().nullish(),
+  channelId: z.literal("msteams"),
   from: account.nullish(),
   recipient: account.nullish(),
   conversation: conversation.nullish(),

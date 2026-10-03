@@ -8,7 +8,7 @@ import { strict as assert } from "node:assert";
 import { test } from "vitest";
 import CFB from "cfb";
 import { deflateRawSync } from "node:zlib";
-import { MAX_TEXT_CHARS } from "@/infrastructure/documents/engine/limits";
+import { MAX_EXPANDED_BYTES, MAX_TEXT_CHARS } from "@/infrastructure/documents/engine/limits";
 import { renderDocx } from "@/infrastructure/documents/engine/write/docx";
 import { parseMarkdown } from "@/infrastructure/documents/engine/markdown";
 import { readDocument } from "@/infrastructure/documents/engine/read/document";
@@ -111,4 +111,36 @@ test("a DOCX past the character budget says the same thing the same way", async 
   assert.match(result.note ?? "", /^\d+ of \d+ block\(s\)$/);
   const counts = result.counts as { blocks: number; totalBlocks: number };
   assert.ok(counts.blocks < counts.totalBlocks);
+});
+
+test("HWP body sections share the document expansion budget", async () => {
+  // An ignored record carries the bytes, so parsing the fixture does not need
+  // a correspondingly large string or millions of synthetic records.
+  const padding = Buffer.alloc(MAX_EXPANDED_BYTES / 2);
+  padding.writeUInt32LE(0xfff00010, 0);
+  padding.writeUInt32LE(padding.byteLength - 8, 4);
+  const section = deflateRawSync(Buffer.concat([
+    padding,
+    record(HWPTAG_PARA_TEXT, units("kept")),
+  ]));
+  const container = CFB.utils.cfb_new();
+  CFB.utils.cfb_add(container, "FileHeader", fileHeader());
+  CFB.utils.cfb_add(container, "BodyText/Section0", section);
+  CFB.utils.cfb_add(container, "BodyText/Section1", section);
+  const bytes = new Uint8Array(CFB.write(container, { type: "buffer" }) as Buffer);
+  assert.ok(bytes.byteLength < 200_000);
+  await assert.rejects(readDocument(source(bytes, "over-budget.hwp")), /expanded body exceeds/);
+});
+
+test("HWP sections below the shared budget preserve their document order", async () => {
+  const container = CFB.utils.cfb_new();
+  CFB.utils.cfb_add(container, "FileHeader", fileHeader());
+  for (const [index, text] of ["first", "second"].entries()) {
+    CFB.utils.cfb_add(container, `BodyText/Section${index}`, deflateRawSync(record(HWPTAG_PARA_TEXT, units(text))));
+  }
+  const bytes = new Uint8Array(CFB.write(container, { type: "buffer" }) as Buffer);
+  const result = await readDocument(source(bytes, "two-sections.hwp"));
+  assert.equal(result.text, "first\n\nsecond");
+  assert.equal(result.complete, true);
+  assert.equal(result.counts?.sections, 2);
 });

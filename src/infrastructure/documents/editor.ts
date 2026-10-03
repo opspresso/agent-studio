@@ -18,7 +18,7 @@ import { MAX_INSPECTED_BLOCKS, MAX_MARKDOWN_CHARS, MAX_RENDERED_BYTES, MAX_TEXT_
 import { inspectXlsx } from "./engine/read/xlsx";
 import { editWorkbook } from "./engine/edit/xlsx";
 import { inspectBlocks } from "./engine/read/inspect";
-import { readBlocks, readDocument } from "./engine/read/document";
+import { readBlocks } from "./engine/read/document";
 import { attributeOf, attributesOf, escapeXml, localName } from "./engine/xml";
 import { buildZip, openZip, stored } from "./engine/zip";
 import { replaceXml, xmlElements, type XmlReplacement } from "./engine/edit/xmlElements";
@@ -191,7 +191,8 @@ export async function editDocument(file: DocumentFile, operations: readonly Docu
   if (output.byteLength > MAX_RENDERED_BYTES) throw new DocumentError("The edited document exceeds the output byte limit");
   const reopened = openZip(output);
   if (reopened.entries.length !== parts.size) throw new DocumentError("The edited package lost entries");
-  await readDocument({ bytes: output, mimeType: DOCUMENT_MIME_TYPES[format], filename: file.name, label: file.name });
+  // Explicit edits can clear every text target or leave only uncached formulas.
+  await inspectDocument({ bytes: output, mimeType: DOCUMENT_MIME_TYPES[format], name: file.name }, { includeHidden: true });
   let externalRelationships = 0;
   for (const [name, bytes] of parts) {
     if (!name.endsWith(".rels")) continue;

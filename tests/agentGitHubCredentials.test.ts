@@ -16,6 +16,7 @@ import type { OAuthClient } from "@/domain/mcp/oauth";
 import type { McpConnection } from "@/domain/mcp/connection";
 import type { McpServer } from "@/domain/mcp/types";
 import type { Agent } from "@/domain/agent/types";
+import type { RunUser } from "@/domain/execution/actor";
 import { keys } from "@/infrastructure/db/keys";
 import type { FakeStore } from "./fakeStore";
 
@@ -31,8 +32,9 @@ const now = new Date("2026-10-01T08:00:00Z");
 const target = { apiUrl: "https://api.github.com", webUrl: "https://github.com" };
 const oauth: OAuthClient = { register: vi.fn(), exchangeCode: vi.fn(), refresh: vi.fn() };
 const auth = createMcpAuthProvider({ ...isolatedMcpRefresh(), connections: mcpConnectionRepository, oauth, cipher: secretCipher });
-const credentials = createAgentGitHubCredentials({ authorize: async (name) => { const row = await agentRepository.get(name); if (!row) throw new Error("Agent not found"); return row; }, mcps: mcpRepository, auth, cipher: secretCipher, target });
-const github = (agentName: string) => createCodingGitHub({ ...target, internalHosts: [], getToken: () => credentials.token(agentName, { userId: agentName, email: "owner@example.test" }) }, () => now).forge;
+const credentials = createAgentGitHubCredentials({ authorize: async (name) => { const row = await agentRepository.get(name); if (!row) throw new Error("Agent not found"); return row; }, mcps: mcpRepository, auth, target });
+const caller = (userId: string): RunUser => ({ userId, email: `${userId}@example.test` });
+const github = (agentName: string, user: RunUser) => createCodingGitHub({ ...target, internalHosts: [], getToken: () => credentials.token(agentName, user) }).forge;
 const creations = createWorkspaceRepositoryCreationUseCases({ policies: workspacePolicyRepository, creations: workspaceRepositoryCreationStore,
   authorize: async () => {}, forge: github, now: () => now });
 let requests: { path: string; token: string | null; method: string }[];
@@ -75,11 +77,13 @@ beforeEach(async () => {
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.useRealTimers(); });
 
 describe("Agent GitHub MCP credentials for Workspace", () => {
-  it("creates and registers personal repositories using each Agent's OAuth account instead of the Plugin token", async () => {
+  it("creates and registers repositories for two callers of the same Agent using their own OAuth accounts", async () => {
+    const registered: string[] = [];
     for (const [name, owner] of [["first", "bot-first"], ["second", "bot-second"]] as const) {
-      expect(await creations.create(name, { repository: `${owner}/page`, description: "Page", private: true }, { userId: "studio-user-1", email: "owner@example.test" }))
+      expect(await creations.create("first", { repository: `${owner}/page`, description: "Page", private: true }, caller(name)))
         .toMatchObject({ status: "created", allowed: true, result: { repository: `${owner}/page` } });
-      expect((await workspacePolicyRepository.get(name))?.rules?.repositories).toEqual([`${owner}/page`]);
+      registered.push(`${owner}/page`);
+      expect((await workspacePolicyRepository.get("first"))?.rules?.repositories).toEqual(registered);
     }
     expect(requests.map(item => [item.path, item.token])).toEqual([
       ["/user", "Bearer first-token"], ["/user/repos", "Bearer first-token"], ["/user", "Bearer second-token"], ["/user/repos", "Bearer second-token"],
@@ -87,19 +91,19 @@ describe("Agent GitHub MCP credentials for Workspace", () => {
   });
 
   it("keeps repository reads isolated and rechecks a disconnected grant even for an already bound client", async () => {
-    const first = github("first");
+    const first = github("first", caller("first"));
     await first.checkRepository("bot-first/page", "main");
-    await github("second").checkRepository("bot-second/page", "main");
+    await github("first", caller("second")).checkRepository("bot-second/page", "main");
     expect(requests.map(item => item.token)).toEqual(["Bearer first-token", "Bearer second-token"]);
     await mcpConnectionRepository.delete("first", "github");
     await expect(first.checkRepository("bot-first/page", "main")).rejects.toThrow("has not connected");
     expect(requests).toHaveLength(2);
   });
 
-  it("refreshes the same Agent's expiring OAuth grant before GitHub dispatch", async () => {
+  it("refreshes only the caller's expiring OAuth grant before GitHub dispatch", async () => {
     await connect("first", { expiresAt: new Date(now.getTime() + 1000).toISOString(),
       refreshToken: secretCipher.encrypt("first-refresh", mcpConnectionSecretContext("first", "github", "refresh-token")) });
-    await github("first").checkRepository("bot-first/page", "main");
+    await github("first", caller("first")).checkRepository("bot-first/page", "main");
     expect(oauth.refresh).toHaveBeenCalledWith(expect.objectContaining({ tokenEndpoint: server.auth!.tokenEndpoint, resource: server.auth!.resource }), "first-refresh");
     expect(requests[0]?.token).toBe("Bearer first-renewed");
     expect(await credentials.token("second", { userId: "second", email: "owner@example.test" })).toBe("second-token");
@@ -130,19 +134,21 @@ describe("Agent GitHub MCP credentials for Workspace", () => {
     expect(await credentials.token("first", { userId: "first", email: "owner@example.test" })).toBe("first-token");
   });
 
-  it("uses a bound static GitHub credential and refuses an override moved to a different endpoint", async () => {
-    await mcpRepository.put({ ...server, auth: undefined });
+  it.each(["registry", "binding"] as const)("refuses shared %s credentials without personal OAuth", async source => {
+    await mcpRepository.put({ ...server, auth: undefined, headers: source === "registry"
+      ? secretCipher.encryptHeaders({ authorization: "Bearer static-token" }, mcpHeadersContext("github")) : {} });
     const current = agent("first");
-    current.configuration!.mcpList = [{ name: "github", headerTarget: mcpHeaderTarget(server.url),
+    if (source === "binding") current.configuration!.mcpList = [{ name: "github", headerTarget: mcpHeaderTarget(server.url),
       headers: secretCipher.encryptHeaders({ authorization: "Bearer static-token" }, agentMcpHeadersContext("first", "github")) }];
     store.seed([{ ...keys.agent("first"), entityType: "AGENT", ...current }]);
-    expect(await credentials.token("first", { userId: "first", email: "owner@example.test" })).toBe("static-token");
-    await mcpRepository.put({ ...server, auth: undefined, url: "https://different.test/mcp" });
-    await expect(credentials.token("first", { userId: "first", email: "owner@example.test" })).rejects.toThrow("valid GitHub Authorization");
+    await mcpConnectionRepository.delete("first", "github");
+    await expect(credentials.token("first", { userId: "first", email: "owner@example.test" })).rejects.toThrow("personal GitHub MCP OAuth");
+    expect(await credentials.configured(current)).toBe(false);
+    expect(requests).toEqual([]);
   });
 
   it("never sends a public GitHub OAuth token to another configured API authority", async () => {
-    const other = createAgentGitHubCredentials({ authorize: async (name) => { const row = await agentRepository.get(name); if (!row) throw new Error("Agent not found"); return row; }, mcps: mcpRepository, auth, cipher: secretCipher,
+    const other = createAgentGitHubCredentials({ authorize: async (name) => { const row = await agentRepository.get(name); if (!row) throw new Error("Agent not found"); return row; }, mcps: mcpRepository, auth,
       target: { apiUrl: "https://enterprise.test/api/v3", webUrl: "https://enterprise.test" } });
     await expect(other.token("first", { userId: "first", email: "owner@example.test" })).rejects.toThrow("does not match");
     expect(requests).toEqual([]);
@@ -160,7 +166,7 @@ describe("Agent GitHub MCP credentials for Workspace", () => {
     await mcpConnectionRepository.put({ userId: "first", serverName: name, clientId: "enterprise-client", issuer: authConfig.issuer,
       resource: authConfig.resource, scopes: ["repo"], status: "connected", updatedAt: now.toISOString(),
       accessToken: secretCipher.encrypt("enterprise-token", mcpConnectionSecretContext("first", name, "access-token")) });
-    const internal = createAgentGitHubCredentials({ authorize: async (name) => { const row = await agentRepository.get(name); if (!row) throw new Error("Agent not found"); return row; }, mcps: mcpRepository, auth, cipher: secretCipher, target: enterprise });
+    const internal = createAgentGitHubCredentials({ authorize: async (name) => { const row = await agentRepository.get(name); if (!row) throw new Error("Agent not found"); return row; }, mcps: mcpRepository, auth, target: enterprise });
     expect(await internal.token("first", { userId: "first", email: "owner@example.test" })).toBe("enterprise-token");
     await expect(credentials.token("first", { userId: "first", email: "owner@example.test" })).rejects.toThrow("Connect a GitHub MCP");
     expect(requests).toEqual([]);

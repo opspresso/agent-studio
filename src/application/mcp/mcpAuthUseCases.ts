@@ -900,18 +900,16 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       const connection = await requireConnection(user.userId, pending.serverName);
       if (
         registryClientMismatch(connection, server.auth) ||
-        (pending.clientId !== undefined && (
-          pending.clientId !== connection.clientId ||
-          Boolean(pending.clientFromRegistry) !== Boolean(connection.clientFromRegistry)
-        )) ||
-        (pending.resource !== undefined && pending.resource !== server.auth.resource)
+        pending.clientId !== connection.clientId ||
+        Boolean(pending.clientFromRegistry) !== Boolean(connection.clientFromRegistry) ||
+        pending.resource !== server.auth.resource
       ) {
         throw new ValidationError("The OAuth client or resource changed during authorization. Please connect again.");
       }
       const target = mcpTokenTarget(deps.cipher, connection, server.auth);
       const tokens = await deps.oauth.exchangeCode(target, {
         code,
-        redirectUri: pending.redirectUri ?? (await redirectUri(server.auth.redirectUri)),
+        redirectUri: pending.redirectUri,
         codeVerifier: deps.cipher.decrypt(
           pending.codeVerifier,
           mcpOAuthStateContext(pending.state),
@@ -957,7 +955,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
           ? { expiresAt: new Date(now.getTime() + tokens.expiresInSeconds * 1000).toISOString() }
           : {}),
         // What the server actually granted, which may be narrower than asked.
-        scopes: tokens.scope ? parseGrantedScopes(tokens.scope) : pending.scopes ?? connection.scopes,
+        scopes: tokens.scope ? parseGrantedScopes(tokens.scope) : pending.scopes,
         status: "connected",
         connectedBy: user.email,
         ...(identity.status === "resolved" ? { connectedAccount: identity.account, accountLookupId: accountLookupId(server.auth, server.url) } : {}),

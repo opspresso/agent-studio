@@ -41,7 +41,7 @@ import type { PickerOption } from "./inputs";
 import type { ConfigurationSave } from "./McpBindingSettings";
 import { bindingsMayOfferRecall } from "@/domain/agent/memoryRecall";
 import { PRESENCE_PENALTY_RANGE } from "@/domain/llm/channel";
-import { ConfigurationFields } from "./ConfigurationFields";
+import { ConfigurationFields } from "@/app/_components/ConfigurationFields";
 
 /** Parse the JSON object the API accepts, without using a type assertion as validation. */
 export function parseJsonObject(text: string): Record<string, unknown> | null {

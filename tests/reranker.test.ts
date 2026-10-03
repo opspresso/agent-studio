@@ -131,13 +131,26 @@ describe("createReranker", () => {
   it("propagates caller cancellation while resolving the runtime model", async () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
-    const reranker = createReranker(() => new Promise<never>(() => {}));
+    const entered = Promise.withResolvers<void>();
+    const reranker = createReranker(() => { entered.resolve(); return new Promise<never>(() => {}); });
     const controller = new AbortController();
     const pending = reranker.rerank("query", ["document"], undefined, controller.signal);
+    await entered.promise;
     controller.abort(new Error("Stop pressed"));
 
     await expect(pending).rejects.toThrow("Stop pressed");
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not resolve a model after the caller has already cancelled", async () => {
+    const resolve = vi.fn(() => ({ baseUrl: "http://spark.test/v1", id: "local/reranker", wireId: "reranker" }));
+    const fetcher = vi.fn();
+    vi.stubGlobal("fetch", fetcher);
+    const reason = new Error("Already stopped");
+    await expect(createReranker(resolve).rerank("query", ["document"], undefined, AbortSignal.abort(reason)))
+      .rejects.toBe(reason);
+    expect(resolve).not.toHaveBeenCalled();
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
   it("resolves endpoint, credential and model together after a selection changes", async () => {

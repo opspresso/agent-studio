@@ -1,20 +1,9 @@
 /**
- * Decide whether bytes are UTF-8 text, and decode them when they are.
- *
- * `Buffer.toString("utf-8")` never fails. An invalid sequence becomes U+FFFD, so
- * arbitrary binary does not throw — it "decodes" into a page of replacement
- * characters, which reads downstream as content rather than as a failure. Every
- * caller holding bytes and wanting text has to answer this before passing the
- * result on, and the declared content type cannot answer it: servers omit it,
- * and `application/octet-stream` is a common label for a real PDF.
- *
- * Re-encoding the decoded string reproduces the input exactly if and only if the
- * input was valid UTF-8. So the round trip *is* the answer, rather than a
- * heuristic about how many replacement characters are too many.
+ * Validate UTF-8 while decoding, without allocating a second encoded copy.
+ * Fatal decoding rejects malformed sequences instead of replacing them with
+ * U+FFFD; an actual replacement character in valid text remains valid.
  */
-
-/** U+FEFF at the start of a decoded string; a byte-order mark, not content. */
-const BOM = "﻿";
+const utf8Decoder = new TextDecoder("utf-8", { fatal: true });
 
 /** The high half of a surrogate pair — a character that is only half of one. */
 function isHighSurrogate(code: number): boolean {
@@ -71,13 +60,14 @@ export function cutUtf8Bytes(text: string, maxBytes: number): string {
  * empty input remains the empty string rather than a decoding failure.
  */
 export function decodeUtf8Text(bytes: Uint8Array): string | null {
-  const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  if (buffer.includes(0)) {
+  if (bytes.includes(0)) {
     return null;
   }
-  const text = buffer.toString("utf-8");
-  if (!Buffer.from(text, "utf-8").equals(buffer)) {
-    return null;
+  try {
+    // Non-streaming decode resets state on each call and removes one leading BOM.
+    return utf8Decoder.decode(bytes);
+  } catch (error) {
+    if (error instanceof TypeError) return null;
+    throw error;
   }
-  return text.startsWith(BOM) ? text.slice(BOM.length) : text;
 }

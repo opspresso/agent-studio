@@ -108,13 +108,13 @@ export interface McpOAuthState {
   userEmail: string;
   userId: string;
   /** The exact callback used in the authorization request. */
-  redirectUri?: string;
+  redirectUri: string;
   /** Client and resource bound to this pending authorization. */
-  clientId?: string;
+  clientId: string;
   clientFromRegistry?: boolean;
-  resource?: string;
+  resource: string;
   /** Exact scopes requested, including provider identity scopes for the console. */
-  scopes?: string[];
+  scopes: string[];
   /**
    * The issuer this flow was started against, recorded here rather than read
    * back off the registry entry: RFC 9207 requires the expected issuer to live

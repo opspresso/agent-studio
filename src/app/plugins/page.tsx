@@ -20,7 +20,7 @@ import {
   syncPlugins,
   uploadPluginsArchive,
   type Plugin,
-  type PluginsSyncConfig,
+  type PluginsSyncConfigResponse,
   type PluginSyncResult,
   type PluginSyncSelection,
 } from "./api";
@@ -36,8 +36,9 @@ export default function PluginsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const syncInFlight = useRef(false);
   const [syncResult, setSyncResult] = useState<PluginSyncResult | null>(null);
-  const [syncConfig, setSyncConfig] = useState<PluginsSyncConfig | null>(null);
+  const [syncConfig, setSyncConfig] = useState<PluginsSyncConfigResponse | null>(null);
   /**
    * The archive behind the report on screen, when there is one. Applying a
    * deletion re-runs the sync that reported the orphan, and an archive sync
@@ -50,12 +51,20 @@ export default function PluginsPage() {
   const latestOnly = useRef(createLatestOnly()).current;
 
   async function runSync(selection: PluginSyncSelection = {}, source: File | null = archive) {
-    setSyncResult(await (source ? uploadPluginsArchive(source, selection) : syncPlugins(selection)));
-    await refresh();
+    if (syncInFlight.current) throw new Error("A plugin sync is already in progress");
+    syncInFlight.current = true;
+    setSyncing(true);
+    try {
+      setSyncResult(await (source ? uploadPluginsArchive(source, selection) : syncPlugins(selection)));
+      await refresh();
+    } finally {
+      syncInFlight.current = false;
+      setSyncing(false);
+    }
   }
 
   async function syncFrom(source: File | null) {
-    setSyncing(true);
+    if (syncInFlight.current) return;
     setSyncResult(null);
     setError(null);
     setArchive(source);
@@ -63,8 +72,6 @@ export default function PluginsPage() {
       await runSync({}, source);
     } catch (e) {
       setError(reportError(e, source ? t("plugins.uploadFailed") : "Sync failed"));
-    } finally {
-      setSyncing(false);
     }
   }
 
@@ -150,7 +157,7 @@ export default function PluginsPage() {
       )}
 
       {/* Show only this page's current action report; the caption dates the persisted last sync. */}
-      {syncResult && <PluginSyncSummary result={syncResult} onApply={runSync} />}
+      {syncResult && <PluginSyncSummary result={syncResult} onApply={runSync} busy={syncing} />}
 
       {error && (
         <Alert color="red" variant="light">

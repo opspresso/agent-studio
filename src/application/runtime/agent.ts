@@ -178,7 +178,8 @@ export function compileAgent(
     const metadata = { toolName: binding.name, toolDescription: assembly.tools.find((entry) => entry.function.name === binding.name)?.function.description ?? binding.agentName, parameters: AGENT_TASK_SCHEMA, inputGuardrails: [toolInputGuardrail(validateTask!, filter)], needsApproval: input.parameters?.policy?.approvalTools?.includes(binding.name) ?? false };
     // The SDK's source-agent metadata and nested RunState remain attached to this
     // actual Agent-as-Tool. Only resolving the local Agent's current settings is lazy.
-    const runOptions = { maxTurns: turn.maxTurns, signal: input.signal };
+    // Agent.asTool reads these after awaiting its input builder; resolve the active invocation then.
+    const runOptions = { get maxTurns() { return prototype.current().maxTurns; }, signal: input.signal };
     const delegate = prototype.asTool({
       ...metadata,
       inputBuilder: () => toAgentInput(prototype.current().input.messages),
@@ -247,14 +248,13 @@ export function compileAgent(
         for (const warning of prepared.warnings) childEmit({ warning });
         const child = restoredChild?.child ?? compileAgent(prepared.deps, prepared.input, childEmit, childGraph, filter, request.images);
         if (details?.resumeState && !restoredChild) await restoreHandoffGraph(child.agent, childGraph);
-        runOptions.maxTurns = child.turn.maxTurns;
         text = await prototype.withInvocation(child.agent, prepared.input, async () => {
           const result = String(await nativeInvoke(context, args, details));
           if (!prototype.current().completed) throw new ValidationError(result);
           paused = prototype.current().paused;
           if (!paused && child.turn.finalTurn) childEmit({ warning: `Agent '${binding.agentName}' reached its turn limit (${child.turn.maxTurns} turns); the parent continues with its partial result.` });
           return result;
-        }, child.observe, child.filter);
+        }, { maxTurns: child.turn.maxTurns, observe: child.observe, filter: child.filter });
       } catch (error) {
         (details?.signal ?? input.signal)?.throwIfAborted();
         text = `Error: Agent '${binding.agentName}' failed: ${error instanceof Error ? error.message : String(error)}`;

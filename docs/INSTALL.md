@@ -243,7 +243,7 @@ Go의 자동 toolchain 다운로드는 기본적으로 끈다.
 릴리스는 앱과 같은 ECR·GHCR 저장소에 `workspace-vX.Y.Z` tag의 Sandbox 이미지도 게시한다.
 배포는 접근 권한이 있는 registry를 선택하고 이미지 pull에 해당 registry의 인증을 사용한다.
 폐쇄망에는 앱과 해당 Sandbox 이미지를 함께 반입한다. `node build/workspace-health.cjs`는
-설정·Docker resource controller·이미지·네트워크·모델 채널을 검사하며 `--worker`는 큐 heartbeat도 확인한다.
+설정·선택한 Sandbox backend·이미지·네트워크·모델 채널을 검사하며 `--worker`는 큐 heartbeat도 확인한다.
 
 앱과 worker는 같은 PostgreSQL, `AES_ENCRYPTION_KEY`, Sandbox 인프라 설정을 사용한다. Agent·모델 설정은 공유 DB에서 읽는다. DB는 기존
 migration 명령으로 먼저 준비한다. 배포 이미지는 `node build/workspace-worker.cjs`를 제공하며
@@ -257,7 +257,7 @@ Docker CLI도 포함한다. Docker 모드에서 실행 worker와 Git 승인 API�
 필수 부팅·로그인·Agent 실행은 이 설정과 worker에 의존하지 않는다.
 
 worker는 실행 핸들, 출력 cursor, native Session, 검사 단계와 체크포인트를 저장한다.
-저장소 접근은 관리자가 Agent의 Workspace 도구 탭에서 배포 기본값을 덮어쓸 수 있다.
+저장소 접근은 Agent 소유자가 해당 Agent의 Workspace 도구 탭에서 설정한다.
 고정 목록·소유자 지정·모든 저장소·신규 자동 허용을 선택하며, 정책 변경에 앱·worker 재배포는 필요하지 않다.
 신규 모드는 Agent의 Workspace 생성 도구가 성공한 저장소를 자동 등록한다.
 별도 큐가 Git 승인 결과와 CI 상태를 원래 Chat에 전달하고 SDK 이력으로 후속 실행을 시작한다. 중단된
@@ -286,8 +286,8 @@ Sandbox 검사는 네트워크 없이 uid 1000·읽기 전용 root에서 Java·P
 
 코딩을 켜려면 Agent의 Workspace 저장소 접근 정책에 저장소를 등록하고 작업 요청에
 `repository: "owner/repo"`를 지정한다. 해당 Agent에 GitHub MCP를 명시적으로 바인딩하고
-작업할 GitHub 계정으로 인증한다. Workspace는 그 OAuth 연결 또는 유효한 정적 Authorization
-헤더를 사용하며 Settings의 Plugin 토큰을 사용하지 않는다. 서버에서 bare Git 저장소와 bundle을
+호출자가 본인의 GitHub 계정으로 인증한다. Workspace는 해당 호출자의 개인 OAuth 연결을 사용한다.
+Settings의 Plugin 토큰은 Plugin 다운로드에만 사용한다. 서버에서 bare Git 저장소와 bundle을
 주고받고 저장소 코드를 실행하지 않는다. Sandbox에 GitHub 자격증명을 전달하지 않으며
 배포 이미지에는 Git을 포함한다. webhook URL은
 `/api/workspaces/github/webhook`이며 Pull requests, Check runs, Check suites, Workflow runs
@@ -299,8 +299,9 @@ Sandbox 검사는 네트워크 없이 uid 1000·읽기 전용 root에서 Java·P
 fine-grained 토큰·GitHub App의 Workflows 쓰기 권한도 필요하다. 저장소 생성·조회 성공만으로
 이 권한을 확인할 수 없다. 거절된 push는 원격 브랜치 상태를 확인한 뒤 권한 수정과 새 검토를 거친다.
 
-`pnpm test:workspace:git`는 무통신 Docker 안에 일회용 Git HTTP 저장소를 만들어 clone·권한·Diff·
-승인 Commit·복원을 검증한다. GitHub App API와 승인 경합·webhook 중복은 단위 테스트로 검증한다.
+`pnpm test:workspace:git`는 무통신 Docker 안의 일회용 저장소로 자격증명 없는 Git bundle 입출력·
+Git 상태 보호·Diff·승인 Commit·checkpoint 복원을 검증한다.
+GitHub API와 승인 경합·webhook 중복은 단위 테스트로 검증한다.
 
 ### Native 모델 연결
 
@@ -313,10 +314,11 @@ Service 주소다. 지정한 Sandbox 네트워크·NetworkPolicy에서 그 주�
 
 ## GitHub PR 자동 리뷰
 
-관리자가 Agent 연동의 Webhook을 켜고 PR 리뷰 동작을 선택한다. 해당 Agent의 GitHub MCP 인증을
-사용하며 command Sandbox와 Workspace worker가 필요하다. Agent의 Workspace 도구와 저장소
-접근 정책을 설정한다. 호출할 사용자는 Integrations에서 본인의 Webhook 토큰을 발급받는다.
-해당 계정은 대상 저장소의 Contents 읽기와 Pull requests 읽기·쓰기 권한이 필요하다. GitHub MCP 바인딩과 유효한 인증이 있어야 리뷰를 게시할 수 있다.
+Agent 소유자가 연동의 Webhook을 켜고 PR 리뷰 동작을 선택한다. command Sandbox와 Workspace
+worker가 필요하며, Agent의 Workspace 도구와 저장소 접근 정책을 설정한다.
+호출할 사용자는 Integrations에서 본인의 Webhook 토큰을 발급받고 Agent에 바인딩한 GitHub MCP를
+본인 계정으로 연결한다. 실행은 토큰 발급 사용자의 개인 OAuth 권한을 사용한다.
+해당 GitHub 계정은 대상 저장소의 Contents 읽기와 Pull requests 읽기·쓰기 권한이 필요하다.
 
 GitHub 저장소 Webhook에 개인 토큰 화면에서 복사한 `/api/webhook/{agent}?credential={credentialId}`
 URL, `application/json`, 전체 `asw_…` 토큰을 Secret으로, Pull requests를 이벤트로 설정한다. Workspace 메타데이터 Webhook과 URL·Secret이
@@ -365,7 +367,7 @@ MinIO 서버와 초기화용 `mc` 이미지는 Quay의 `minio` 저장소에서 �
 Agent Plugins가 등록하는 사설 DNS 이름 그대로 MCP를 시험하려면 OrbStack에서:
 
 ```bash
-cp deploy/local/.env.example deploy/local/.env
+test -f deploy/local/.env || cp deploy/local/.env.example deploy/local/.env
 deploy/local/scripts/deploy.sh
 ```
 

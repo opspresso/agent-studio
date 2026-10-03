@@ -2,6 +2,7 @@ import type { SlackChunk, SlackClientPort } from "@/application/slack/types";
 import type { ReplySink } from "@/domain/messaging/reply";
 import { log } from "@/shared/logger";
 import { cutPoint, splitMessages } from "@/shared/messageCut";
+import { openFenceAfter } from "@/shared/markdownFence";
 import { unrefTimer } from "@/shared/unrefTimer";
 import { DEFAULT_LOADING_INDICATOR } from "@/shared/slackLoadingIndicator";
 
@@ -344,6 +345,7 @@ export function createReplySink(
       });
       let refused: unknown;
       for (const [index, piece] of pieces.entries()) {
+        if (target.canWrite?.() === false) return;
         const last = index === pieces.length - 1;
         const body = last && !final ? `${piece.text} ${indicator}` : piece.text;
         try {
@@ -382,6 +384,31 @@ export function createReplySink(
       }
       if (!refusedAsTooLong(refused)) {
         throw refused;
+      }
+    }
+  }
+
+  /** Post the remaining final text under the ordinary-message cap, tracking each accepted piece. */
+  async function postRemaining(text: string, from = flushed): Promise<void> {
+    let at = from;
+    retry: while (at < text.length) {
+      const base = at;
+      const open = openFenceAfter(text.slice(0, base));
+      const pieces = splitMessages(text.slice(base), {
+        room: editRoom,
+        window: EDIT_CUT_WINDOW,
+        prefix: open === undefined ? "" : `\`\`\`${open}\n`,
+      });
+      for (const piece of pieces) {
+        if (target.canWrite?.() === false) return;
+        try {
+          await slack.postMessage(token, { channel: target.channel, thread_ts: target.threadTs, text: piece.text });
+        } catch (error) {
+          if (refusedAsTooLong(error)) continue retry;
+          throw error;
+        }
+        at = base + piece.end;
+        flushed = at;
       }
     }
   }
@@ -452,6 +479,7 @@ export function createReplySink(
     // on every push after it. The rest arrives through `writeEdited`, which
     // opens the messages that continue this one.
     for (;;) {
+      if (target.canWrite?.() === false) return;
       const [first] = splitMessages(text, {
         room: editRoom - indicator.length - 1,
         window: EDIT_CUT_WINDOW,
@@ -559,6 +587,7 @@ export function createReplySink(
    * unopened so the next call — a status or the answer itself — retries.
    */
   async function showProgress(text: string): Promise<void> {
+    if (target.canWrite?.() === false) return;
     // The clear at the end of a run has nothing to say here, and once the answer
     // has started arriving the message belongs to it. Rewriting the message with
     // what it already says costs a call and shows the reader nothing — the same
@@ -759,7 +788,7 @@ export function createReplySink(
         await open(fullText).catch((error) => {
           log.error("slack", "reply could not be opened", error);
         });
-        if (mode === "unopened") {
+        if (mode === "unopened" || target.canWrite?.() === false) {
           return;
         }
         lastWrite = Date.now();
@@ -849,9 +878,7 @@ export function createReplySink(
           }
           if (mode === "edit") {
             await writeEdited(withSuffix(fullText.slice(0, flushed), suffix), true);
-          } else if (suffix) await slack.postMessage(token, {
-            channel: target.channel, thread_ts: target.threadTs, text: suffix,
-          });
+          } else if (suffix) await postRemaining(suffix, 0);
         } catch (error) {
           log.error("slack", "stop confirmation failed", error);
         } finally {
@@ -859,22 +886,18 @@ export function createReplySink(
         }
         return;
       }
+      // After finalization starts, offsets include the suffix and its separator.
+      // A partial post must neither replay the accepted suffix prefix nor lose it.
+      const finalText = withSuffix(fullText, suffix);
       try {
         if (mode === "unopened") {
-          const text = withSuffix(fullText, suffix);
           // Nothing was ever opened and there is nothing to say. The sink used
           // to invent a "(no response)" line here, which is how a run that
           // answered purely with an uploaded image ended up captioned as having
           // said nothing — it cannot see what else the run delivered. Whoever
           // knows that decides, and says so as a warning.
-          if (text) {
-            await slack.postMessage(token, {
-              channel: target.channel,
-              thread_ts: target.threadTs,
-              text,
-            });
-          }
-        } else if (progressOnly && !withSuffix(fullText, suffix)) {
+          await postRemaining(finalText);
+        } else if (progressOnly && !finalText) {
           // Same decision as the branch above, reached from the other side: the
           // only thing on screen is a note standing in for an answer that never
           // came as text. Leaving it would caption a picture-only run as still
@@ -883,9 +906,10 @@ export function createReplySink(
           if (mode === "stream") {
             await slack.stopStream(token, { channel: messageChannel, ts: messageTs }).catch(() => {});
           }
+          if (target.canWrite?.() === false) return;
           await slack.deleteMessage(token, { channel: messageChannel, ts: messageTs });
         } else if (mode === "stream") {
-          const remaining = withSuffix(fullText.slice(flushed), suffix);
+          const remaining = finalText.slice(flushed);
           // Channel rows and remaining text share one chunks-mode stop call.
           // DM text uses only markdown_text, with overflow posted separately.
           // Split the remaining text because failed appends may leave the
@@ -897,42 +921,23 @@ export function createReplySink(
               ts: messageTs,
               ...(closing.length > 0 ? { chunks: closing } : {}),
             });
-            flushed = fullText.length;
+            flushed = finalText.length;
           } else {
-            // An assistant thread closes with one `markdown_text`, and one holds
-            // at most `MAX_STREAM_TEXT` characters — so on this side the split
-            // above has nowhere to put its second piece. Cutting to the cap
-            // instead dropped the rest of the answer without a word, in exactly
-            // the case the split exists for: a run whose appends were all
-            // refused arrives here holding all of it. The tail follows as its
-            // own messages, cut on the same boundaries.
-            const pieces = textPieces(remaining);
-            const [head, ...rest] = pieces;
+            // A DM closes with one stream-sized delta. Its continuation is an
+            // ordinary message and must use that smaller cap and fence layout.
+            const head = textPieces(remaining)[0];
             await slack.stopStream(token, {
               channel: messageChannel,
               ts: messageTs,
               ...(head ? { markdown_text: head } : {}),
             });
-            flushed = fullText.length;
-            for (const piece of rest) {
-              // Its own failure, never the close's: the stream is stopped and
-              // `flushed` has moved, so the recovery below would re-send an
-              // answer the reader is already holding.
-              await slack
-                .postMessage(token, {
-                  channel: target.channel,
-                  thread_ts: target.threadTs,
-                  text: piece,
-                })
-                .catch((error) =>
-                  log.error("slack", "a continuation of the final reply failed", error),
-                );
-            }
+            flushed += head?.length ?? 0;
+            await postRemaining(finalText);
           }
         } else {
           // An opened message must not be left holding the loading indicator,
           // so unlike the unopened case this always writes something.
-          await writeEdited(withSuffix(fullText, suffix) || "_(no answer)_", true);
+          await writeEdited(finalText || "_(no answer)_", true);
         }
       } catch (error) {
         log.error("slack", "final reply write failed", error);
@@ -944,18 +949,9 @@ export function createReplySink(
         // `flushed` is what Slack actually took, and it is not advanced past a
         // failed write, so this is the part that went missing rather than the
         // whole answer. A duplicated tail would be its own defect.
-        const undelivered = withSuffix(fullText.slice(flushed), suffix);
-        if (undelivered) {
-          await slack
-            .postMessage(token, {
-              channel: target.channel,
-              thread_ts: target.threadTs,
-              text: undelivered,
-            })
-            .catch((fallbackError) =>
-              log.error("slack", "fallback reply failed too", fallbackError),
-            );
-        }
+        await postRemaining(finalText).catch((fallbackError) =>
+          log.error("slack", "fallback reply failed too", fallbackError),
+        );
       }
       // Sending a message clears the status on its own, but only if the send
       // above succeeded — clear it explicitly so a failed reply does not leave

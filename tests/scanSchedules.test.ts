@@ -88,7 +88,6 @@ function webhook(overrides: Partial<WebhookTrigger> = {}): WebhookTrigger {
     triggerId: "inbound",
     kind: "webhook",
     description: "",
-    enabled: true,
     allowConcurrent: false,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
@@ -756,7 +755,7 @@ describe("scanSchedules", () => {
     expect(f.rows.find((r) => r.runId === "lost-delivery")?.status).toBe("failed");
   });
 
-  it("repairs a disabled webhook's rows too — disabling must not strand one", async () => {
+  it("repairs webhook rows without an active credential", async () => {
     const lost: TriggerRun = {
       agentName: "p",
       triggerId: "inbound",
@@ -766,7 +765,7 @@ describe("scanSchedules", () => {
     };
     const f = fixture({
       schedules: [schedule({ enabled: false })],
-      webhooks: [webhook({ enabled: false })],
+      webhooks: [webhook()],
       seededRows: [lost],
     });
     const { summary } = await scanAndExecute(f);

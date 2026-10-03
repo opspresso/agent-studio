@@ -1,7 +1,10 @@
+import type { MemberUsageRow } from "@/domain/usage/types";
 import { usageUseCases } from "@/lib/container";
 import { withAuth } from "@/lib/session";
 import { apiError } from "@/app/api/_lib/http";
 import { summaryQuerySchema } from "@/app/api/usages/summary/validation";
+
+export interface MemberUsageResponse { items: MemberUsageRow[] }
 
 /**
  * The signed-in user's own daily spend over a range — the profile page's chart
@@ -25,7 +28,7 @@ export const GET = withAuth(async (user, request: Request) => {
   }
   try {
     const items = await usageUseCases.memberUsage(user.id, parsed.data.from, parsed.data.to);
-    return Response.json({ items });
+    return Response.json({ items } satisfies MemberUsageResponse);
   } catch (error) {
     return apiError(error);
   }

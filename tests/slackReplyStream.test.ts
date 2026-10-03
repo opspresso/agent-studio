@@ -11,6 +11,55 @@ beforeEach(() => {
 
 const DM: ReplyTarget = { channel: "D1", threadTs: "1.0", assistantThread: true };
 
+describe("ownership changes during a Slack write", () => {
+  it("does not post edited continuations after the first write loses ownership", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    let owns = true;
+    const { slack, posted, updates } = makeChannelFake();
+    const sink = createReplySink(slack, "tok", { ...DM, canWrite: () => owns });
+    await sink.push("visible");
+    const update = slack.updateMessage;
+    slack.updateMessage = async (...args) => { const result = await update(...args); owns = false; return result; };
+    await sink.finish("x".repeat(8000), "");
+    expect(updates).toHaveLength(1);
+    expect(posted).toHaveLength(1);
+  });
+
+  it.each([false, true])("does not append or fall back after ownership is lost opening a stream (refused=%s)", async refused => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    let owns = true;
+    const { slack, appended, posted } = makeStreamingChannelFake();
+    slack.startStream = async () => {
+      owns = false;
+      if (refused) throw new Error("stream unavailable");
+      return { ts: "old-stream", channel: "D1" };
+    };
+    await createReplySink(slack, "tok", { ...DM, canWrite: () => owns }).push("old answer");
+    expect(appended).toEqual([]);
+    expect(posted).toEqual([]);
+  });
+
+  it("does not post a progress fallback after ownership is lost", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    let owns = true;
+    const { slack, posted } = makeStreamingChannelFake();
+    slack.startStream = async () => { owns = false; throw new Error("stream unavailable"); };
+    await createReplySink(slack, "tok", { ...CHANNEL, canWrite: () => owns }).status("thinking");
+    expect(posted).toEqual([]);
+  });
+
+  it("does not delete progress after ownership is lost closing the stream", async () => {
+    let owns = true;
+    const { slack, deleted } = makeStreamingChannelFake();
+    const sink = createReplySink(slack, "tok", { ...CHANNEL, canWrite: () => owns });
+    await sink.status("thinking");
+    const stop = slack.stopStream;
+    slack.stopStream = async (...args) => { await stop(...args); owns = false; };
+    await sink.finish("", "");
+    expect(deleted).toEqual([]);
+  });
+});
+
 /** Records only what these tests are about — the status text and its rotation. */
 function makeSlackFake() {
   const statuses: Array<{ status: string; loading_messages?: string[] }> = [];
@@ -735,6 +784,61 @@ describe("a checklist that would grow past reading", () => {
  * Stream close flushes owed text and progress rows within the opened stream mode.
  */
 describe("closing a stream that still owes both text and rows", () => {
+  it("separates a warning from an answer already flushed in full", async () => {
+    const { slack, appended } = makeStreamingChannelFake();
+    const sink = createReplySink(slack, "tok", CHANNEL);
+    await sink.push("answer");
+    await sink.finish("answer", ":warning: missing source");
+    expect(appended.join("")).toBe("answer\n\n:warning: missing source");
+  });
+
+  it.each(["unopened", "failed-close", "dm-continuation"])("bounds ordinary posts after %s without losing the final text", async (path) => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { slack, appended, stopped, posted } = makeStreamingChannelFake();
+    const originalPost = slack.postMessage;
+    slack.postMessage = async (token, args) => {
+      if (args.text.length > 2800) throw new Error("Slack chat.postMessage failed: msg_too_long");
+      return originalPost(token, args);
+    };
+    const text = "answer ".repeat(4500);
+    const suffix = ":warning: details " + "x".repeat(4000);
+    const sink = createReplySink(slack, "tok", path === "dm-continuation" ? DM : CHANNEL);
+    if (path !== "unopened") await sink.push(text);
+    if (path === "failed-close") slack.stopStream = async () => { throw new Error("close refused"); };
+
+    await sink.finish(text, suffix);
+
+    expect(posted.length).toBeGreaterThan(1);
+    expect(posted.every((piece) => piece.length <= 2800)).toBe(true);
+    expect([...appended, ...stopped.map((item) => item.markdown_text ?? ""), ...posted].join("")).toBe(`${text}\n\n${suffix}`);
+  });
+
+  it("resumes a partly posted final suffix without repeating its successful prefix", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { slack, posted } = makeChannelFake({ refuseOver: 2800, refusePost: 2 });
+    const sink = createReplySink(slack, "tok", DM);
+    const text = "prefix ".repeat(250);
+    const suffix = "detail ".repeat(1000);
+    await sink.finish(text, suffix);
+    expect(posted.join("")).toBe(`${text}\n\n${suffix}`);
+  });
+
+  it("reopens a code fence when a DM stream continues as ordinary messages", async () => {
+    const { slack, posted } = makeStreamingChannelFake();
+    const sink = createReplySink(slack, "tok", DM);
+    const code = `\`\`\`js\n${"const value = 1;\n".repeat(2000)}\`\`\`\n`;
+    await sink.push(code);
+    await sink.finish(code, "");
+    expect(posted.length).toBeGreaterThan(1);
+    for (const piece of posted) {
+      expect(piece.length).toBeLessThanOrEqual(2800);
+      expect(piece.startsWith("```js\n")).toBe(true);
+      expect(piece.match(/```/g)).toHaveLength(2);
+    }
+  });
+
+
   it("delivers the answer", async () => {
     const { slack, appended, stopped, posted, chunks } = makeStreamingChannelFake();
     const sink = createReplySink(slack, "tok", CHANNEL);

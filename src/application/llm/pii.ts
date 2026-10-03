@@ -1,6 +1,7 @@
 import { randomInt } from "node:crypto";
 
-const EMAIL_PATTERN = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
+// Start at a local-part boundary so a failed email search does not rescan every suffix.
+const EMAIL_PATTERN = /(?<![A-Z0-9._%+-])[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
 const PHONE_PATTERN =
   /(?<![\w])(?:\+\d{1,3}[\s.-]?)?(?:\(?\d{2,4}\)?[\s.-]?)\d{3,4}[\s.-]?\d{4}(?![\w])/;
 // Korean resident/foreigner registration number: YYMMDD-GABCDEF. The date half is
