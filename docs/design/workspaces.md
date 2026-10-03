@@ -208,8 +208,8 @@ Agent 소유자가 저장소, 접근 모드, 기본 Runtime, 유휴 시간, 검�
 기본 저장소는 없으며 Git 작업은 저장소와 기준 브랜치를 명시한다. 모델이 필요한 Runtime은 설정 → Models → 사용 설정의
 전역 Runtime별 선택을 사용한다. Agent 설정과 모델 설정은 환경변수로 관리하지 않는다.
 `repositoryOwners`는 정확한 계정·조직 이름을 대소문자 없이 비교하며 현재·향후 저장소를 허용한다.
-Workspace의 GitHub 작업은 해당 Agent가 바인딩한 GitHub MCP에 대한 호출자의 개인 인증을 사용한다.
-정책 허용이 그 계정의 권한을 늘리지는 않으며 Plugin 가져오기 토큰이나 다른 사용자의 연결을 사용하지 않는다.
+Workspace의 GitHub 작업은 해당 Agent가 바인딩한 GitHub MCP에 대한 호출자의 개인 OAuth 연결을 사용한다.
+정책 허용이 그 계정의 권한을 늘리지는 않는다. 정적 Authorization 헤더·Plugin 토큰·다른 사용자의 연결은 사용하지 않는다.
 GitHub MCP 바인딩이 여러 개면 계정을 임의 선택하지 않고 설정 오류를 반환한다.
 
 | 모드 | 기존 저장소 접근 | 새 저장소 생성 |

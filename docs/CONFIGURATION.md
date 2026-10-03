@@ -347,7 +347,7 @@ Codex·Claude·OpenCode의 모델은 **Model 사용 설정 → 워크스페이�
 | `WORKSPACE_MODEL_GATEWAY_URL` | 미설정 | Sandbox가 접근할 Studio 주소. Native 모델 실행에 필수이며 command에는 필요 없다. Docker 내부 호스트 주소 또는 Kubernetes Service 주소를 명시한다 |
 
 Agent 저장소·소유자 목록은 각각 최대 100개다. `selected`는 등록한 저장소만,
-`owners`는 목록과 정확한 소유자 범위를, `all`은 해당 Agent의 GitHub MCP 계정으로 접근 가능한 전체를 허용한다.
+`owners`는 목록과 정확한 소유자 범위를, `all`은 호출자의 GitHub MCP 계정으로 접근 가능한 전체를 허용한다.
 `new`는 등록 목록을 유지하고 `Workspace.create_repository`의 실제 생성 성공을 자동 등록한다.
 [정책 계약](design/workspaces.md#저장소-정책-관리)을 따른다. 유휴 시간은 기본 1800초, 범위는 60초~7일이다.
 검사는 `test`, `lint`, `build`별 명령을 최대 하나씩 저장하며 각 Run 뒤 실행한다.
@@ -369,10 +369,10 @@ PR 자동 리뷰의 Agent 실행과 Workspace 검사는 같은 토큰 발급 사
 Workspace worker가 자동 정리와 재시작 복구를 담당한다. 별도 worker를 실행하지 않으면 큐·TTL·승인 결과 전달과 CI 대기가
 진행되지 않는다. Workspace task와 채팅 후속 실행은 각각 workerConcurrency 상한을 적용하는 별도 큐다. 설치·검증 명령은 [INSTALL.md](INSTALL.md#workspace-worker)를 따른다.
 
-코딩 작업은 해당 Agent가 바인딩한 GitHub MCP에 대한 호출자 자신의 인증을 사용한다. OAuth 연결의
-사용자 ID·issuer·resource·공유 client를 검사하고 만료가 가까우면 그 사용자의 토큰을 갱신한다. 정적 인증은 MCP registry 헤더와 Agent의 현재 endpoint에 묶인 헤더 override를
-사용한다. OAuth가 설정됐으면 호출자의 유효한 개인 연결이 필수이며 연결 누락·해제·불일치에는
-정적 인증·다른 사용자·Agent 소유자·Plugin 토큰으로 우회하지 않는다.
+코딩 작업은 해당 Agent가 바인딩한 GitHub MCP에 대한 호출자 자신의 OAuth 연결을 사용한다.
+사용자 ID·issuer·resource·공유 client를 검사하고 만료가 가까우면 그 사용자의 토큰을 갱신한다.
+OAuth 설정과 유효한 개인 연결이 모두 필수다. MCP registry·Agent의 정적 Authorization 헤더,
+다른 사용자·Agent 소유자의 연결 또는 Plugin 토큰은 Workspace Git에 사용하지 않는다.
 `Settings → Plugins → GitHub 인증`과 `GITHUB_TOKEN`은 Plugin 가져오기에만 사용한다.
 
 Git 인증은 서버에서만 수행하고 자격증명이 없는 Git bundle을 Sandbox에 전달한다. 서버에 Git

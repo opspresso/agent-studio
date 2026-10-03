@@ -686,7 +686,8 @@ Agent 소유자·다른 사용자·registry의 정적 인증으로 대신 호출
 
 Workspace는 chat 소유자에게만 공개되며 실행·승인은 현재 Agent 접근도 다시 확인한다.
 Workspace 설정 쓰기는 Agent 소유자에게 한정하고 revision 조건과 Agent 수명 경계로 보호한다.
-Agent의 도구 활성화는 해당 Agent에 명시적으로 연결한 GitHub MCP 계정을 정책 범위 내 사용하는 것을 허용한다.
+GitHub API와 Git 전송은 해당 Agent에 바인딩한 GitHub MCP의 호출자 개인 OAuth 연결을 사용한다.
+정적 MCP 헤더·Agent 소유자의 연결·Plugin 토큰으로 대신 인증하지 않는다.
 Runtime 모델 선택은 관리자에게 한정하며 도구를 끄면 새 실행·Git 승인을 거절한다.
 등록 저장소·정확한 소유자 허용은 DB에서 현재 값을 읽으며 일반 Agent가 수정하지 않는다.
 소유자 허용은 해당 계정의 향후 저장소도 포함하므로 관리 화면에서 그 범위를 명시한다. 조회 실패는

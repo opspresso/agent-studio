@@ -169,7 +169,7 @@ describe("personal MCP grants on shared Agents", () => {
 
   it("selects the current Git caller's grant even when both callers use the same Agent", async () => {
     await connect(alice); await connect(bob);
-    const git = createAgentGitHubCredentials({ mcps: mcpRepository, cipher: secretCipher, auth,
+    const git = createAgentGitHubCredentials({ mcps: mcpRepository, auth,
       authorize: async (name, user) => (await resolveAgentCaller(access, name, user.userId)).agent,
       target: { apiUrl: "https://api.github.com", webUrl: "https://github.com" } });
     expect(await git.token("shared", alice)).toBe("token-alice-id");

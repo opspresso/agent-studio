@@ -477,7 +477,7 @@ const agentGitHubCredentials = createAgentGitHubCredentials({
     if (current.user.email !== user.email) throw new ForbiddenError("The authenticated account changed");
     return current.agent;
   },
-  mcps: capabilityAccess.mcps, auth: mcpAuthProvider, cipher: secretCipher,
+  mcps: capabilityAccess.mcps, auth: mcpAuthProvider,
   target: { apiUrl: config.githubApiUrl, webUrl: config.githubWebUrl ?? "" },
 });
 function agentCodingGitHub(agentName: string, user: import("@/domain/execution/actor").RunUser) {
@@ -603,7 +603,7 @@ export const triggerUseCases = createTriggerUseCases({
   assertReviewReady: async (agentName) => {
     if (!getWorkspaceConfig()) throw new ValidationError("PR review requires a configured Workspace Sandbox backend");
     const agent = await agentRepository.get(agentName);
-    if (!agent || !await agentGitHubCredentials.configured(agent)) throw new ValidationError("PR review requires this Agent to bind a GitHub MCP server");
+    if (!agent || !await agentGitHubCredentials.configured(agent)) throw new ValidationError("PR review requires a bound GitHub MCP server with OAuth for the configured GitHub endpoint");
   },
 });
 export const settingsUseCases = createSettingsUseCases(settingsRepository, secretCipher, process.env, parseProviderConfigs, availableServiceLogos());

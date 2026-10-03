@@ -87,7 +87,7 @@
 | 메신저 계정 연결과 실행 권한 철회 | `application/auth/messagingIdentityUseCases.ts`의 일회용 인증과 `application/auth/messagingGrant.ts`의 현재 연결 검사. `ExecutionGrant`는 실행·하위 Agent·Workspace 큐로 전달하며 새 모델·도구 효과 전에 다시 검사한다 | 코드 |
 | PR 리뷰의 고정된 자료 조회와 전달 범위 | `domain/trigger/pullRequestReview.ts`의 읽기 계약; `infrastructure/github/codingForge.ts`가 검증한 PR·커밋만 조회한다. `application/trigger/reviewPullRequest.ts`가 완전한 자료 범위와 게시 조건을 소유한다 | 코드 |
 | 사용자에게 제시할 Workspace Agent 옵션과 정책 조회 상한 | `src/application/workspace/workspaceOptions.ts`; 접근 가능한 Agent 목록과 정책 repository는 조립 지점에서 주입한다 | 코드 |
-| Workspace·PR 리뷰 호출자의 GitHub MCP 자격증명 선택 | `application/coding/githubCredentials.ts`; 현재 호출자 계정·MCP binding·헤더 target·GitHub authority를 확인하며 OAuth 검증·갱신은 `application/mcp/mcpAuthProvider.ts`를 사용한다. Plugin token을 사용하지 않는다 | 구조 |
+| Workspace·PR 리뷰 호출자의 GitHub MCP 자격증명 선택 | `application/coding/githubCredentials.ts`; 현재 호출자 계정·MCP binding·GitHub authority를 확인하고 `application/mcp/mcpAuthProvider.ts`가 검증·갱신한 개인 OAuth token만 사용한다. 정적 header·Plugin token을 사용하지 않는다 | 구조 |
 | 신규 저장소 생성과 자동 등록의 증거·중복 방지 | `application/workspace/createRepository.ts`; GitHub 201 응답 검증은 `infrastructure/github/codingForge.ts`, 결과와 정책 transaction은 `workspaceRepositoryCreationStore.ts` | 코드 |
 | 도구 결과의 실패 표시와 trace 오류 판정 | `src/shared/toolResultStatus.ts`의 `isToolErrorText`. Runtime의 `Error:` 결과를 Chat·Playground에도 실패로 표시한다 | 코드 |
 | 코딩 요청에 포함되는 Git 게시와 별도 확인의 구분 | `domain/coding/types.ts`의 `codingActionRequiresConfirmation`; 실행은 `application/coding/codingUseCases.ts`의 공통 검토·claim 경로 | 코드 |
@@ -212,7 +212,7 @@ Agent 설정은 binding을 소유하며 개인 연결은 Agent 수명과 독립�
 | MCP 연결 화면의 조회 계약 선택·계정 label 검증·JSON Pointer·추가 identity scopes | `src/domain/mcp/account.ts`. 관리자 계약·OIDC UserInfo·제공자 기본값 순서로 선택하며 Studio 사용자 이메일을 연결 계정으로 추정하지 않는다. 타입 계약은 독립 leaf `accountLookup.ts` | 구조 |
 | OAuth 갱신의 프로세스 간 효과 claim·결과 대기·불명확한 갱신의 반복 금지 | `application/mcp/mcpAuthProvider.ts`; 포트는 `domain/mcp/refresh.ts`, atomic claim은 `mcpRefreshRepository.ts`. 토큰 교환 전에 claim하고 network 동안 DB lock을 유지하지 않는다 | 코드 |
 | 공용 MCP OAuth client 참조와 token endpoint 자격 증명 선택 | `src/application/mcp/mcpOAuthClient.ts`. code 교환과 refresh가 같은 선택을 사용한다 | 구조 |
-| MCP dispatch의 endpoint-bound Agent 헤더·예약 metadata 제거·OAuth 우선순위 | `application/mcp/credentials.ts`; 실행·Agent 도구 조회·Workspace GitHub 자격증명이 같은 판정을 사용한다. HTTP header 이름의 대소문자와 무관하게 OAuth 값 하나만 전송한다 | 코드 |
+| MCP dispatch의 endpoint-bound Agent 헤더·예약 metadata 제거·OAuth 우선순위 | `application/mcp/credentials.ts`; MCP 실행과 Agent 도구 조회가 같은 판정을 사용한다. HTTP header 이름의 대소문자와 무관하게 OAuth 값 하나만 전송한다 | 코드 |
 | 원격·관리형 MCP의 헤더·환경·OAuth secret 응답 마스킹 | `src/application/mcp/mcpViews.ts` | 구조 |
 | `plugin.json`/`mcp.json` 의 해석, 그리고 Plugin 이 어떤 MCP transport 를 바인딩할 수 있는가 | `src/domain/plugin/types.ts` | 구조 |
 | Agent Plugins 이름 규칙 | `src/domain/plugin/types.ts` 의 `isPluginName` | 구조 |
