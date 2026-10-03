@@ -6,14 +6,7 @@
  */
 
 import type { SkillRoot, SkillTreeEntry } from "@/domain/skill/files";
-
-/**
- * This org's reverse-domain client-extension namespace, per the spec's
- * convention. `mcp/<server>.md` inside it carries what the closed mcp.json
- * schema has no field for: the server's model-facing description and the
- * operator notes. Other clients ignore the directory entirely.
- */
-export const AGENT_STUDIO_EXTENSION_DIR = "org.opspresso.agent-studio";
+import { STUDIO_PLUGIN_EXTENSION } from "./types";
 
 export interface PluginRoot {
   /** Directory holding plugin.json, "" for the repository root. */
@@ -144,8 +137,8 @@ export function selectPluginSkillRoots(
 export function mcpDocServerName(path: string, root: PluginRoot): string | null {
   const prefix =
     root.rootPath === ""
-      ? `${AGENT_STUDIO_EXTENSION_DIR}/mcp/`
-      : `${root.rootPath}/${AGENT_STUDIO_EXTENSION_DIR}/mcp/`;
+      ? `${STUDIO_PLUGIN_EXTENSION}/mcp/`
+      : `${root.rootPath}/${STUDIO_PLUGIN_EXTENSION}/mcp/`;
   if (!path.startsWith(prefix) || !path.endsWith(".md")) {
     return null;
   }

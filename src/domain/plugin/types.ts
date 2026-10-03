@@ -33,6 +33,7 @@ export const PLUGIN_NAME_RULE =
 export const PLUGIN_MANIFEST_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json";
 export const MCP_JSON_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json";
 
+/** Shared namespace for manifest extensions and repository extension documents. */
 export const STUDIO_PLUGIN_EXTENSION = "org.opspresso.agent-studio";
 
 export interface PluginManifest {

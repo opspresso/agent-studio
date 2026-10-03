@@ -135,7 +135,7 @@
 | proxied 오브젝트 주소와 그 토큰. `/api/objects/<key>?exp=&sig=[&dl=]`, HMAC 이 무엇을 덮는가 | `src/infrastructure/storage/objectUrlToken.ts`. 키·만료·다운로드 파일명을 같은 HMAC 계약으로 서명·검증한다 | 구조 |
 | 아티팩트 목록의 페이지 커서(= GSI 정렬 키) 철자. 아래 "모든 행 키 문자열" 의 유일한 예외이고, API 가 독자에게 건네는 커서이기도 하기 때문이다 | `src/domain/artifact/repository.ts` 의 `artifactCursor` | 구조 |
 | plugin snapshot 하나가 동시에 읽을 선택 파일 수 | `src/infrastructure/plugin/snapshot.ts` 의 `MAX_CONCURRENT_PLUGIN_READS` | 구조 |
-| plugin 기본 파일 응답 매핑 선언·검증 | `src/domain/plugin/types.ts`의 `STUDIO_PLUGIN_EXTENSION`, `src/domain/mcp/sourceMapping.ts`의 `isMcpSourceMappings` | 구조 |
+| Plugin manifest·확장 문서의 namespace와 기본 파일 응답 매핑 | `src/domain/plugin/types.ts`의 `STUDIO_PLUGIN_EXTENSION`을 `files.ts`도 사용한다. 매핑 검증은 `src/domain/mcp/sourceMapping.ts`의 `isMcpSourceMappings` | 구조 |
 | 오디오 도구의 작업별 입력 shape | `src/application/audio/toolDefinitions.ts`; `AudioJob.request`의 operation별 union | 구조 |
 | 녹음 전체 화자 타임라인 검증·앱과 화자 서비스의 길이·입력·화자 구간·모델 process 시간 상한 | `src/domain/audio/diarization.ts`, `src/domain/audio/limits.json` (`limits.ts`가 앱에 export) | 코드 |
 | 앱 decoder·화자 분석 클라이언트·서비스의 지원 MIME와 demuxer | `src/domain/audio/formats.json`; `formats.ts`가 앱의 정규화를 소유한다 | 코드 |
