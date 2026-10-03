@@ -70,7 +70,7 @@ describe("a markdown artifact as a page", () => {
 });
 
 describe("a CSV as the table it describes", () => {
-  it("makes the first row the header, which is what the media type registers", () => {
+  it("uses the first row as the table header", () => {
     const html = page("csv", "provider,share\nAWS,29%\nAzure,20%\n");
 
     expect(html).toContain("<thead><tr><th>provider</th><th>share</th></tr></thead>");
@@ -100,7 +100,7 @@ describe("a CSV as the table it describes", () => {
 });
 
 describe("parsing delimiter-separated rows", () => {
-  it("reads the three rules RFC 4180 has", () => {
+  it("preserves quoted commas and escaped quotes", () => {
     expect(parseCsv('a,b\n"x,y","he said ""hi"""\n')).toEqual([
       ["a", "b"],
       ["x,y", 'he said "hi"'],
@@ -189,8 +189,7 @@ describe("the other kinds", () => {
 
 describe("what the page will not spend or pretend", () => {
   it("caps how much markdown it renders and says what it left out", () => {
-    // The renderer is synchronous and superlinear — 2 MB is ~7 s with the whole
-    // Node instance stopped, every in-flight SSE run included.
+    // Synchronous Markdown rendering shares the server event loop with other requests.
     const long = "# 제목\n\n" + "본문 한 줄.\n\n".repeat(30_000);
     const html = page("markdown", long);
 

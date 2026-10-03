@@ -168,11 +168,8 @@ describe("the run bracket enforces it", () => {
   });
 
   /**
-   * The read is a settings repository lookup, and the cost guard one line below it
-   * fails open through the same outage — "a storage blip must not stop the
-   * platform". Without a `try`, a blip fails the run
-   * with a raw 500 while the guard beside it was deliberately letting runs
-   * through.
+   * A failed optional pricing-policy lookup is logged and does not refuse admission.
+   * Identity, member limits and Agent cost limits have their own admission checks.
    */
   it("allows the run when the policy itself cannot be read", async () => {
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
