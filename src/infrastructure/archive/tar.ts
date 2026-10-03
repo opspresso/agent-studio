@@ -120,8 +120,14 @@ export async function readTarArchive(
       case "x": // pax extended header: records for the next entry.
         pax = parsePaxRecords(data, offset);
         continue;
+      case "g": { // Global metadata is not applied by this file-only reader.
+        const global = parsePaxRecords(data, offset);
+        if (global.path !== undefined || global.size !== undefined) {
+          throw new TarArchiveError("Global pax path/size overrides are not supported");
+        }
+        continue;
+      }
       case "K": // GNU long link target — links are skipped anyway.
-      case "g": // pax global header.
         continue;
       default:
         break;

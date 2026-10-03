@@ -12,6 +12,16 @@ const text = (files: TarFile[]) =>
   files.map((file) => [file.path, file.symlink ? "<symlink>" : file.bytes.toString("utf8")]);
 
 describe("readTarArchive", () => {
+  it.each(["path=renamed.md", "size=2"])("refuses a global PAX override that would change the file interpretation: %s", async record => {
+    await expect(readTarArchive(writeTar([{ path: "file.md", content: "body", paxRecords: { scope: "g", records: [record] } }])))
+      .rejects.toThrow("Global pax path/size overrides are not supported");
+  });
+
+  it("reads files after harmless global PAX metadata", async () => {
+    const archive = writeTar([{ path: "file.md", content: "body", paxRecords: { scope: "g", records: ["comment=repository revision", "uid=123"] } }]);
+    expect(text(await readTarArchive(archive))).toEqual([["file.md", "body"]]);
+  });
+
   it.each(["1junk", "1e2", "+1", "1.5"])("rejects a non-decimal PAX size instead of silently cutting file bytes: %s", async (size) => {
     await expect(readTarArchive(writeTar([{ path: "file.txt", content: "body", paxRecords: { scope: "x", records: [`size=${size}`] } }])))
       .rejects.toThrow(/corrupt pax header/);
