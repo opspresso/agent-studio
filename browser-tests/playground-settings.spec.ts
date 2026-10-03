@@ -128,3 +128,41 @@ test("owner can edit and save binding tools and probe draft headers", async ({ p
   expect(configurationWrites[0]?.mcpList).toEqual([{ name: serverName, headers: { "X-Shared": "••••" } }]);
   expect(toolRequests).toEqual([{ headerOverrides: { "X-Shared": "••••" } }]);
 });
+
+
+for (const [replacement, masked] of [["test", "••••"], ["head-synthetic-replacement-tail", "head••••••••tail"]] as const) {
+  test(`replaces the local header draft with the saved mask ${masked}`, async ({ page }) => {
+    let attempts = 0;
+    await page.route(`**${prefix}/configuration`, route => {
+      if (route.request().method() !== "PUT") return route.fallback();
+      const { expectedUpdatedAt: _revision, ...configuration } = route.request().postDataJSON();
+      configurationWrites.push(configuration);
+      attempts += 1;
+      if (attempts === 1) return route.fulfill({ status: 503, json: { error: "Save unavailable" } });
+      return route.fulfill({ json: { updatedAt: "2026-10-03T00:00:00Z", configuration: {
+        ...configuration, agentName: "fixture-agent",
+        mcpList: [{ name: serverName, headers: { "X-Shared": masked }, tools: ["lookup"] }],
+      } } });
+    });
+    await page.goto(`${base}?role=owner`);
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    const header = dialog.getByLabel("X-Shared", { exact: true });
+    await dialog.getByRole("button", { name: "Replace", exact: true }).click();
+    await header.fill(replacement);
+    await dialog.getByRole("button", { name: "Show entered value", exact: true }).click();
+    await dialog.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(dialog.getByText("Save unavailable", { exact: true })).toBeVisible();
+    await expect(header).toHaveValue(replacement);
+    await dialog.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(header).toHaveValue(masked);
+    await expect(header).toHaveAttribute("readonly", "");
+    expect(configurationWrites[1]?.mcpList).toEqual([{ name: serverName, headers: { "X-Shared": replacement }, tools: ["lookup"] }]);
+    await dialog.getByRole("button", { name: "Replace", exact: true }).click();
+    await header.fill("another-draft");
+    await header.fill("");
+    await dialog.getByRole("button", { name: "Save", exact: true }).click();
+    await expect.poll(() => configurationWrites.length).toBe(3);
+    expect(configurationWrites[2]?.mcpList).toEqual([{ name: serverName, headers: { "X-Shared": masked }, tools: ["lookup"] }]);
+  });
+}

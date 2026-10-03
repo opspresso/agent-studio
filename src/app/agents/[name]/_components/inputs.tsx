@@ -537,6 +537,12 @@ export function McpBindingInput({
    */
   const [rowsByName, setRowsByName] = useState<Record<string, OverrideRow[]>>({});
 
+  useEffect(() => {
+    // A successful save replaces drafts with the server's masked baseline.
+    // Failed saves retain local rows, including incomplete header names.
+    if (save.saved && !save.saving) setRowsByName({});
+  }, [save.saved, save.saving]);
+
   /**
    * The registry entry's own headers, masked, for the server whose dialog is
    * open. Without them an owner has to know a header's name by heart before
