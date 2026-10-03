@@ -297,14 +297,15 @@ describe("capability discovery", () => {
     expect(resolved.warnings.some((line) => line.includes("has not connected it"))).toBe(false);
   });
 
-  it("treats a connection still awaiting the person as not connected", async () => {
-    // `needs_auth` and `needs_reauth` are rows the console shows as unfinished.
+  it.each(["needs_auth", "needs_reauth"])("does not offer a caller's unfinished %s connection", async (status) => {
     const { deps, opened } = harness({
       catalog: fakeCatalog({ mcpTool: [found("slack", "post")] }),
       servers: [server("slack", OAUTH)],
-      connections: [{ serverName: "slack", status: "needs_reauth" }],
+      connections: [{ serverName: "slack", status }],
     });
-    await resolveRunTools(deps, configuration(), undefined, QUERIES);
+    const listConnections = vi.spyOn(deps.mcpConnections!, "listByUser");
+    await resolveRunTools(deps, configuration(), undefined, QUERIES, { user: { userId: "p", email: "caller@example.test" } });
+    expect(listConnections).toHaveBeenCalledWith("p", expect.any(Number), undefined);
     expect(opened).toEqual([]);
   });
 
