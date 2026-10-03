@@ -36,6 +36,22 @@ function memoryRepository(): { repository: TraceRepository; traces: Trace[] } {
 }
 
 describe("TraceRecorder", () => {
+  it("keeps bounded warning, error and preparation text valid Unicode", async () => {
+    const { repository, traces } = memoryRepository();
+    const recorder = new TraceRecorder(repository, { agentName: "p", model: "model", messageCount: 1 });
+    recorder.useSdkRuntime();
+    const text = "x".repeat(999) + "😀";
+    recorder.observePrepare("tools", new Date(), { output: { note: text, names: [text] } });
+    recorder.observe({ warning: text, error: text });
+    await recorder.finish();
+    const trace = traces[0]!;
+    const output = trace.spans[0]!.output!;
+    for (const value of [trace.warnings![0]!, trace.error!, output.note as string, (output.names as string[])[0]!]) {
+      expect(value.isWellFormed()).toBe(true);
+      expect(value).toBe("x".repeat(999) + "…");
+    }
+  });
+
   it.each([false, true])("pairs parent and nested tool calls with trace metadata present=%s", async (withTraceId) => {
     vi.useFakeTimers();
     vi.setSystemTime(0);

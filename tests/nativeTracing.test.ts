@@ -31,6 +31,23 @@ function recorder() {
 }
 
 describe("local SDK tracing", () => {
+  it("keeps native model and Agent names valid Unicode at the trace name bound", async () => {
+    const f = recorder();
+    const name = "x".repeat(199) + "😀";
+    const model = "openai/" + "x".repeat(192) + "😀";
+    for await (const chunk of runAgent({ channel: new FakeChannel([[contentChunk("done")]]), onSdkSpan: span => f.recorder.observeSdkSpan(span) }, {
+      agentName: name, model, messages: [{ role: "user", content: "hello" }],
+    })) f.recorder.observe(chunk);
+    await f.recorder.finish();
+    const spans = f.saved[0]!.spans;
+    expect(spans.some(span => span.kind === "model")).toBe(true);
+    expect(spans.some(span => span.kind === "subagent")).toBe(true);
+    for (const span of spans) {
+      expect(span.name.isWellFormed()).toBe(true);
+      if (span.author) expect(span.author.isWellFormed()).toBe(true);
+    }
+  });
+
   it("records a budget-exhausted reasoning-only response as output-limit even when the provider reports stop", async () => {
     const f = recorder();
     const channel = new FakeChannel([[reasoningChunk("Still solving"), usageChunk(20, 2048, 0, 0.001, 2048), finishReasonChunk("stop")]]);

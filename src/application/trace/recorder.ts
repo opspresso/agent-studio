@@ -5,6 +5,7 @@ import type { TraceRepository } from "@/domain/trace/repository";
 import type { Trace, TraceSpan } from "@/domain/trace/types";
 import type { RunActor, RunUser } from "@/domain/execution/actor";
 import { linkTrace } from "@/shared/runContext";
+import { cutCodePoints } from "@/shared/utf8Text";
 
 const MAX_PREVIEW_CHARS = 1_000;
 const MAX_SPANS = 100;
@@ -76,7 +77,7 @@ function boundedOutput(output: Record<string, unknown>): Record<string, unknown>
 function preview(value: string): string {
   return value.length <= MAX_PREVIEW_CHARS
     ? value
-    : `${value.slice(0, MAX_PREVIEW_CHARS)}…`;
+    : `${cutCodePoints(value, MAX_PREVIEW_CHARS)}…`;
 }
 
 export class TraceRecorder {
