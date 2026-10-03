@@ -31,12 +31,9 @@ const PARAGRAPH_ELEMENTS = new Set([
   "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "dl", "table", "form", "figure", "figcaption",
 ]);
 
-/**
- * Named entities worth handling without a table of all 2,231 of them. `&amp;`
- * is absent on purpose — it is decoded last, below, or `&amp;lt;` would come
- * out as `<` instead of `&lt;`.
- */
+/** Named entities used in prose; other names remain literal text. */
 const NAMED_ENTITIES: Record<string, string> = {
+  amp: "&",
   lt: "<",
   gt: ">",
   quot: '"',
@@ -55,17 +52,15 @@ function namedEntity(name: string): string | undefined {
   return Object.hasOwn(NAMED_ENTITIES, name) ? NAMED_ENTITIES[name] : undefined;
 }
 
-/** Decode the entity forms that actually appear in prose. */
+/** Decode once: an ampersand produced by a reference cannot introduce another one. */
 export function decodeEntities(value: string): string {
-  return (
-    value
-      .replace(/&#x([0-9a-f]+);/gi, (_, hex: string) => codePoint(parseInt(hex, 16)))
-      .replace(/&#(\d+);/g, (_, dec: string) => codePoint(Number(dec)))
-      .replace(/&([a-z]+);/gi, (match, name: string) => namedEntity(name.toLowerCase()) ?? match)
-      // Last: an escaped ampersand may itself introduce an entity that was never
-      // meant to be decoded.
-      .replace(/&amp;/gi, "&")
-  );
+  return value.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (match, entity: string) => {
+    if (entity.startsWith("#")) {
+      return codePoint(entity[1]?.toLowerCase() === "x"
+        ? parseInt(entity.slice(2), 16) : Number(entity.slice(1)));
+    }
+    return namedEntity(entity.toLowerCase()) ?? match;
+  });
 }
 
 /** A numeric reference that is out of range or a surrogate is dropped rather

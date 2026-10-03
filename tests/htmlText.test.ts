@@ -112,10 +112,17 @@ it("decodes the entity forms that appear in prose", () => {
   expectEqual(decodeEntities("&#xD55C;"), "한");
 });
 
-it("decodes an escaped ampersand last", () => {
+it("decodes an escaped ampersand once", () => {
   // `&amp;lt;` is a literal `&lt;`, not a `<`. Decoding `&amp;` first loses that.
   expectEqual(decodeEntities("&amp;lt;"), "&lt;");
   expectEqual(decodeEntities("a &amp; b"), "a & b");
+});
+
+it.each(["&amp;", "&#38;", "&#x26;", "&#X26;"])("does not reinterpret references introduced by %s", ampersand => {
+  const encoded = `${ampersand}lt; ${ampersand}#60; ${ampersand}#x3C; ${ampersand}amp;`;
+  const expected = "&lt; &#60; &#x3C; &amp;";
+  expect(decodeEntities(encoded)).toBe(expected);
+  expect(textOf(`<title>${encoded}</title><p>body ${encoded}</p>`)).toBe(`${expected}\n\nbody ${expected}`);
 });
 
 it("leaves an unknown entity alone", () => {
