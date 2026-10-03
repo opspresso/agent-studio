@@ -1,5 +1,6 @@
 import { createArtifactId } from "@/application/artifact/storeArtifact";
 import { FILE_DELIVERY_INSTRUCTION } from "@/application/artifact/fileDelivery";
+import { ELIDED_FILE_CONTENT_ERROR, isElidedToolArgument } from "@/application/llm/toolArgumentElision";
 /** The SaveFile builtin: text a run wrote, kept as a file the reader receives. */
 
 import type * as engine from "@/application/runtime";
@@ -48,6 +49,9 @@ export function saveFileResult(input: {
   }
   if (content === "") {
     return { text: "Error: SaveFile needs the file's content as text." };
+  }
+  if (isElidedToolArgument(content)) {
+    return { text: `Error: ${ELIDED_FILE_CONTENT_ERROR}` };
   }
   const bytes = Buffer.from(content, "utf-8");
   if (bytes.byteLength > MAX_SAVED_FILE_BYTES) {

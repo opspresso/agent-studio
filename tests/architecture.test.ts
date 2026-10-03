@@ -902,6 +902,11 @@ interface SingleOwner {
 
 const SINGLE_OWNERS: SingleOwner[] = [
   {
+    what: "tool argument elision markers and recognition",
+    pattern: /export function (?:elidedToolArgument|isElidedToolArgument)\b/,
+    owner: "src/application/llm/toolArgumentElision.ts",
+  },
+  {
     what: "LLM provider redirect refusal transport",
     pattern: /export function fetchProvider\b/,
     owner: "src/infrastructure/llm/providerFetch.ts",

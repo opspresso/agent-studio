@@ -7,6 +7,7 @@ import { MAX_DOCUMENT_BYTES, documentKind } from "@/domain/llm/documentLimits";
 import { DOCUMENT_FORMATS, DOCUMENT_PROFILES, DOCUMENT_THEMES, DOCUMENT_LAYOUTS, DocumentProcessingError, type DocumentEdit, type DocumentAsset, type DocumentColors, type EffectiveDocumentStyle } from "@/domain/document/processor";
 import { createArtifactId } from "@/application/artifact/storeArtifact";
 import { FILE_DELIVERY_INSTRUCTION } from "@/application/artifact/fileDelivery";
+import { ELIDED_FILE_CONTENT_ERROR, isElidedToolArgument } from "@/application/llm/toolArgumentElision";
 import type { ArtifactStorage } from "@/application/artifact/storeArtifact";
 import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
 import type { DocumentRenderer, DocumentEditor } from "@/domain/document/processor";
@@ -27,6 +28,10 @@ import { log } from "@/shared/logger";
 function requiredString(value: unknown, name: string): string {
   if (typeof value !== "string" || !value.trim()) throw new DocumentProcessingError(`${name} is required`);
   return value;
+}
+
+function assertFileContent(value: unknown): void {
+  if (isElidedToolArgument(value)) throw new DocumentProcessingError(ELIDED_FILE_CONTENT_ERROR);
 }
 
 /** File identities are resolved by trusted storage, never by a model-provided object key or URL. */
@@ -80,6 +85,7 @@ export function buildFileTool(
         throw new DocumentProcessingError("Design options apply only to newly created files; existing-file edits preserve their original style");
       }
       if (args.operation === "create") {
+        assertFileContent(args.content);
         const format = DOCUMENT_FORMATS.find((format) => format === args.format);
         if (!format) throw new DocumentProcessingError(`format must be one of ${DOCUMENT_FORMATS.join(", ")}`);
         const profile = args.profile === undefined ? undefined : DOCUMENT_PROFILES.find((profile) => profile === args.profile);
@@ -123,9 +129,11 @@ export function buildFileTool(
         if (svg) {
           const text = decodeUtf8Text(file.bytes);
           if (text === null) throw new DocumentProcessingError("This SVG is not UTF-8 text");
+          assertFileContent(text);
           return { text: framedDocument(file.name, cutCodePoints(text, MAX_DOCUMENT_TOOL_CHARS), text.length > MAX_DOCUMENT_TOOL_CHARS ? "partial SVG markup" : "SVG markup", artifact.artifactId) };
         }
         const extracted = await deps.documents.extract({ ...file, maxChars: MAX_DOCUMENT_TOOL_CHARS, signal });
+        assertFileContent(extracted.text);
         return { text: framedDocument(file.name, extracted.text, extracted.note, artifact.artifactId) };
       }
       if (args.operation === "inspect") {
@@ -137,6 +145,7 @@ export function buildFileTool(
         if (kind === "text" || kind === "html" || svg) {
           const text = decodeUtf8Text(file.bytes);
           if (text === null) throw new DocumentProcessingError("This file is not UTF-8 text");
+          assertFileContent(text);
           return { text: framedDocument(file.name, cutCodePoints(text, MAX_DOCUMENT_TOOL_CHARS), `${text.length > MAX_DOCUMENT_TOOL_CHARS ? "Partial text; " : ""}text editing uses part=text and index=0 with an original substring that occurs once`, artifact.artifactId) };
         }
         const inspected = await editor.inspect(file, { from, mode: args.mode, includeHidden: args.include_hidden }, signal);
@@ -147,6 +156,10 @@ export function buildFileTool(
           throw new DocumentProcessingError(`edits must contain 1–${MAX_DOCUMENT_EDITS} explicit edit operations`);
         }
         const edits = args.edits as DocumentEdit[];
+        for (const edit of edits) {
+          if (edit.operation === "replace_text") assertFileContent(edit.replacement);
+          if (edit.operation === "set_cell") assertFileContent(edit.value);
+        }
         if (documentKind(file.mimeType, file.name) === "text" || documentKind(file.mimeType, file.name) === "html" || svg) {
           if (file.bytes.byteLength > MAX_SAVED_FILE_BYTES) throw new DocumentProcessingError("This text file exceeds the editing byte limit");
           let text = decodeUtf8Text(file.bytes);

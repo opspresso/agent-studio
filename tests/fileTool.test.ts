@@ -1,6 +1,7 @@
 import { executionIdentity } from "./runIdentity";
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { buildFileSaver } from "@/application/execution/saveFileTool";
+import { elidedToolArgument } from "@/application/llm/toolArgumentElision";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildFileTool } from "@/application/document/fileTool";
 import { captureRunArtifacts, createArtifactRecorder } from "@/application/artifact/runArtifacts";
@@ -66,6 +67,70 @@ describe("private Artifact inputs", () => {
 });
 
 describe("native File tool", () => {
+  it("refuses a history placeholder before invoking a document renderer", async () => {
+    const f = setup();
+    const create = vi.fn(f.deps.documentRenderer.create);
+    const call = buildFileTool({ ...f.deps, documentRenderer: { create } }, "agent", { ...executionIdentity(actor), ancestry: ["agent"] })!;
+    const result = await call({ operation: "create", format: "docx", content: "[28235 bytes, elided — the call was made with the whole value]" });
+    expect(result.text).toMatch(/^Error:.*history placeholder/);
+    expect(result.files).toBeUndefined();
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it.each(["read", "inspect"])("reports a stored placeholder as missing content during %s", async operation => {
+    const f = setup();
+    const bytes = Buffer.from("[28235 bytes, elided — the call was made with the whole value]");
+    f.bytes.set("broken.html", bytes);
+    f.rows.set("broken", { artifactId: "broken", kind: "document", source: "generated", key: "broken.html",
+      actor, agentName: "agent", mimeType: "text/html", filename: "report.html", byteSize: bytes.length, createdAt: now.toISOString() });
+    const result = await f.call({ operation, file_id: "broken" });
+    expect(result.text).toMatch(/^Error:.*history placeholder/);
+    expect(result.text).not.toContain("[Attached file");
+  });
+
+  it("rejects a placeholder replacement and allows a complete replacement of a damaged HTML file", async () => {
+    const f = setup();
+    const placeholder = elidedToolArgument(28235);
+    const bytes = Buffer.from(placeholder);
+    f.bytes.set("broken.html", bytes);
+    f.rows.set("broken", { artifactId: "broken", kind: "document", source: "generated", key: "broken.html",
+      actor, agentName: "agent", mimeType: "text/html", filename: "report.html", byteSize: bytes.length, createdAt: now.toISOString() });
+    const edit = { operation: "replace_text", part: "text", index: 0, text: placeholder };
+    const rejected = await f.call({ operation: "edit", file_id: "broken", edits: [{ ...edit, replacement: placeholder }] });
+    expect(rejected.text).toMatch(/^Error:.*history placeholder/);
+    expect(rejected.files).toBeUndefined();
+    const content = "<!doctype html><title>Report</title><p>Complete content</p>";
+    const repaired = await f.call({ operation: "edit", file_id: "broken", edits: [{ ...edit, replacement: content }] });
+    expect(Buffer.from(repaired.files![0]!.b64, "base64").toString("utf8")).toBe(content);
+    expect(repaired.files![0]!.derivedFrom).toBe("broken");
+    expect(f.bytes.get("broken.html")).toEqual(bytes);
+  });
+
+  it("rejects a placeholder cell value before editing a spreadsheet", async () => {
+    const f = setup();
+    const created = await f.call({ operation: "create", format: "xlsx", sheets: [{ name: "Sheet", rows: [["original"]] }] });
+    await f.capture(created);
+    const edit = vi.fn(f.deps.documentEditor.edit);
+    const call = buildFileTool({ ...f.deps, documentEditor: { ...f.deps.documentEditor, edit } }, "agent", { ...executionIdentity(actor), ancestry: ["agent"] })!;
+    const result = await call({ operation: "edit", file_id: created.files![0]!.artifactId,
+      edits: [{ operation: "set_cell", sheet: "Sheet", cell: "A1", value: elidedToolArgument(28235) }] });
+    expect(result.text).toMatch(/^Error:.*history placeholder/);
+    expect(result.files).toBeUndefined();
+    expect(edit).not.toHaveBeenCalled();
+  });
+
+  it("reads and inspects HTML that quotes a marker as part of a real report", async () => {
+    const f = setup();
+    const content = `<p>Example: ${elidedToolArgument(28235)}</p>`;
+    const saved = await buildFileSaver(f.deps)!({ name: "report.html", mimeType: "text/html", content });
+    await f.capture(saved);
+    for (const operation of ["read", "inspect"]) {
+      const result = await f.call({ operation, file_id: saved.files![0]!.artifactId });
+      expect(result.text).toContain("[Attached file");
+      expect(result.text).toContain("Example:");
+    }
+  });
+
   it.each(["webhook", "slack", "telegram", "teams", "schedule"] as const)("does not share files between Studio users of the same %s source", async kind => {
     const f = setup();
     const sharedActor = { kind, id: "agent:webhook" };

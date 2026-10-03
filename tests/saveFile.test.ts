@@ -3,6 +3,7 @@ import { buildFileSaver, saveFileResult } from "@/application/execution/saveFile
 import { buildAgentTools, SAVE_FILE_TOOL_NAME } from "@/application/llm/agentAssembly";
 import { MAX_SAVED_FILE_BYTES, savedFileName } from "@/domain/artifact/types";
 import type { ArtifactStorage } from "@/application/artifact/storeArtifact";
+import { elidedToolArgument } from "@/application/llm/toolArgumentElision";
 
 const HTML = "<!doctype html><title>r</title><p>hi";
 
@@ -52,6 +53,22 @@ describe("saving a file a run wrote", () => {
   it("refuses an empty file", () => {
     const result = saveFileResult({ name: "r.html", mimeType: "text/html", content: "" });
     expect(result.files).toBeUndefined();
+  });
+
+  it.each([
+    "[28235 bytes, elided — the call was made with the whole value]",
+    elidedToolArgument(28235),
+  ])("refuses an omitted-history placeholder instead of announcing a file: %s", content => {
+    const result = saveFileResult({ name: "report.html", mimeType: "text/html",
+      content: ` \n${content}\n` });
+    expect(result.text).toMatch(/^Error:.*history placeholder/);
+    expect(result.files).toBeUndefined();
+  });
+
+  it("preserves a report that quotes a placeholder as an example", () => {
+    const content = "<p>Example: [28235 bytes, elided — the call was made with the whole value]</p>";
+    const result = saveFileResult({ name: "report.html", mimeType: "text/html", content });
+    expect(decode(result.files![0]!.b64)).toBe(content);
   });
 
   it("refuses one over the limit and reports the size", () => {
