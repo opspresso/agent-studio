@@ -15,6 +15,7 @@ import {
 } from "@mantine/core";
 import { IconActivity, IconCoins, IconUser } from "@tabler/icons-react";
 import type { ProfileResponse } from "@/app/api/me/profile/route";
+import type { MemberUsageResponse } from "@/app/api/me/usage/route";
 import type { MemberUsageRow } from "@/domain/usage/types";
 import { tierMayRunAgents } from "@/domain/member/tiers";
 import { memberTierColor } from "@/app/_components/badgeColors";
@@ -73,7 +74,7 @@ export default function ProfilePage() {
       setUsageError(null);
       setRows([]);
       try {
-        const { items } = await readJson<{ items: MemberUsageRow[] }>(
+        const { items } = await readJson<MemberUsageResponse>(
           await fetch(`/api/me/usage?from=${range.from}&to=${range.to}`),
         );
         if (!cancelled) setRows([...items].sort((a, b) => b.date.localeCompare(a.date)));

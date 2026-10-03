@@ -8,7 +8,7 @@ type RouteContext = { params: Promise<{ name: string }> };
 /**
  * Who spent this agent's budget, per UTC day.
  *
- * Owner/admin only, on the same reasoning as traces: the agent *totals* are
+ * Agent owner only, on the same reasoning as traces: the agent *totals* are
  * open to any signed-in user because the catalog is shared, but a breakdown by
  * caller names individuals and what they ran. It reuses the summary endpoint's
  * range validation so the two cannot disagree about what a legal window is.

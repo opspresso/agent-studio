@@ -30,6 +30,10 @@ import type { SlackChannelsResponse } from "@/app/api/agents/[name]/slack/channe
 import type { AgentTelegramResponse } from "@/app/api/agents/[name]/telegram/route";
 import type { AgentTeamsResponse } from "@/app/api/agents/[name]/teams/route";
 import type { AgentTelegramChatsResponse } from "@/app/api/agents/[name]/telegram/chats/route";
+import type { UsageSummaryResponse } from "@/app/api/usages/summary/route";
+import type { AgentTriggersResponse } from "@/app/api/agents/[name]/triggers/route";
+import type { AgentMcpConnectionsResponse } from "@/app/api/agents/[name]/mcp-connections/route";
+import type { AgentMcpToolsResponse } from "@/app/api/agents/[name]/mcp-connections/[server]/tools/route";
 import type { AgentTracesResponse } from "@/app/api/agents/[name]/traces/route";
 import type { PromptPreview } from "@/application/execution/deps";
 import type { AgentCredentialStatus, IssuedAgentCredential } from "@/application/auth/agentCredentialUseCases";
@@ -171,9 +175,9 @@ export function usageSummary(
   name: string,
   from: string,
   to: string,
-): Promise<{ items: UsageRow[] }> {
+): Promise<UsageSummaryResponse> {
   const query = new URLSearchParams({ agent: name, from, to });
-  return fetch(`/api/usages/summary?${query}`).then((r) => readJson<{ items: UsageRow[] }>(r));
+  return fetch(`/api/usages/summary?${query}`).then((r) => readJson<UsageSummaryResponse>(r));
 }
 
 // --- Execution (SSE) ------------------------------------------------------
@@ -384,7 +388,7 @@ export type { McpConnectionView };
 
 export function listMcpConnections(name: string): Promise<McpConnectionView[]> {
   return fetch(`/api/agents/${name}/mcp-connections`)
-    .then((r) => readJson<{ connections: McpConnectionView[] }>(r))
+    .then((r) => readJson<AgentMcpConnectionsResponse>(r))
     .then((data) => data.connections);
 }
 
@@ -412,7 +416,7 @@ export async function listAgentMcpTools(
     headers: jsonHeaders,
     body: JSON.stringify({ headerOverrides }),
   });
-  return (await readJson<{ tools: McpTool[] }>(response)).tools;
+  return (await readJson<AgentMcpToolsResponse>(response)).tools;
 }
 
 // --- Triggers --------------------------------------------------------------
@@ -434,9 +438,9 @@ import type {
   UpdateTriggerInput,
 } from "@/application/trigger/triggerUseCases";
 
-export function listTriggers(name: string, signal?: AbortSignal): Promise<{ triggers: TriggerView[] }> {
+export function listTriggers(name: string, signal?: AbortSignal): Promise<AgentTriggersResponse> {
   return fetch(`/api/agents/${name}/triggers`, { signal }).then((r) =>
-    readJson<{ triggers: TriggerView[] }>(r),
+    readJson<AgentTriggersResponse>(r),
   );
 }
 

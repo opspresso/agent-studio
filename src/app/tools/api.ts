@@ -1,3 +1,4 @@
+import type { McpToolsResponse } from "@/app/api/mcps/[name]/tools/route";
 import type { McpServer, McpTool } from "@/domain/mcp/types";
 import type {
   CreateManagedInput,
@@ -56,7 +57,7 @@ export async function deleteMcp(name: string): Promise<void> {
 
 export function testMcpConnection(name: string): Promise<McpTool[]> {
   return fetch(`/api/mcps/${name}/tools`, { method: "POST" })
-    .then((r) => readJson<{ tools: McpTool[] }>(r))
+    .then((r) => readJson<McpToolsResponse>(r))
     .then((data) => data.tools);
 }
 

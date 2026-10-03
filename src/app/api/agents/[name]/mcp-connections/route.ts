@@ -1,6 +1,9 @@
+import type { McpConnectionView } from "@/application/mcp/mcpAuthUseCases";
 import { mcpAuthUseCases } from "@/lib/container";
 import { withMemberAuth } from "@/lib/session";
 import { apiError, parseName } from "@/app/api/_lib/http";
+
+export interface AgentMcpConnectionsResponse { connections: McpConnectionView[] }
 
 type RouteContext = { params: Promise<{ name: string }> };
 
@@ -10,7 +13,7 @@ export const GET = withMemberAuth(async (user, _request: Request, ctx: RouteCont
   try {
     return Response.json({
       connections: await mcpAuthUseCases.listConnections(parseName(name), { userId: user.id, email: user.email }),
-    });
+    } satisfies AgentMcpConnectionsResponse);
   } catch (error) {
     return apiError(error);
   }

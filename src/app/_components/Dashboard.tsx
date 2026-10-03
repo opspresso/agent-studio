@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { formatUsd } from "@/app/_lib/formatUsd";
 import { Alert, Group, Stack, Text } from "@mantine/core";
+import type { UsageSummaryResponse } from "@/app/api/usages/summary/route";
 import type { SanitizedAgent } from "@/app/agents/lib/api";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import { SectionHeading } from "./SectionHeading";
@@ -64,11 +65,11 @@ export function Dashboard({ agents }: { agents: SanitizedAgent[] | null }) {
       setError(null);
       setItems([]);
       try {
-        const data = await readJson<{ items?: UsageRow[] }>(
+        const data = await readJson<UsageSummaryResponse>(
           await fetch(`/api/usages/summary?from=${from}&to=${to}`),
         );
         if (!cancelled) {
-          setItems(data.items ?? []);
+          setItems(data.items);
         }
       } catch (fetchError) {
         if (!cancelled) {

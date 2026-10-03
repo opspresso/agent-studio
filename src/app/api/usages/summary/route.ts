@@ -1,7 +1,10 @@
+import type { UsageRow } from "@/domain/usage/types";
 import { withAuth } from "@/lib/session";
 import { usageUseCases } from "@/lib/container";
 import { invalidRequest } from "@/app/api/_lib/http";
 import { summaryQuerySchema } from "./validation";
+
+export interface UsageSummaryResponse { items: UsageRow[] }
 
 export const GET = withAuth(async (_user, request: Request) => {
   const params = new URL(request.url).searchParams;
@@ -16,5 +19,5 @@ export const GET = withAuth(async (_user, request: Request) => {
   }
 
   const { from, to, agent } = parsed.data;
-  return Response.json({ items: await usageUseCases.summary(from, to, agent) });
+  return Response.json({ items: await usageUseCases.summary(from, to, agent) } satisfies UsageSummaryResponse);
 });
