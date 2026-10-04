@@ -1,17 +1,15 @@
-import { readFile } from "node:fs/promises";
 import { getWorkspaceConfig, getWorkspaceRuntimeConfig } from "@/lib/runtime-settings";
 import { WORKSPACE_MODEL_RUNTIMES } from "@/domain/workspace/runtimeModels";
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
 import { createDockerSandboxBackend } from "@/infrastructure/workspace/dockerProvider";
 import { createKubernetesSandboxBackend } from "@/infrastructure/workspace/kubernetesProvider";
 import { closePool } from "@/infrastructure/db/client";
-import { WORKSPACE_HEARTBEAT_FILE, WORKSPACE_HEARTBEAT_MAX_AGE_MS } from "./workspace-heartbeat";
+import { assertWorkspaceHeartbeat } from "./workspace-heartbeat";
 
 let stage = "configuration";
 async function checkHeartbeat() {
   stage = "worker heartbeat";
-  const timestamp = Number(await readFile(WORKSPACE_HEARTBEAT_FILE, "utf8"));
-  if (!Number.isFinite(timestamp) || Date.now() - timestamp > WORKSPACE_HEARTBEAT_MAX_AGE_MS || timestamp > Date.now()) throw new Error("Workspace worker heartbeat is stale");
+  await assertWorkspaceHeartbeat();
 }
 async function main() {
   // Liveness must not restart a worker because a shared dependency is down.

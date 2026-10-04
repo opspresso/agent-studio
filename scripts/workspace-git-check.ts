@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { gunzipSync } from "node:zlib";
-import { createDockerSandboxBackend, dockerCall } from "@/infrastructure/workspace/dockerProvider";
+import { createDockerSandboxBackend } from "@/infrastructure/workspace/dockerProvider";
 import type { WorktreeReview } from "@/domain/coding/worktree";
+import { createWorkspaceGitFixtureBundle } from "./fixtures/workspace-git";
 
 async function main() {
   const { provider, control } = createDockerSandboxBackend({ image: process.env.WORKSPACE_SANDBOX_IMAGE || "agent-studio-workspace:agents",
@@ -12,17 +13,7 @@ async function main() {
   try {
     const { externalId: id } = await provider.ensure(workspaceId);
     containers.add(id);
-    const fixture = `
-      const fs = require('node:fs'); const cp = require('node:child_process');
-      const git = args => cp.execFileSync('git', args, {env:{...process.env,GIT_AUTHOR_NAME:'Fixture',GIT_AUTHOR_EMAIL:'fixture@example.test',GIT_COMMITTER_NAME:'Fixture',GIT_COMMITTER_EMAIL:'fixture@example.test'},stdio:'pipe'});
-      git(['init','-b','main','/control/source']);
-      fs.writeFileSync('/control/source/hello.txt','before\\n');
-      fs.writeFileSync('/control/source/.gitignore','node_modules/\\n');
-      git(['-C','/control/source','add','.']); git(['-C','/control/source','commit','-m','fixture']);
-      git(['-C','/control/source','bundle','create','/control/fixture.bundle','main']);
-      process.stdout.write(fs.readFileSync('/control/fixture.bundle').toString('base64'));
-    `;
-    const bundle = await dockerCall(["exec", "-i", "--user", "0", id, "node"], fixture);
+    const bundle = await createWorkspaceGitFixtureBundle(id);
     const repo = { url: "https://git.example.test/fixture/remote.git", baseBranch: "main", branch: `agent/${workspaceId}` };
     const credential = { token: "ephemeral-test-credential", expiresAt: new Date(Date.now() + 60_000).toISOString() };
     await assert.rejects(control(id, "git-prepare", { ...repo, ...credential, bundle }), /credential-free/);
