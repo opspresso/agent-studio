@@ -9,6 +9,7 @@ import { startSequentialPoll } from "@/shared/sequentialPoll";
 export const WORKSPACE_LEASE_MS = 180_000;
 export const WORKSPACE_HEARTBEAT_MS = WORKSPACE_LEASE_MS / 3;
 export const WORKSPACE_POLL_MS = 500;
+export const WORKSPACE_QUIET_POLL_MS = 2000;
 export const WORKSPACE_RETRY_MS = 15_000;
 export class WorkspaceLeaseLost extends Error {}
 

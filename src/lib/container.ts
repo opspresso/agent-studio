@@ -1389,7 +1389,7 @@ function getWorkspaceWorkerDeps(): WorkspaceWorkerDeps & { coding: NonNullable<W
       });
       if (removed) log.info("workspace-worker", `Requested deletion of ${removed} orphan Sandbox Pods`);
     } } : {}),
-    checkpoints: createWorkspaceCheckpointStore(secretCipher),
+    checkpoints: createWorkspaceCheckpointStore(secretCipher, settings.checkpointHistory),
     settleModelCalls: (workspaceId, runId) => getWorkspaceModelGateway().settle(workspaceId, runId),
     releaseSlot: async run => { if (run.studioSlot) await releaseRunSlot(executionDeps, run.user, run.studioSlot); },
     runtime: async (kind, context) => {
@@ -1430,7 +1430,8 @@ export async function closeChatWorkspace(chatId: string, ownerEmail: string): Pr
 export async function runWorkspaceWorkerService(signal: AbortSignal, heartbeat?: () => Promise<void>): Promise<void> {
   await getLlmProviderConfigs();
   startPublishedModelRefresh();
-  const concurrency = getWorkspaceConfig()?.workerConcurrency ?? 1;
+  const workspace = getWorkspaceConfig();
+  const concurrency = workspace?.workerConcurrency ?? 1;
   await Promise.all([
     runWorkspaceWorker(getWorkspaceWorkerDeps(), signal, concurrency, heartbeat),
     runWorkspaceContinuations({ chat: chatDeps, workspaces: workspaceRepository, authorize: async (user, agentName) => {
@@ -1439,7 +1440,7 @@ export async function runWorkspaceWorkerService(signal: AbortSignal, heartbeat?:
       await authorizeWorkspaceTools(current.email, agentName);
     },
       pullRequest: (id, owner) => getCodingUseCases().pullRequest(id, owner),
-      now: () => new Date(), sleep: async (ms, abort) => { await workspaceSleep(ms, undefined, { signal: abort }); } }, signal, concurrency),
+      now: () => new Date(), sleep: async (ms, abort) => { await workspaceSleep(ms, undefined, { signal: abort }); } }, signal, workspace?.continuationConcurrency ?? 1),
   ]);
 }
 

@@ -51,7 +51,7 @@ beforeEach(async () => {
     provider: { kind: "fake", ensure: async () => ({ externalId: "sandbox-1" }), inspect: async () => "ready",
       execute: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })), start: vi.fn(async () => {}), operation: async () => ({ id: "", status: "not-started" }),
       output: async () => ({ frames: [], nextOffset: 0 }), cancel: async () => {}, checkpoint: async () => new Uint8Array([1]), restore: async () => {}, destroy: async () => {} },
-    checkpoints: { put: vi.fn(async () => {}), get: async () => new Uint8Array([1]), delete: async () => {} },
+    checkpoints: { put: vi.fn(async () => {}), get: async () => new Uint8Array([1]), prune: async () => 0, delete: async () => {} },
     coding: vi.fn(() => coding), forge: vi.fn(() => forge),
   };
   const at = now.toISOString();

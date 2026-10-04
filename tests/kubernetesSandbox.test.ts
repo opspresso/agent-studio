@@ -4,6 +4,7 @@ import { createKubernetesSandboxBackend } from "@/infrastructure/workspace/kuber
 import type { KubernetesSandboxApi } from "@/infrastructure/workspace/kubernetesApi";
 import { routeSandboxBackend } from "@/infrastructure/workspace/backendRouting";
 import { createControlledSandboxBackend, type SandboxControl } from "@/infrastructure/workspace/sandboxBackend";
+import { SandboxCapacityUnavailableError } from "@/domain/workspace/ports";
 
 const config = { image: "workspace:test", namespace: "studio-workspaces", instance: "studio-prod", memoryMb: 1024, diskMb: 2048, cpus: 1,
   nodePool: "workspaces", imagePullSecret: "ecr-registry" };
@@ -49,6 +50,7 @@ describe("Kubernetes Sandbox lifecycle and security", () => {
       readOnlyRootFilesystem: true, capabilities: { drop: ["ALL"], add: ["SETUID", "SETGID", "CHOWN", "FOWNER", "DAC_OVERRIDE", "KILL"] } },
       resources: { requests: { cpu: "1", memory: "1024Mi", "ephemeral-storage": "4608Mi" }, limits: { "ephemeral-storage": "4608Mi" } } });
     expect(spec.containers[0]?.env).toEqual([{ name: "WORKSPACE_POD_UID", valueFrom: { fieldRef: { fieldPath: "metadata.uid" } } }]);
+    expect(spec.containers[0]?.readinessProbe).toMatchObject({ exec: { command: ["/usr/bin/test", "-f", "/control/ready"] }, periodSeconds: 2 });
     expect(await current.provider.inspect(first.externalId)).toBe("ready");
   });
   it("passes identity and task input over stdin and serializes privileged Git and checkpoint access", async () => {
@@ -116,7 +118,14 @@ describe("Kubernetes Sandbox lifecycle and security", () => {
     await expect(backend().provider.ensure("workspace-1")).rejects.toThrow("ownership");
     expect(api.remove).not.toHaveBeenCalled();
   });
-  it("preserves capacity and transport errors; only a create conflict may be adopted", async () => {
+  it("identifies quota rejection without exposing server detail or allocating replacement compute", async () => {
+    vi.mocked(api.create).mockRejectedValueOnce({ code: 403, body: { reason: "Forbidden",
+      message: 'pods "private-workspace" is forbidden: exceeded quota: private-quota, requested: requests.cpu=1' } });
+    await expect(backend().provider.provision!("workspace-1")).rejects.toThrow(SandboxCapacityUnavailableError);
+    expect(api.create).toHaveBeenCalledTimes(1);
+    expect(api.remove).not.toHaveBeenCalled();
+  });
+  it("preserves permission and transport errors; only a create conflict may be adopted", async () => {
     vi.mocked(api.create).mockRejectedValueOnce({ code: 403 });
     await expect(backend().provider.ensure("workspace-1")).rejects.toEqual({ code: 403 });
     expect(api.get).toHaveBeenCalledTimes(1);

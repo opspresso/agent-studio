@@ -31,13 +31,24 @@
  */
 export const DURATION_BUCKETS_SECONDS = [0.5, 1, 2, 5, 10, 30, 60, 120, 300, 600];
 
-const activeRunStarts = new Map<symbol, number>();
-let runsStarted = 0;
-let runsFinished = 0;
-let runsFailed = 0;
-let durationSumSeconds = 0;
-let durationObservations = 0;
-let bucketCounts = new Array<number>(DURATION_BUCKETS_SECONDS.length).fill(0);
+const METRICS_SLOT = Symbol.for("opspresso.agent-studio.run-metrics");
+interface RunMetricState {
+  activeRunStarts: Map<symbol, number>;
+  runsStarted: number;
+  runsFinished: number;
+  runsFailed: number;
+  durationSumSeconds: number;
+  durationObservations: number;
+  bucketCounts: number[];
+}
+const scope = globalThis as typeof globalThis & { [METRICS_SLOT]?: RunMetricState };
+// Execution and metrics routes may load separate copies of this module.
+const state = scope[METRICS_SLOT] ??= {
+  activeRunStarts: new Map<symbol, number>(), runsStarted: 0, runsFinished: 0, runsFailed: 0,
+  durationSumSeconds: 0, durationObservations: 0,
+  bucketCounts: new Array<number>(DURATION_BUCKETS_SECONDS.length).fill(0),
+};
+const { activeRunStarts } = state;
 
 export interface RunMetricHandle {
   readonly id: symbol;
@@ -47,7 +58,7 @@ export interface RunMetricHandle {
 export function beginRun(startedAtMs = Date.now()): RunMetricHandle {
   const handle = { id: Symbol("runMetric") };
   activeRunStarts.set(handle.id, startedAtMs);
-  runsStarted += 1;
+  state.runsStarted += 1;
   return handle;
 }
 
@@ -66,17 +77,17 @@ export function endRun(
   if (!activeRunStarts.delete(handle.id)) {
     return;
   }
-  runsFinished += 1;
+  state.runsFinished += 1;
   if (outcome.failed) {
-    runsFailed += 1;
+    state.runsFailed += 1;
   }
   if (outcome.durationMs !== undefined) {
     const seconds = outcome.durationMs / 1000;
-    durationSumSeconds += seconds;
-    durationObservations += 1;
+    state.durationSumSeconds += seconds;
+    state.durationObservations += 1;
     for (const [index, bound] of DURATION_BUCKETS_SECONDS.entries()) {
       if (seconds <= bound) {
-        bucketCounts[index] = (bucketCounts[index] ?? 0) + 1;
+        state.bucketCounts[index] = (state.bucketCounts[index] ?? 0) + 1;
       }
     }
   }
@@ -100,12 +111,12 @@ export function runMetricsSnapshot(nowMs = Date.now()): RunMetricsSnapshot {
   const oldestStartedAt = activeRunStarts.size > 0 ? Math.min(...activeRunStarts.values()) : nowMs;
   return {
     activeRuns: activeRunStarts.size,
-    runsStarted,
-    runsFinished,
-    runsFailed,
-    durationSumSeconds,
-    durationBuckets: [...bucketCounts],
-    durationCount: durationObservations,
+    runsStarted: state.runsStarted,
+    runsFinished: state.runsFinished,
+    runsFailed: state.runsFailed,
+    durationSumSeconds: state.durationSumSeconds,
+    durationBuckets: [...state.bucketCounts],
+    durationCount: state.durationObservations,
     oldestActiveRunSeconds: Math.max(0, (nowMs - oldestStartedAt) / 1000),
   };
 }
@@ -113,10 +124,10 @@ export function runMetricsSnapshot(nowMs = Date.now()): RunMetricsSnapshot {
 /** Test seam — production code never resets counters. */
 export function resetRunMetrics(): void {
   activeRunStarts.clear();
-  runsStarted = 0;
-  runsFinished = 0;
-  runsFailed = 0;
-  durationSumSeconds = 0;
-  durationObservations = 0;
-  bucketCounts = new Array<number>(DURATION_BUCKETS_SECONDS.length).fill(0);
+  state.runsStarted = 0;
+  state.runsFinished = 0;
+  state.runsFailed = 0;
+  state.durationSumSeconds = 0;
+  state.durationObservations = 0;
+  state.bucketCounts = new Array<number>(DURATION_BUCKETS_SECONDS.length).fill(0);
 }

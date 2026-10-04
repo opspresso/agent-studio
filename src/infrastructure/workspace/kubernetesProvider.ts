@@ -3,6 +3,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import type { V1Pod } from "@kubernetes/client-node";
 import { createControlledSandboxBackend, SandboxProviderError, type SandboxControl } from "./sandboxBackend";
 import { createKubernetesSandboxApi, kubernetesStatusCode, type KubernetesSandboxApi } from "./kubernetesApi";
+import { SandboxCapacityUnavailableError } from "@/domain/workspace/ports";
 
 export interface KubernetesSandboxConfig {
   image: string;
@@ -104,12 +105,18 @@ export function createKubernetesSandboxBackend(config: KubernetesSandboxConfig, 
             capabilities: { drop: ["ALL"], add: ["SETUID", "SETGID", "CHOWN", "FOWNER", "DAC_OVERRIDE", "KILL"] } },
           resources: { requests: resources, limits: resources },
           volumeMounts: [{ name: "workspace", mountPath: "/workspace" }, { name: "control", mountPath: "/control" }, { name: "tmp", mountPath: "/tmp" }],
-          readinessProbe: { exec: { command: ["node", "-e", "require('node:fs').accessSync('/control/ready')"] },
+          readinessProbe: { exec: { command: ["/usr/bin/test", "-f", "/control/ready"] },
             initialDelaySeconds: 1, periodSeconds: 2, timeoutSeconds: 2 },
         }],
       } };
       try { pod = await api.create(spec); }
       catch (error) {
+        const status = error && typeof error === "object" && "body" in error ? error.body : undefined;
+        if (kubernetesStatusCode(error) === 403 && status && typeof status === "object" &&
+          "reason" in status && status.reason === "Forbidden" && "message" in status &&
+          typeof status.message === "string" && /(?:^|:\s)exceeded quota:/.test(status.message)) {
+          throw new SandboxCapacityUnavailableError();
+        }
         // Only a name conflict is safe to adopt; an uncertain API write is never replayed.
         if (kubernetesStatusCode(error) !== 409) throw error;
         pod = await api.get(name);

@@ -2,9 +2,11 @@ import { Pool, type PoolClient, type QueryResultRow } from "pg";
 import { config } from "@/lib/config";
 import { log } from "@/shared/logger";
 
-let pool: Pool | undefined;
-let readinessPool: Pool | undefined;
-let contentLockPool: Pool | undefined;
+const POOLS_SLOT = Symbol.for("opspresso.agent-studio.database-pools");
+interface DatabasePools { pool?: Pool; readinessPool?: Pool; contentLockPool?: Pool }
+const scope = globalThis as typeof globalThis & { [POOLS_SLOT]?: DatabasePools };
+// The connection budget is per process, including separately loaded server bundles.
+const pools = scope[POOLS_SLOT] ??= {};
 
 const READINESS_DB_TIMEOUT_MS = 2000;
 
@@ -13,8 +15,8 @@ const READINESS_DB_TIMEOUT_MS = 2000;
  * start database connections. Readiness and content locks have separate pools.
  */
 export function getPool(): Pool {
-  if (!pool) {
-    pool = new Pool({
+  if (!pools.pool) {
+    pools.pool = new Pool({
       connectionString: config.databaseUrl,
       max: config.databasePoolSize,
       // A connection the server dropped (a failover, a restart) is reported
@@ -22,11 +24,11 @@ export function getPool(): Pool {
       // replaces it on its own.
       idleTimeoutMillis: 30_000,
     });
-    pool.on("error", (error) => {
+    pools.pool.on("error", (error) => {
       log.error("db", "idle connection error", error);
     });
   }
-  return pool;
+  return pools.pool;
 }
 
 export type Row = QueryResultRow;
@@ -45,8 +47,8 @@ export async function sql<T extends Row = Row>(text: string, params: unknown[] =
  * the connection instead of returning a still-busy client to circulation.
  */
 export async function readinessSql(text: string): Promise<void> {
-  if (!readinessPool) {
-    readinessPool = new Pool({
+  if (!pools.readinessPool) {
+    pools.readinessPool = new Pool({
       connectionString: config.databaseUrl,
       max: 1,
       connectionTimeoutMillis: READINESS_DB_TIMEOUT_MS,
@@ -54,11 +56,11 @@ export async function readinessSql(text: string): Promise<void> {
       statement_timeout: READINESS_DB_TIMEOUT_MS,
       idleTimeoutMillis: 30_000,
     });
-    readinessPool.on("error", (error) => {
+    pools.readinessPool.on("error", (error) => {
       log.error("db", "idle readiness connection error", error);
     });
   }
-  await readinessPool.query(text);
+  await pools.readinessPool.query(text);
 }
 
 /**
@@ -90,11 +92,11 @@ export async function withTransaction<T>(fn: (client: PoolClient) => Promise<T>)
 
 /** Storage locks use their own small pool so waiting uploads cannot exhaust the item-store pool. */
 export async function withContentLock<T>(keys: string | readonly string[], operation: () => Promise<T>): Promise<T> {
-  if (!contentLockPool) {
-    contentLockPool = new Pool({ connectionString: config.databaseUrl, max: 4, idleTimeoutMillis: 30_000 });
-    contentLockPool.on("error", (error) => log.error("db", "idle content lock error", error));
+  if (!pools.contentLockPool) {
+    pools.contentLockPool = new Pool({ connectionString: config.databaseUrl, max: 4, idleTimeoutMillis: 30_000 });
+    pools.contentLockPool.on("error", (error) => log.error("db", "idle content lock error", error));
   }
-  const client = await contentLockPool.connect();
+  const client = await pools.contentLockPool.connect();
   let broken: Error | undefined;
   try {
     await client.query("BEGIN");
@@ -115,11 +117,11 @@ export async function withContentLock<T>(keys: string | readonly string[], opera
 
 /** Close initialized pools; subsequent use creates fresh pools. */
 export async function closePool(): Promise<void> {
-  const current = pool;
-  const currentReadiness = readinessPool;
-  const currentContentLocks = contentLockPool;
-  pool = undefined;
-  readinessPool = undefined;
-  contentLockPool = undefined;
+  const current = pools.pool;
+  const currentReadiness = pools.readinessPool;
+  const currentContentLocks = pools.contentLockPool;
+  pools.pool = undefined;
+  pools.readinessPool = undefined;
+  pools.contentLockPool = undefined;
   await Promise.all([current?.end(), currentReadiness?.end(), currentContentLocks?.end()]);
 }

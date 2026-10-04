@@ -1512,6 +1512,9 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
       "a row that does not carry the attribute is not a match",
     );
     pass("artifact filters: the store filters before the limit counts");
+    assert.deepEqual((await queryItems({ index: "GSI1", pk: keys.artifactAgentPartition(filterAgent),
+      sk: { suffix: buriedId }, limit: 1 })).map(row => row.artifactId), [buriedId],
+    "sort-key suffix selection filters before the page limit without loading unrelated payloads");
 
     await artifactRepository.delete(artifactIds[0]!);
     assert.equal(

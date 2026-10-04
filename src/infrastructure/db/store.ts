@@ -301,6 +301,7 @@ export async function transact(ops: TransactOp[]): Promise<void> {
 }
 
 export type SortKeyMatch =
+  | { suffix: string }
   | { eq: string }
   | { prefix: string }
   | { between: [string, string] }
@@ -368,6 +369,9 @@ function queryWhere(input: QueryInput): {
   if (sk) {
     if ("eq" in sk) {
       where.push(`${columns.sk} = ${bind(sk.eq)}`);
+    } else if ("suffix" in sk) {
+      const suffix = bind(sk.suffix);
+      where.push(`right(${columns.sk}, char_length(${suffix}::text)) = ${suffix}`);
     } else if ("prefix" in sk) {
       where.push(`${columns.sk} >= ${bind(sk.prefix)}`);
       where.push(`${columns.sk} < ${bind(prefixUpperBound(sk.prefix))}`);

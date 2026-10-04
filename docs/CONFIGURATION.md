@@ -343,7 +343,9 @@ Codex·Claude·OpenCode의 모델은 **Model 사용 설정 → 워크스페이�
 | `WORKSPACE_NETWORK` | `none` | egress를 제한한 Docker 네트워크. `host`, `bridge`, `default`는 거절한다 |
 | `WORKSPACE_DOCKER_CONTEXT` | Docker 기본 context | 앱과 worker가 공유하는 전용 Docker daemon의 context |
 | `WORKSPACE_MEMORY_MB`, `WORKSPACE_DISK_MB`, `WORKSPACE_CPUS` | `2048`, `2048`, `2` | 메모리·각 데이터 볼륨(Docker tmpfs/Kubernetes emptyDir)·CPU 상한 |
-| `WORKSPACE_WORKER_CONCURRENCY` | `4` | worker process의 동시 실행 수, 1~32 |
+| `WORKSPACE_WORKER_CONCURRENCY` | `4` | worker process의 native 작업 동시 실행 수, 1~32 |
+| `WORKSPACE_CONTINUATION_CONCURRENCY` | native 동시성 이하의 `2` | worker process의 Chat 후속 실행 동시성, 1~32. native 실행 관찰과 별도이며 SDK 실행 메모리를 고려해 정한다. |
+| `WORKSPACE_CHECKPOINT_HISTORY` | `retention` | `retention`은 이전 체크포인트를 보존 기간까지 유지한다. `latest`는 새 체크포인트 참조가 확정된 뒤 이전 것을 정리한다. 기존 데이터 삭제 승인을 받고 선택한다. |
 | `WORKSPACE_MODEL_GATEWAY_URL` | 미설정 | Sandbox가 접근할 Studio 주소. Native 모델 실행에 필수이며 command에는 필요 없다. Docker 내부 호스트 주소 또는 Kubernetes Service 주소를 명시한다 |
 
 Agent 저장소·소유자 목록은 각각 최대 100개다. `selected`는 등록한 저장소만,
@@ -367,7 +369,9 @@ PR 자동 리뷰의 Agent 실행과 Workspace 검사는 같은 토큰 발급 사
 사용량을 같은 개인 한도에 합산한다. [Gateway 계약](design/workspaces.md#native-모델-gateway)을 따른다.
 
 Workspace worker가 자동 정리와 재시작 복구를 담당한다. 별도 worker를 실행하지 않으면 큐·TTL·승인 결과 전달과 CI 대기가
-진행되지 않는다. Workspace task와 채팅 후속 실행은 각각 workerConcurrency 상한을 적용하는 별도 큐다. 설치·검증 명령은 [INSTALL.md](INSTALL.md#workspace-worker)를 따른다.
+진행되지 않는다. Workspace task와 Chat 후속 실행은 별도 큐와 동시성 설정을 사용한다.
+프로세스마다 체크포인트 저장·복원은 2개씩 처리해 큰 payload의 메모리 사용을 제한한다.
+설치·검증 명령은 [INSTALL.md](INSTALL.md#workspace-worker)를 따른다.
 
 코딩 작업은 해당 Agent가 바인딩한 GitHub MCP에 대한 호출자 자신의 OAuth 연결을 사용한다.
 사용자 ID·issuer·resource·공유 client를 검사하고 만료가 가까우면 그 사용자의 토큰을 갱신한다.

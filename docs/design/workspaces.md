@@ -154,6 +154,10 @@ Kubernetes API·exec 전송 오류는 핸들 소실과 구분한다. Pod·노드
 진행 중인 작업을 잃으면 `interrupted`로 기록한다. 다음 사용자 요청은 마지막 성공한
 체크포인트와 native Session을 복원한다. 마지막 체크포인트 이후 파일·출력은 복구되지 않는다.
 체크포인트 주소와 그 파일에 대응하는 native Session ID는 한 revision 쓰기로 저장한다.
+`WORKSPACE_CHECKPOINT_HISTORY=latest`이면 새 체크포인트를 저장하고 참조를 전환한 뒤
+이전 체크포인트를 최대 50개씩 정리한다. 기본 `retention`은 기존 보존 기간을 유지한다. 삭제는
+현재 체크포인트와 유효한 Workspace lease를 같은 DB transaction에서 확인하며, 최신 복원 지점은
+보존한다. Workspace 체크포인트는 파일 변경 이력이나 장기 백업을 대신하지 않는다.
 복원은 같은 ID를 사용하며, 이후 스트림에서 관찰했지만 체크포인트에 저장되지 않은 ID로 재개하지 않는다.
 첫 체크포인트 전에 컴퓨팅을 잃으면 새 사용자 요청에서 새 native Session을 시작하고 복구 상태가 없다는 경고를 남긴다.
 
@@ -168,6 +172,20 @@ Docker에서 전환할 때 `WORKSPACE_LEGACY_DOCKER=true`와 기존 daemon 연�
 
 
 ### Worker 처리
+
+worker replica는 DB lease로 Workspace 소유권을 나누며 replica마다 native 작업과 Chat 후속 실행의
+동시성을 따로 적용한다. native 작업은 완료까지 worker 슬롯을
+사용하므로 허용할 동시 실행 수를 `replica × workerConcurrency`와 맞춘다. 출력이 있으면
+500ms마다 관찰하고, 조용한 작업은 최대 2초까지 간격을 늘려 DB·Kubernetes exec 부하를 줄인다.
+취소·종료 확인도 이 간격 안에서 수행한다.
+
+프로세스마다 체크포인트 저장과 복원은 함께 최대 2개만 처리한다. payload를 읽기 전에 슬롯을
+얻어 파일 인코딩·암호화 메모리가 native 작업 동시성만큼 늘어나지 않게 한다. 슬롯 대기 중에도
+Workspace lease를 갱신하며 슬롯을 얻은 뒤 소유권·중단 의도를 다시 확인한다.
+
+Kubernetes가 quota 초과로 Pod 생성을 명시적으로 거절하면 15초 뒤 다시 용량을 확인한다.
+원래 실행 기한·접수·호출자 슬롯을 유지하고 기한이 지나면 실패로 마감한다. 일반 403 권한 오류와
+응답이 불확실한 API 쓰기는 이 대기에 포함하지 않으며 native 명령을 재실행하지 않는다.
 
 `application/workspace/worker.ts`는 native 실행 → 검사 → 체크포인트 단계를 기록한다. Runtime
 출력의 cursor와 미완성 JSONL 줄은 Run에 함께 남긴다. workspace lease와 revision을 확인한

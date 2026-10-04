@@ -65,7 +65,7 @@ async function fixture() {
     provider: { kind: "fake", ensure: async () => ({ externalId: "sandbox-1" }), inspect: async () => "ready",
       execute: async () => ({ exitCode: 0, stdout: "", stderr: "" }), start: async () => {}, operation: async () => ({ id: "", status: "not-started" }),
       output: async () => ({ frames: [], nextOffset: 0 }), cancel: async () => {}, checkpoint: async () => new Uint8Array([1]), restore: async () => {}, destroy: async () => {} },
-    checkpoints: { put: async () => {}, get: async () => new Uint8Array([1]), delete: async () => {} },
+    checkpoints: { put: async () => {}, get: async () => new Uint8Array([1]), prune: async () => 0, delete: async () => {} },
     coding: () => worktree, forge: () => forge,
   };
   const useCases = createWorkspaceUseCases(coding);

@@ -92,6 +92,7 @@
 | 도구 결과의 실패 표시와 trace 오류 판정 | `src/shared/toolResultStatus.ts`의 `isToolErrorText`. Runtime의 `Error:` 결과를 Chat·Playground에도 실패로 표시한다 | 코드 |
 | 코딩 요청에 포함되는 Git 게시와 별도 확인의 구분 | `domain/coding/types.ts`의 `codingActionRequiresConfirmation`; 실행은 `application/coding/codingUseCases.ts`의 공통 검토·claim 경로 | 코드 |
 | Native 모델 요청의 신원·정산·복구 | `application/workspace/modelGateway.ts`; 토큰은 `infrastructure/workspace/modelToken.ts`, HTTP/SSE와 요청별 usage는 `modelTransport.ts`·`nativeModelUsage.ts`, 미정산 행은 `workspaceModelCalls.ts`가 소유한다 | 구조 |
+| Native Workspace Gateway의 프로세스 부하 | `lib/workspaceModelMetrics.ts`; `infrastructure/workspace/modelTransport.ts`가 응답 수명 전체를 집계하고 `app/api/metrics/route.ts`가 일반 실행과 합산한다 | 코드 |
 | Native 코딩 턴에 전달하는 Workspace Git 승인 경계 지침 | `src/application/workspace/taskInput.ts` | 코드 |
 | Workspace admission과 중복 요청의 동일성 | `src/application/workspace/workspaceUseCases.ts`; revision·receipt·이벤트의 원자적 쓰기는 `src/infrastructure/db/repositories/workspaceRepository.ts` | 코드 |
 | 원래 Chat의 Agent별 Workspace 선택과 동시 생성 차단 | `Chat.linkedWorkspaces`; `workspaceUseCases.startForChat`과 `workspaceRepository`의 source Chat transaction | 코드 |
@@ -102,6 +103,7 @@
 | Workspace 명령과 검사에 공통인 셸 실패 처리 | `src/shared/workspaceShell.ts` | 코드 |
 | Sandbox 제어 프로토콜·Pod identity·고아 grace | `src/infrastructure/workspace/sandboxBackend.ts`, `kubernetesProvider.ts`; 기존 Docker 핸들 라우팅은 `backendRouting.ts` | 코드 |
 | Workspace 체크포인트의 저장 상한과 암호화 주소 | `src/domain/workspace/limits.ts`, `src/domain/security/secretContext.ts`; 청크·manifest 저장과 무결성 검사는 `src/infrastructure/db/repositories/workspaceCheckpointStore.ts` | 코드 |
+| Workspace 체크포인트 저장·복원의 프로세스 메모리 동시성 | `application/workspace/snapshotLane.ts`; worker는 payload를 읽기 전에 슬롯을 얻는다 | 구조 |
 | 저장된 이미지 참조를 주소로 바꾸기 | `src/domain/chat/imageRefs.ts` 의 `resolveImageUrl` | 코드 |
 | 저장된 파일 참조를 다운로드 주소로 바꾸기 | `src/domain/chat/fileRefs.ts` 의 `resolveFileUrl` | 코드 |
 | Chat 의 run lease 를 누가 놓는가 | `src/application/chat/runLog.ts` 의 `teeToRunLog` | 코드 |

@@ -4,13 +4,15 @@ import { config } from "@/lib/config";
 import { processMetricsSnapshot } from "@/lib/processMetrics";
 import { DURATION_BUCKETS_SECONDS, runMetricsSnapshot } from "@/lib/runMetrics";
 import { isShuttingDown } from "@/shared/lifecycle";
+import { activeWorkspaceModelRequests } from "@/lib/workspaceModelMetrics";
 
 /**
  * Prometheus scrape endpoint, for autoscaling on in-flight runs.
  *
  * Runs are I/O bound — an instance saturated with them still reads as idle CPU —
- * so `agent_studio_active_runs` is the signal an autoscaler should key on, not
- * CPU utilization. See `src/lib/runMetrics.ts`.
+ * so the autoscaler uses `agent_studio_active_execution_requests`, which also
+ * includes native Workspace Gateway requests. App CPU is a complementary signal
+ * for parsing, documents and console traffic. See `src/lib/runMetrics.ts`.
  *
  * `agent_studio_runs_failed_total` and the duration histogram are the alerting
  * signals: the gauge says how busy an instance is and nothing about whether the
@@ -45,6 +47,12 @@ export function GET(): Response {
     "# HELP agent_studio_active_runs Top-level runs currently executing on this instance.",
     "# TYPE agent_studio_active_runs gauge",
     `agent_studio_active_runs ${activeRuns}`,
+    "# HELP agent_studio_active_workspace_model_requests Native Workspace model requests currently handled by this instance.",
+    "# TYPE agent_studio_active_workspace_model_requests gauge",
+    `agent_studio_active_workspace_model_requests ${activeWorkspaceModelRequests()}`,
+    "# HELP agent_studio_active_execution_requests Agent runs and native Workspace model requests currently handled by this instance.",
+    "# TYPE agent_studio_active_execution_requests gauge",
+    `agent_studio_active_execution_requests ${activeRuns + activeWorkspaceModelRequests()}`,
     "# HELP agent_studio_oldest_active_run_seconds Age of the oldest top-level run currently executing.",
     "# TYPE agent_studio_oldest_active_run_seconds gauge",
     `agent_studio_oldest_active_run_seconds ${oldestActiveRunSeconds}`,

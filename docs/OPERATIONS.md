@@ -65,8 +65,8 @@ DB·기존 `S3_BUCKET_NAME`의 비공개 Artifacts 저장소·암호화 키·전
 
 HTTP 앱과 Workspace worker는 같은 DB·암호화 키·Workspace 설정과 Sandbox 백엔드를 사용한다.
 Docker는 같은 daemon, Kubernetes는 같은 실행 namespace·설치 identity와 namespaced RBAC가 필요하다.
-worker는 native 작업 큐와 Chat 후속 실행 큐를 별도로 처리하며 각 큐에 workerConcurrency 상한을
-적용한다. `node build/workspace-health.cjs --worker`로 백엔드·채널과 heartbeat를 확인한다.
+worker는 native 작업 큐와 Chat 후속 실행 큐를 별도로 처리하며 각 큐의 동시성 설정을 적용한다.
+`node build/workspace-health.cjs --worker`로 백엔드·채널과 heartbeat를 확인한다.
 Kubernetes readiness는 Pod list 접근을 확인하고 liveness는 외부 API 장애로 재시작하지 않도록 heartbeat만 검사한다.
 `node build/workspace-heartbeat-check.cjs`가 liveness를 담당하며 DB·백엔드·모델 코드를 로드하지 않는다.
 프로세스가 살아 있다는 사실만으로 특정 작업의 성공을 판단하지 않고 Run·승인·전달 상태를 확인한다.
@@ -161,6 +161,8 @@ standalone 서버는 진행 중인 요청을 끝낸다. 이 모듈은 결코 `pr
 |---|---|---|
 | `agent_studio_build_info` | gauge | 배포된 package version·stage. |
 | `agent_studio_active_runs` | gauge | **오토스케일링 신호.** |
+| `agent_studio_active_workspace_model_requests` | gauge | 이 웹 프로세스가 처리하는 native Workspace 모델 요청. 응답 본문 종료·취소·실패까지 집계한다. |
+| `agent_studio_active_execution_requests` | gauge | 일반 Agent 실행과 native Workspace 모델 요청의 합. **웹 오토스케일링 신호.** |
 | `agent_studio_oldest_active_run_seconds` | gauge | 멈추거나 deadline에 접근한 런 감지. |
 | `agent_studio_runs_started_total` | counter | 처리량. |
 | `agent_studio_runs_finished_total` | counter | 처리량. |
@@ -175,8 +177,11 @@ standalone 서버는 진행 중인 요청을 끝낸다. 이 모듈은 결코 `pr
 | `nodejs_external_memory_bytes` | gauge | Buffer 등 V8 heap 밖의 메모리. |
 | `nodejs_eventloop_delay_{p95,max}_seconds` | gauge | 메트릭 수집 시작 이후 event loop 지연. |
 
-**CPU 가 아니라 `agent_studio_active_runs` 로 오토스케일하라.** 런은 I/O 바운드다. 런으로
-포화된 인스턴스도 CPU 는 유휴로 읽힌다.
+웹 replica는 `agent_studio_active_execution_requests`로 장시간 I/O 부하를 확장한다. 런으로
+포화된 인스턴스도 CPU는 유휴로 읽힐 수 있다. `agent_studio_active_runs`만 사용하면 별도 worker가
+실행하는 Workspace의 native 모델 요청을 놓친다. 웹 컨테이너의 CPU 지표도 함께 적용하면
+요청 파싱·파일 처리·콘솔 트래픽 증가를 감지할 수 있다. 여러 HPA 지표는 필요한 replica 수 중
+최댓값을 선택한다.
 
 `agent_studio_oldest_active_run_seconds` 는 동시 런을 시작 handle 별로 추적한다. 새 런이 먼저
 끝나도 더 오래된 런의 나이를 잃지 않으며, active run이 없으면 `0`이다. 기본 설정에서 600초를

@@ -1,5 +1,10 @@
 import type { Workspace, RuntimeSession, WorkspaceInput, WorkspaceEventData } from "./types";
 
+/** Admission rejected before any compute was allocated; retrying cannot replay work. */
+export class SandboxCapacityUnavailableError extends Error {
+  constructor() { super("Sandbox capacity is full"); this.name = "SandboxCapacityUnavailableError"; }
+}
+
 export interface SandboxCommand {
   argv: string[];
   cwd?: string;
@@ -55,5 +60,7 @@ export interface WorkspaceRuntimeAdapter {
 export interface WorkspaceCheckpointStore {
   put(workspaceId: string, checkpointId: string, bytes: Uint8Array, createdAt: string): Promise<void>;
   get(workspaceId: string, checkpointId: string): Promise<Uint8Array | null>;
+  /** Remove a bounded batch of superseded snapshots while the caller still owns the current checkpoint and lease. */
+  prune(workspaceId: string, checkpointId: string, leaseToken: string): Promise<number>;
   delete(workspaceId: string): Promise<void>;
 }

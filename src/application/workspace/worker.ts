@@ -1,5 +1,6 @@
 import type { RunUser } from "@/domain/execution/actor";
 import type { SandboxProvider, WorkspaceCheckpointStore, WorkspaceRuntimeAdapter } from "@/domain/workspace/ports";
+import { SandboxCapacityUnavailableError } from "@/domain/workspace/ports";
 import type { Sandbox, Workspace, WorkspaceRun } from "@/domain/workspace/types";
 import type { RunSlotPersistence } from "@/application/run/runBracket";
 import type { CodingWorktree } from "@/domain/coding/worktree";
@@ -10,10 +11,11 @@ import { RateLimitedError, ValidationError } from "@/application/errors";
 import type { WorkspaceDeps } from "./workspaceUseCases";
 import { workspacePolicy } from "./workspaceUseCases";
 import { workspaceAllowsRepository } from "@/domain/workspace/policy";
-import { claimWorkspace, WorkspaceLeaseLost, WorkspaceWorkerState, WORKSPACE_POLL_MS, WORKSPACE_RETRY_MS } from "./workerState";
+import { claimWorkspace, WorkspaceLeaseLost, WorkspaceWorkerState, WORKSPACE_POLL_MS, WORKSPACE_QUIET_POLL_MS, WORKSPACE_RETRY_MS } from "./workerState";
 import { boundedWorkspaceText, boundWorkspaceEvent, foldWorkspaceOutput } from "./output";
 import { workspaceTaskInput } from "./taskInput";
 import { WORKSPACE_SHELL } from "@/shared/workspaceShell";
+import { withWorkspaceSnapshot } from "./snapshotLane";
 
 export interface WorkspaceWorkerDeps extends WorkspaceDeps {
   provider: SandboxProvider;
@@ -40,6 +42,11 @@ async function sandboxFor(deps: WorkspaceWorkerDeps, workspace: Workspace): Prom
 
 export async function ensureWorkspaceSandbox(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState, caller?: RunUser): Promise<Sandbox> {
   const { workspace, run } = await state.read();
+  const deadline = (run?.startedAt ? Date.parse(run.startedAt) : deps.now().getTime()) + deps.runTimeoutMs;
+  if (run?.startedAt && !workspace.sandboxId && deps.now().getTime() >= deadline) {
+    await finishRun(deps, state, "failed", "Workspace provisioning deadline exceeded");
+    throw new WorkspaceProvisionStopped();
+  }
   const previous = await sandboxFor(deps, workspace);
   const status = previous ? await state.effect(() => deps.provider.inspect(previous.externalId)) : "missing";
   if (previous && status === "ready" && previous.status === "ready") return previous;
@@ -54,7 +61,6 @@ export async function ensureWorkspaceSandbox(deps: WorkspaceWorkerDeps, state: W
     await state.save({ sandboxId: sandbox.id }, undefined, [], { sandbox });
   }
   const pending = sandbox;
-  const deadline = (run?.startedAt ? Date.parse(run.startedAt) : deps.now().getTime()) + deps.runTimeoutMs;
   for (;;) {
     const current = await state.read();
     if (current.workspace.status === "closing") {
@@ -78,9 +84,11 @@ export async function ensureWorkspaceSandbox(deps: WorkspaceWorkerDeps, state: W
   }
   const checkpointId = workspace.checkpointId;
   if (checkpointId) {
-    const checkpoint = await state.effect(() => deps.checkpoints.get(workspace.id, checkpointId));
-    if (!checkpoint) throw new Error("Workspace recovery checkpoint has expired or is missing");
-    await state.effect(() => deps.provider.restore(sandbox.externalId, checkpoint));
+    await withWorkspaceSnapshot(async () => {
+      const checkpoint = await state.effect(() => deps.checkpoints.get(workspace.id, checkpointId));
+      if (!checkpoint) throw new Error("Workspace recovery checkpoint has expired or is missing");
+      await state.effect(() => deps.provider.restore(sandbox.externalId, checkpoint));
+    });
     if (workspace.coding) await state.save({}, undefined, [{ kind: "warning", text: "Workspace restored; Git-ignored dependencies and build outputs must be regenerated" }]);
   }
   const session = await deps.repository.session(workspace.id, workspace.sessionId);
@@ -109,6 +117,10 @@ export async function ensureWorkspaceSandbox(deps: WorkspaceWorkerDeps, state: W
 }
 
 export async function saveWorkspaceCheckpoint(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState, sandbox: Sandbox): Promise<void> {
+  await withWorkspaceSnapshot(() => captureWorkspaceCheckpoint(deps, state, sandbox));
+}
+
+async function captureWorkspaceCheckpoint(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState, sandbox: Sandbox): Promise<void> {
   await state.save();
   const bytes = await state.effect(() => deps.provider.checkpoint(sandbox.externalId));
   await state.read();
@@ -117,6 +129,7 @@ export async function saveWorkspaceCheckpoint(deps: WorkspaceWorkerDeps, state: 
   const { workspace } = await state.read();
   const session = await deps.repository.session(workspace.id, workspace.sessionId);
   await state.save({ checkpointId: id, checkpointSession: { ...(session?.nativeSessionId ? { nativeSessionId: session.nativeSessionId } : {}) } });
+  await state.effect(() => deps.checkpoints.prune(workspace.id, id, state.token));
 }
 
 async function cleanupWorkspace(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState): Promise<void> {
@@ -187,6 +200,7 @@ async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState
   catch (error) { if (error instanceof WorkspaceProvisionStopped) return; throw error; }
   const runtime = await deps.runtime(workspace.runtime);
   let nextReview = 0;
+  let quietDelay = WORKSPACE_POLL_MS;
   for (;;) {
     if (signal?.aborted) throw new WorkerStopping();
     ({ workspace, run } = await state.read());
@@ -237,6 +251,7 @@ async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState
     const operationId = run.operationId!;
     let operation = await state.effect(() => deps.provider.operation(sandbox.externalId, operationId));
     if (operation.status === "not-started") {
+      quietDelay = WORKSPACE_POLL_MS;
       const current = await state.read();
       if (current.run?.id !== run.id) throw new WorkspaceLeaseLost();
       if (current.run.cancelRequestedAt || current.workspace.status === "closing") continue;
@@ -297,7 +312,11 @@ async function executeRun(deps: WorkspaceWorkerDeps, state: WorkspaceWorkerState
       }
     }
     await state.save({}, patch, events, children);
-    if (!drained) await deps.sleep(WORKSPACE_POLL_MS, signal);
+    if (!drained) {
+      const hasProgress = output.frames.length > 0 || terminal;
+      await deps.sleep(hasProgress ? WORKSPACE_POLL_MS : quietDelay, signal);
+      quietDelay = hasProgress ? WORKSPACE_POLL_MS : Math.min(quietDelay * 2, WORKSPACE_QUIET_POLL_MS);
+    }
   }
 }
 
@@ -360,6 +379,14 @@ async function processClaimedWorkspace(deps: WorkspaceWorkerDeps, state: Workspa
       const retryAt = deps.now().getTime() + error.retryAfterSeconds * 1000;
       await state.save({ leaseToken: undefined, leaseUntil: undefined,
         dueAt: new Date(run?.startedAt ? Math.min(retryAt, Date.parse(run.startedAt) + deps.runTimeoutMs) : retryAt).toISOString() });
+      return true;
+    }
+    if (error instanceof SandboxCapacityUnavailableError && run && !run.phase) {
+      // Quota rejection proves no Pod was created. Keep admission and its original deadline.
+      const deadline = Date.parse(run.startedAt!) + deps.runTimeoutMs;
+      if (deps.now().getTime() >= deadline) await finishRun(deps, state, "failed", "Workspace provisioning deadline exceeded");
+      else await state.save({ error: error.message, leaseToken: undefined, leaseUntil: undefined,
+        dueAt: new Date(Math.min(deps.now().getTime() + WORKSPACE_RETRY_MS, deadline)).toISOString() });
       return true;
     }
     const message = boundedWorkspaceText(error instanceof Error ? error.message : "Workspace operation failed", WORKSPACE_LIMITS.errorBytes).text;

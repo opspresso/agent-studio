@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createWorkspaceModelTransport } from "@/infrastructure/workspace/modelTransport";
 import { createNativeUsageObserver } from "@/infrastructure/workspace/nativeModelUsage";
 import type { NativeModelProtocol, WorkspaceModelTransport } from "@/domain/workspace/modelGateway";
+import { activeWorkspaceModelRequests } from "@/lib/workspaceModelMetrics";
+import { GET as metrics } from "@/app/api/metrics/route";
 
 afterEach(() => vi.unstubAllGlobals());
 const target = { providerName: "selfhosted", baseUrl: "https://provider.example.test/v1", apiKey: "provider-key", auth: "bearer" as const, model: "native" };
@@ -20,6 +22,58 @@ function streaming(events: unknown[], crlf = false) {
   } }), { headers: { "content-type": "text/event-stream" } });
 }
 describe("transparent native model transport", () => {
+  it("exposes native Gateway load while the provider is pending and releases a JSON response", async () => {
+    let respond!: (response: Response) => void;
+    const pending = new Promise<Response>(resolve => { respond = resolve; });
+    let entered!: () => void;
+    const called = new Promise<void>(resolve => { entered = resolve; });
+    vi.stubGlobal("fetch", vi.fn(() => { entered(); return pending; }));
+    const forwarding = transport.forward(input("responses"));
+    await called;
+    expect(activeWorkspaceModelRequests()).toBe(1);
+    expect(await metrics().text()).toContain("agent_studio_active_workspace_model_requests 1");
+    expect(await metrics().text()).toContain("agent_studio_active_execution_requests 1");
+    respond(Response.json({ usage: { input_tokens: 1, output_tokens: 1 } }));
+    await forwarding;
+    expect(activeWorkspaceModelRequests()).toBe(0);
+    expect(await metrics().text()).toContain("agent_studio_active_workspace_model_requests 0");
+    expect(await metrics().text()).toContain("agent_studio_active_execution_requests 0");
+  });
+  it("keeps streaming requests active until their response body ends", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => streaming([
+      { type: "response.completed", response: { usage: { input_tokens: 1, output_tokens: 1 } } },
+    ])));
+    const args = input("responses");
+    const response = await transport.forward(args);
+    expect(activeWorkspaceModelRequests()).toBe(1);
+    await response.text();
+    expect(activeWorkspaceModelRequests()).toBe(0);
+    expect(args.finish).toHaveBeenCalledTimes(1);
+  });
+  it("releases cancelled stream load even when both accounting attempts fail", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => streaming([{ type: "response.output_text.delta", delta: "pending" }])));
+    const args = input("responses");
+    args.finish = vi.fn(async () => { throw new Error("Accounting unavailable"); });
+    const response = await transport.forward(args);
+    expect(activeWorkspaceModelRequests()).toBe(1);
+    await expect(response.body!.cancel()).rejects.toThrow("Accounting unavailable");
+    expect(activeWorkspaceModelRequests()).toBe(0);
+    expect(args.finish).toHaveBeenCalledTimes(2);
+  });
+  it.each(["configuration", "fetch", "refusal"])("releases Gateway load after %s failure", async kind => {
+    const args = input("responses");
+    const adapter = createWorkspaceModelTransport(async () => {
+      if (kind === "configuration") throw new Error("Configuration unavailable");
+      return target;
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      if (kind === "fetch") throw new Error("Transport unavailable");
+      return new Response("Unavailable", { status: 503 });
+    }));
+    if (kind === "refusal") expect((await adapter.forward(args)).status).toBe(503);
+    else await expect(adapter.forward(args)).rejects.toThrow("Native model");
+    expect(activeWorkspaceModelRequests()).toBe(0);
+  });
   it.each(["json", "frame", "total"])("bounds %s bytes, cancels upstream and records uncertainty without replay", async kind => {
     const cancel = vi.fn();
     const megabyte = 1024 * 1024;
