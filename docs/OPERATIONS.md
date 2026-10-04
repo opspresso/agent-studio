@@ -68,6 +68,7 @@ Docker는 같은 daemon, Kubernetes는 같은 실행 namespace·설치 identity�
 worker는 native 작업 큐와 Chat 후속 실행 큐를 별도로 처리하며 각 큐에 workerConcurrency 상한을
 적용한다. `node build/workspace-health.cjs --worker`로 백엔드·채널과 heartbeat를 확인한다.
 Kubernetes readiness는 Pod list 접근을 확인하고 liveness는 외부 API 장애로 재시작하지 않도록 heartbeat만 검사한다.
+`node build/workspace-heartbeat-check.cjs`가 liveness를 담당하며 DB·백엔드·모델 코드를 로드하지 않는다.
 프로세스가 살아 있다는 사실만으로 특정 작업의 성공을 판단하지 않고 Run·승인·전달 상태를 확인한다.
 
 승인 결과의 알림은 DB에 남으므로 브라우저를 닫아도 대기한다. pending은 아직 소비하지 않은 알림,
