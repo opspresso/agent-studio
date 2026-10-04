@@ -68,7 +68,12 @@ async function main() {
     assert.equal((await backend.provider.operation(restored, operation)).status, "not-started");
     console.log("PASS deployed Workspace: UID/token/root isolation, DNS/network isolation, idempotency, cancel, checkpoint/restore and stale-handle fencing");
   } finally {
-    for (const handle of handles) await backend.provider.destroy(handle);
+    try {
+      for (const handle of handles) await backend.provider.destroy(handle);
+    } catch (error) {
+      stage = "probe Pod cleanup";
+      throw error;
+    }
   }
 }
 main().catch(error => { console.error(`Deployment check failed at ${stage}: ${error instanceof Error ? error.message : "unknown error"}`); process.exitCode = 1; });
