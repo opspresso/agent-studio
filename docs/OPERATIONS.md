@@ -363,6 +363,8 @@ caller 당 Settings → Service의 동시 실행 한도(`MAX_CONCURRENT_RUNS_PER
 `X-Scan-Token: $SCHEDULE_SCAN_TOKEN`으로 `POST /api/triggers/scan`을 1분 이하 간격으로
 호출한다. localdev는 `deploy/local/scripts/tick.sh`, 배포 환경은 `../dockpad`와
 `../argocd-env-demo`가 ticker를 소유한다. 이 호출이 [DB 만료 sweep](#행-보존)도 예약한다.
+Kubernetes 배포는 하나의 지속 실행 ticker Pod에서 주기적으로 호출한다. 매분 새 Job Pod를 만들지
+않으며 HTTP 실패는 endpoint별로 기록하고 다음 정기 tick에서 다시 호출한다. 유지보수 중에는 ticker도 중지한다.
 
 - 최근 10분의 발생만 catch-up한다. 그보다 오래된 발생은 자동 실행하지 않는다.
 - 조건부 claim이 겹친 tick의 같은 발생을 중복 접수하지 않게 한다. 생성·편집 이전 발생과

@@ -29,7 +29,7 @@ COPY --from=build --chown=app:app /app/build ./build
 USER app
 
 EXPOSE 3000
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=180s --retries=3 \
   CMD wget -qO- http://127.0.0.1:3000/api/health || exit 1
 
 # exec form keeps node as PID 1 so SIGTERM reaches it directly and in-flight

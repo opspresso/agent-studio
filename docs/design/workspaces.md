@@ -141,6 +141,9 @@ native Session 이력과 SQLite 상태는 보관한다. Codex의 자동 plugin·
 `/tmp`에는 256 MiB를 사용한다. CPU·메모리 requests/limits는 설정값, ephemeral-storage는
 두 데이터 볼륨과 tmp·로그 여유 512 MiB의 합이다. `emptyDir.sizeLimit`은 파일시스템 quota가
 아니므로 kubelet의 사용량 계측·퇴거와 namespace ResourceQuota·NetworkPolicy를 함께 구성한다.
+이 볼륨과 이미지 캐시는 노드의 ephemeral 디스크를 사용하며, 기존 DinD의 PVC와 공유하지 않는다.
+노드 디스크는 동시 Pod의 예약량 외에 이미지·시스템 로그 여유도 필요하다. Pod 삭제는 `emptyDir`를
+삭제하며 복구는 아래 체크포인트 계약을 따른다. Workspace마다 영구 EBS PVC를 만들지는 않는다.
 Pod는 `restartPolicy=Never`이며 native 작업 소실을 새 프로세스 실행으로 감추지 않는다.
 Pod 생성 직후 UID 핸들을 DB에 기록하며 노드·이미지 준비 중에도 취소와 worker 재시작을 처리한다.
 준비 대기는 작업의 원래 실행 기한에 포함한다.

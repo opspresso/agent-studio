@@ -10,21 +10,32 @@ if [ -z "${SCHEDULE_SCAN_TOKEN:-}" ]; then
 fi
 
 post() {
-  code=$(curl -s -o /dev/null -w '%{http_code}' -m 60 -X POST \
-    -H "X-Scan-Token: $SCHEDULE_SCAN_TOKEN" "$APP$1" || echo 000)
+  code=$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 5 -m 15 -X POST \
+    -H "X-Scan-Token: $SCHEDULE_SCAN_TOKEN" "$APP$1")
+  status=$?
   case "$code" in
-    2*) ;;
-    *) echo "$(date -Is) $1 -> $code" ;;
+    2*) [ "$status" -eq 0 ] && return 0 ;;
   esac
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $1 -> HTTP $code (curl exit $status)" >&2
+  return 1
 }
 
-minute=0
+trap 'exit 0' INT TERM
+next_reindex=0
 while true; do
-  post /api/triggers/scan
-  post /api/plugins/sync/scan
-  if [ "$((minute % 60))" -eq 0 ]; then
-    post /api/catalog/reindex
+  started=$(date +%s)
+  # Each endpoint has its own result; a failed scan must not suppress plugin sync.
+  failures=0
+  post /api/triggers/scan || failures=$((failures + 1))
+  post /api/plugins/sync/scan || failures=$((failures + 1))
+  if [ "$started" -ge "$next_reindex" ]; then
+    post /api/catalog/reindex || failures=$((failures + 1))
+    next_reindex=$((started + 3600))
   fi
-  minute=$((minute + 1))
-  sleep 60
+  [ "$failures" -eq 0 ] || echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) ticker failed endpoints: $failures" >&2
+  # Include request time in the minute. Do not replay ticks missed while stopped.
+  delay=$((60 - ($(date +%s) - started)))
+  [ "$delay" -gt 0 ] || delay=1
+  sleep "$delay" &
+  wait "$!"
 done
