@@ -38,6 +38,17 @@ beforeEach(async () => {
 });
 
 describe("database readiness pool", () => {
+  it("keeps one connection budget across separately loaded server bundles", async () => {
+    const ordinary = getPool();
+    await readinessSql("SELECT 1");
+    vi.resetModules();
+    const other = await import("@/infrastructure/db/client");
+    expect(other.getPool()).toBe(ordinary);
+    await other.readinessSql("SELECT 1");
+    expect(pools).toHaveLength(2);
+    await other.closePool();
+    expect(ordinary.end).toHaveBeenCalledOnce();
+  });
   it("bounds checkout, response, and server execution on an isolated connection", async () => {
     await readinessSql("SELECT 1");
 

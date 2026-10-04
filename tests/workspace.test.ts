@@ -352,7 +352,44 @@ describe("workspace checkpoints", () => {
       return (value.opaque as string).split("").reverse().join("");
     },
   };
-  const checkpoints = createWorkspaceCheckpointStore(cipher);
+  const checkpoints = createWorkspaceCheckpointStore(cipher, "latest");
+
+  it("retains historical checkpoints unless the deployment selects latest-only storage", async () => {
+    const workspace = await create();
+    await checkpoints.put(workspace.id, "old", new Uint8Array([1]), now.toISOString());
+    expect(await createWorkspaceCheckpointStore(cipher).prune(workspace.id, "latest", "owner")).toBe(0);
+    expect(await checkpoints.get(workspace.id, "old")).toEqual(Buffer.from([1]));
+  });
+
+  it("prunes only superseded snapshots under the current workspace lease", async () => {
+    const workspace = await create();
+    await checkpoints.put(workspace.id, "old", new Uint8Array([1]), now.toISOString());
+    await checkpoints.put(workspace.id, "latest", new Uint8Array([2]), now.toISOString());
+    fake.seed([{ ...keys.workspace(workspace.id), value: { ...workspace, checkpointId: "latest", leaseToken: "owner",
+      leaseUntil: new Date(now.getTime() + 60_000).toISOString() } }]);
+    await expect(checkpoints.prune(workspace.id, "old", "owner")).rejects.toMatchObject({ name: "ConditionalWriteFailed" });
+    await expect(checkpoints.prune(workspace.id, "latest", "stale-owner")).rejects.toMatchObject({ name: "ConditionalWriteFailed" });
+    expect(await checkpoints.get(workspace.id, "old")).toEqual(Buffer.from([1]));
+    expect(await checkpoints.prune(workspace.id, "latest", "owner")).toBe(2);
+    expect(await checkpoints.get(workspace.id, "old")).toBeNull();
+    expect(await checkpoints.get(workspace.id, "latest")).toEqual(Buffer.from([2]));
+  });
+
+  it("bounds cleanup pages and refuses an expired lease", async () => {
+    const workspace = await create();
+    for (let i = 0; i < WORKSPACE_LIMITS.page + 3; i++) {
+      await checkpoints.put(workspace.id, `old-${String(i).padStart(3, "0")}`, new Uint8Array(), now.toISOString());
+    }
+    await checkpoints.put(workspace.id, "latest", new Uint8Array([2]), now.toISOString());
+    fake.seed([{ ...keys.workspace(workspace.id), value: { ...workspace, checkpointId: "latest", leaseToken: "owner",
+      leaseUntil: now.toISOString() } }]);
+    await expect(checkpoints.prune(workspace.id, "latest", "owner")).rejects.toMatchObject({ name: "ConditionalWriteFailed" });
+    fake.seed([{ ...keys.workspace(workspace.id), value: { ...workspace, checkpointId: "latest", leaseToken: "owner",
+      leaseUntil: new Date(now.getTime() + 60_000).toISOString() } }]);
+    expect(await checkpoints.prune(workspace.id, "latest", "owner")).toBe(WORKSPACE_LIMITS.page - 1);
+    expect(await checkpoints.prune(workspace.id, "latest", "owner")).toBe(4);
+    expect(await checkpoints.get(workspace.id, "latest")).toEqual(Buffer.from([2]));
+  });
 
   it("round-trips multiple encrypted chunks independently of the sandbox", async () => {
     const workspace = await create();

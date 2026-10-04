@@ -34,6 +34,9 @@ export const keys = {
     between: [`EVENT#${runId}#${String(afterSeq + 1).padStart(8, "0")}`, `EVENT#${runId}#99999999`] as [string, string],
   }),
   workspaceStatePartition: (id: string) => `WORKSPACESTATE#${id}`,
+  workspaceCheckpointManifests: () => ({ suffix: "#META" }),
+  workspaceCheckpointId: (sk: string) => /^([a-zA-Z0-9_-]{1,100})#META$/.exec(sk)?.[1],
+  workspaceCheckpointPrefix: (checkpointId: string) => `${checkpointId}#`,
   workspaceCheckpoint: (id: string, checkpointId: string) => ({ PK: `WORKSPACESTATE#${id}`, SK: `${checkpointId}#META` }),
   workspaceCheckpointChunk: (id: string, checkpointId: string, index: number) => ({
     PK: `WORKSPACESTATE#${id}`, SK: `${checkpointId}#${String(index).padStart(6, "0")}`,

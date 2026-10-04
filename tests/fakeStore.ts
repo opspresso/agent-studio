@@ -220,6 +220,7 @@ export function createFakeStore(): FakeStore {
         matches = matches.filter((row) => {
           const value = String(row[skAttr] ?? "");
           if ("eq" in sk) return value === sk.eq;
+          if ("suffix" in sk) return value.endsWith(sk.suffix);
           if ("prefix" in sk) return value.startsWith(sk.prefix);
           if ("between" in sk)
             return compareBytes(value, sk.between[0]) >= 0 && compareBytes(value, sk.between[1]) <= 0;

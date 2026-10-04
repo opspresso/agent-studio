@@ -3,6 +3,7 @@ import type { TargetResolver } from "@/infrastructure/llm/providers";
 import { readBodyText } from "@/shared/httpBody";
 import { createNativeUsageObserver } from "./nativeModelUsage";
 import { fetchProvider } from "@/infrastructure/llm/providerFetch";
+import { beginWorkspaceModelRequest } from "@/lib/workspaceModelMetrics";
 
 /** Memory and wire bounds for the transparent native protocol, independent of tool output bounds. */
 const MAX_NATIVE_FRAME_BYTES = 8 * 1024 * 1024;
@@ -10,6 +11,7 @@ const MAX_NATIVE_RESPONSE_BYTES = 64 * 1024 * 1024;
 
 export function createWorkspaceModelTransport(resolve: TargetResolver): WorkspaceModelTransport {
   return { async forward(input) {
+    const releaseMetric = beginWorkspaceModelRequest();
     const controller = new AbortController();
     const observer = createNativeUsageObserver(input.protocol);
     let finishing: Promise<void> | undefined;
@@ -21,6 +23,10 @@ export function createWorkspaceModelTransport(resolve: TargetResolver): Workspac
         try { await input.finish(captured.usage, captured.complete); }
         catch { await input.finish(captured.usage, captured.complete); }
       })();
+    };
+    const close = async (result = observer.result()) => {
+      try { await finish(result); }
+      finally { releaseMetric(); }
     };
     let endpoint: string;
     let request: RequestInit;
@@ -43,18 +49,18 @@ export function createWorkspaceModelTransport(resolve: TargetResolver): Workspac
       }
       request = { method: "POST", headers, body: JSON.stringify(body), signal: AbortSignal.any([input.signal, controller.signal]) };
     } catch {
-      await finish({ complete: true });
+      await close({ complete: true });
       throw new Error("Native model provider configuration is unavailable");
     }
     let upstream: Response;
     try { upstream = await fetchProvider(endpoint, request); }
-    catch { await finish(); throw new Error("Native model transport failed; request was not replayed"); }
+    catch { await close(); throw new Error("Native model transport failed; request was not replayed"); }
     if (!upstream.ok) {
       await upstream.body?.cancel().catch(() => {});
       // A provider refusal did not return a generation. Server/transport failure can be uncertain.
       if (upstream.status >= 400 && upstream.status < 500) {
-        await finish({ complete: true });
-      } else await finish();
+        await close({ complete: true });
+      } else await close();
       return Response.json({ error: { message: `Model provider refused request: HTTP ${upstream.status}` } }, { status: upstream.status });
     }
     if (!upstream.headers.get("content-type")?.includes("text/event-stream")) {
@@ -62,12 +68,12 @@ export function createWorkspaceModelTransport(resolve: TargetResolver): Workspac
         const text = await readBodyText(upstream, MAX_NATIVE_FRAME_BYTES);
         const parsed: unknown = JSON.parse(text);
         if (parsed && typeof parsed === "object" && "error" in parsed && parsed.error != null) throw new Error("Native model response failed");
-        if (input.countTokens) { await finish({ complete: true }); }
-        else { observer.observe(parsed, true); await finish(); }
+        if (input.countTokens) { await close({ complete: true }); }
+        else { observer.observe(parsed, true); await close(); }
         return new Response(text, { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
-      } catch { await finish(); throw new Error("Native model response or accounting failed"); }
+      } catch { await close(); throw new Error("Native model response or accounting failed"); }
     }
-    if (!upstream.body) { await finish(); throw new Error("Native model stream has no body"); }
+    if (!upstream.body) { await close(); throw new Error("Native model stream has no body"); }
     const reader = upstream.body.getReader();
     const decoder = new TextDecoder("utf-8", { fatal: true });
     let pending = "";
@@ -86,7 +92,7 @@ export function createWorkspaceModelTransport(resolve: TargetResolver): Workspac
           if (done) {
             pending += decoder.decode();
             if (pending.trim()) observeFrame(pending);
-            await finish(); output.close(); return;
+            await close(); output.close(); return;
           }
           bytes += value.byteLength;
           if (bytes > MAX_NATIVE_RESPONSE_BYTES) throw new Error("Native model response limit exceeded");
@@ -104,10 +110,10 @@ export function createWorkspaceModelTransport(resolve: TargetResolver): Workspac
         } catch {
           controller.abort();
           await reader.cancel().catch(() => {});
-          try { await finish(); } finally { output.error(new Error("Native model stream or accounting failed; request was not replayed")); }
+          try { await close(); } finally { output.error(new Error("Native model stream or accounting failed; request was not replayed")); }
         }
       },
-      async cancel() { controller.abort(); await reader.cancel().catch(() => {}); await finish(); },
+      async cancel() { controller.abort(); await reader.cancel().catch(() => {}); await close(); },
     });
     return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-store" } });
   } };

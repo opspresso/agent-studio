@@ -5,11 +5,12 @@ import type { SecretCipher } from "@/domain/security/secretCipher";
 import { workspaceCheckpointContext } from "@/domain/security/secretContext";
 import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
 import { keys } from "../keys";
-import { conditions, deletePartition, getItem, transact } from "../store";
+import { conditions, deletePartition, getItem, queryItems, transact, withItemWriteFence } from "../store";
 import { expiresAtSeconds, isExpired, RETENTION } from "../ttl";
 
 /** Chunked, context-bound encryption keeps native state out of API views and ordinary event rows. */
-export function createWorkspaceCheckpointStore(cipher: Pick<SecretCipher, "encrypt" | "decrypt">): WorkspaceCheckpointStore {
+export function createWorkspaceCheckpointStore(cipher: Pick<SecretCipher, "encrypt" | "decrypt">,
+  history: "retention" | "latest" = "retention"): WorkspaceCheckpointStore {
   return {
     async put(workspaceId, checkpointId, bytes, createdAt) {
       if (bytes.byteLength > WORKSPACE_LIMITS.checkpointBytes) throw new Error("Workspace checkpoint exceeds storage limit");
@@ -59,6 +60,23 @@ export function createWorkspaceCheckpointStore(cipher: Pick<SecretCipher, "encry
         throw new Error("Workspace checkpoint integrity mismatch");
       }
       return bytes;
+    },
+    async prune(workspaceId, checkpointId, leaseToken) {
+      if (history === "retention") return 0;
+      const manifests = await queryItems({ pk: keys.workspaceStatePartition(workspaceId),
+        sk: keys.workspaceCheckpointManifests(), limit: WORKSPACE_LIMITS.page });
+      let removed = 0;
+      for (const manifest of manifests) {
+        const id = typeof manifest.SK === "string" ? keys.workspaceCheckpointId(manifest.SK) : undefined;
+        if (!id) throw new Error("Invalid workspace checkpoint inventory");
+        if (id === checkpointId) continue;
+        removed += await withItemWriteFence({ key: keys.workspace(workspaceId), condition: row => {
+          const workspace = row?.value as Workspace | undefined;
+          return !!workspace && workspace.checkpointId === checkpointId && workspace.leaseToken === leaseToken &&
+            Date.parse(workspace.leaseUntil ?? "") > Date.now() && !workspace.deleteRequestedAt && workspace.status !== "closed";
+        } }, () => deletePartition(keys.workspaceStatePartition(workspaceId), { prefix: keys.workspaceCheckpointPrefix(id) }));
+      }
+      return removed;
     },
     async delete(workspaceId) { await deletePartition(keys.workspaceStatePartition(workspaceId)); },
   };

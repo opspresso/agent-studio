@@ -2,9 +2,16 @@ import { describe, expect, it } from "vitest";
 import { parseWorkspaceConfig } from "@/lib/workspaceConfig";
 
 describe("Workspace Sandbox deployment configuration", () => {
+  it("separates native observation from memory-heavy Chat continuation concurrency", () => {
+    expect(parseWorkspaceConfig({ WORKSPACE_IMAGE: "workspace:test", WORKSPACE_WORKER_CONCURRENCY: "16" }))
+      .toMatchObject({ workerConcurrency: 16, continuationConcurrency: 2 });
+    expect(parseWorkspaceConfig({ WORKSPACE_IMAGE: "workspace:test", WORKSPACE_WORKER_CONCURRENCY: "16", WORKSPACE_CONTINUATION_CONCURRENCY: "3" }))
+      .toMatchObject({ workerConcurrency: 16, continuationConcurrency: 3 });
+    expect(() => parseWorkspaceConfig({ WORKSPACE_IMAGE: "workspace:test", WORKSPACE_CONTINUATION_CONCURRENCY: "0" })).toThrow("configuration");
+  });
   it("keeps only backend resources in environment configuration", () => {
     expect(parseWorkspaceConfig({ WORKSPACE_IMAGE: "workspace:test", WORKSPACE_WORKER_CONCURRENCY: "1" })).toEqual({
-      provider: "docker", image: "workspace:test", network: "none", memoryMb: 2048, diskMb: 2048, cpus: 2, workerConcurrency: 1,
+      provider: "docker", image: "workspace:test", network: "none", memoryMb: 2048, diskMb: 2048, cpus: 2, workerConcurrency: 1, continuationConcurrency: 1, checkpointHistory: "retention",
     });
   });
   it("requires a Kubernetes namespace and installation identity and keeps legacy Docker explicit", () => {

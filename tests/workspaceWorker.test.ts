@@ -13,6 +13,7 @@ import { agentRepository as agents } from "@/infrastructure/db/repositories/agen
 import { createWorkspaceUseCases } from "@/application/workspace/workspaceUseCases";
 import { processWorkspace, type WorkspaceWorkerDeps } from "@/application/workspace/worker";
 import { runWorkspaceWorker } from "@/application/workspace/service";
+import { SandboxCapacityUnavailableError } from "@/domain/workspace/ports";
 import { claimWorkspace, WORKSPACE_HEARTBEAT_MS, WORKSPACE_LEASE_MS, WORKSPACE_RETRY_MS } from "@/application/workspace/workerState";
 import { createWorkspaceRuntimeAdapter } from "@/infrastructure/workspace/runtimeAdapters";
 import type { SandboxOperation, SandboxProvider, SandboxCommand } from "@/domain/workspace/ports";
@@ -73,6 +74,7 @@ beforeEach(async () => {
     runtime: kind => createWorkspaceRuntimeAdapter(kind), execute: async (_workspace, work) => { await work(async () => {}); },
     sleep: async ms => { time += ms; vi.setSystemTime(time); await onSleep?.(); },
     checkpoints: { put: vi.fn(async (_workspaceId, checkpointId, bytes) => { checkpointRows.set(checkpointId, bytes); }),
+      prune: vi.fn(async (_workspaceId, keep) => { let removed = 0; for (const id of checkpointRows.keys()) if (id !== keep) { checkpointRows.delete(id); removed++; } return removed; }),
       get: vi.fn(async (_workspaceId, checkpointId) => checkpointRows.get(checkpointId) ?? null), delete: vi.fn(async () => { checkpointRows.clear(); }) } };
   const at = new Date(time).toISOString();
   fake.seed([{ ...keys.agent("demo"), entityType: "AGENT", name: "demo", displayName: "Demo", description: "", ownerEmail: owner,
@@ -90,6 +92,82 @@ async function start(runtime: "command" | "codex" = "command") {
   const run = await api.enqueue(workspace.id, { userId: "studio-user-1", email: owner }, runtime === "command" ? { kind: "command", script: "echo task" } : { kind: "task", prompt: "do task" }, "request-0001");
   return { api, workspace, run };
 }
+
+describe("Workspace capacity backpressure", () => {
+  it("observes a fixed ten-second silent command with bounded polling", async () => {
+    const { workspace, run } = await start();
+    const startedAt = time;
+    const original = vi.mocked(provider.start).getMockImplementation()!;
+    vi.mocked(provider.start).mockImplementation(async (...args) => {
+      await original(...args);
+      operations.get(args[1])!.status = "running";
+      operations.get(args[1])!.frames = [];
+    });
+    deps.runTimeoutMs = 60_000;
+    onSleep = async () => {
+      if (time - startedAt >= 10_000) operations.get(run.id)!.status = "succeeded";
+    };
+    await processWorkspace(deps, workspace.id);
+    expect((await repository.run(workspace.id, run.id))?.status).toBe("succeeded");
+    expect(time - startedAt).toBeLessThanOrEqual(12_000);
+    expect(vi.mocked(provider.output).mock.calls.length).toBeLessThanOrEqual(8);
+  });
+  it("reduces silent operation polling and returns to fast polling when output arrives", async () => {
+    const { workspace, run } = await start();
+    const original = vi.mocked(provider.start).getMockImplementation()!;
+    vi.mocked(provider.start).mockImplementation(async (...args) => {
+      await original(...args);
+      operations.get(args[1])!.status = "running";
+      operations.get(args[1])!.frames = [];
+    });
+    let delivered = false;
+    vi.mocked(provider.output).mockImplementation(async (_sandbox, operationId, offset) => {
+      const operation = operations.get(operationId)!;
+      const frames = delivered ? [] : operation.frames;
+      if (frames.length) delivered = true;
+      return { frames, nextOffset: offset + frames.length };
+    });
+    const delays: number[] = [];
+    const originalSleep = deps.sleep;
+    deps.sleep = async (ms, signal) => { delays.push(ms); await originalSleep(ms, signal); };
+    onSleep = async () => {
+      if (delays.length === 3) operations.get(run.id)!.frames = [{ stream: "stdout", text: "progress\n" }];
+      if (delays.length === 4) operations.get(run.id)!.status = "succeeded";
+    };
+    await processWorkspace(deps, workspace.id);
+    expect(delays).toEqual([500, 1000, 2000, 500]);
+    expect((await repository.run(workspace.id, run.id))?.status).toBe("succeeded");
+    expect(provider.output).toHaveBeenCalledTimes(5);
+  });
+  it("retains admitted work after quota rejection and completes it once capacity returns", async () => {
+    const { workspace, run } = await start();
+    provider.provision = vi.fn().mockRejectedValueOnce(new SandboxCapacityUnavailableError()).mockImplementation(provider.ensure);
+    deps.runTimeoutMs = 60_000;
+    await processWorkspace(deps, workspace.id);
+    const waiting = (await repository.get(workspace.id))!;
+    expect((await repository.run(workspace.id, run.id))?.status).toBe("running");
+    expect(waiting).toMatchObject({ activeRunId: run.id, dueAt: new Date(time + WORKSPACE_RETRY_MS).toISOString() });
+    expect(waiting.leaseToken).toBeUndefined();
+    expect(provider.start).not.toHaveBeenCalled();
+    time += WORKSPACE_RETRY_MS;
+    vi.setSystemTime(time);
+    await processWorkspace(deps, workspace.id);
+    expect((await repository.run(workspace.id, run.id))?.status).toBe("succeeded");
+    expect(provider.start).toHaveBeenCalledTimes(1);
+  });
+  it("fails at the original provisioning deadline instead of extending quota waits", async () => {
+    const { workspace, run } = await start();
+    provider.provision = vi.fn(async () => { throw new SandboxCapacityUnavailableError(); });
+    await processWorkspace(deps, workspace.id);
+    time += deps.runTimeoutMs;
+    vi.setSystemTime(time);
+    await processWorkspace(deps, workspace.id);
+    expect((await repository.run(workspace.id, run.id))?.status).toBe("failed");
+    expect((await repository.run(workspace.id, run.id))?.error).toContain("deadline");
+    expect(provider.provision).toHaveBeenCalledTimes(1);
+    expect(provider.start).not.toHaveBeenCalled();
+  });
+});
 
 async function reviewResult(workspaceId: string, runId: string) {
   const target = { repository: "company/repo", number: 1, headSha: "a".repeat(40) };

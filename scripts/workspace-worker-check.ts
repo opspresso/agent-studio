@@ -45,7 +45,7 @@ async function main() {
   const provider = kubeContext ? createKubernetesSandboxBackend({ image, namespace, instance: "worker-check", kubeContext,
     memoryMb: 512, diskMb: 256, cpus: 1 }).provider
     : createDockerSandboxProvider({ image, network: "none", memoryMb: 512, diskMb: 256, cpus: 1 });
-  const checkpoints = createWorkspaceCheckpointStore(secretCipher);
+  const checkpoints = createWorkspaceCheckpointStore(secretCipher, "latest");
   const agentName = `worker-${randomUUID()}`;
   const chatId = randomUUID();
   const ownerEmail = "workspace-worker@example.test";
@@ -93,11 +93,13 @@ async function main() {
     const read = () => provider.execute(sandbox.externalId, { argv: ["cat", "executions.txt"], timeoutMs: 5000 });
     assert.equal((await read()).stdout, "once", "a restarted worker adopts the original native operation");
     assert.ok(current.checkpointId);
+    const firstCheckpoint = current.checkpointId;
     assert.equal((await repository.run(workspace.id, first.id))?.checks[0]?.status, "passed");
 
     const second = await api.enqueue(workspace.id, { userId: "studio-user-1", email: ownerEmail }, { kind: "command", script: "printf twice >> executions.txt" }, "worker-request-0002");
     await processWorkspace(deps, workspace.id);
     assert.equal((await read()).stdout, "oncetwice");
+    assert.equal(await checkpoints.get(workspace.id, firstCheckpoint), null, "a newer committed checkpoint removes superseded bytes");
     assert.equal((await repository.run(workspace.id, second.id))?.sessionId, first.sessionId);
     assert.deepEqual(executedActors.at(-1), { kind: "user", id: ownerEmail }, "a console follow-up retains its own explicit actor");
     const oldContainer = sandbox.externalId;
