@@ -373,6 +373,12 @@ API 주소가 loopback인 일회용 클러스터만 허용한다. 검사가 만�
 `WORKSPACE_KUBERNETES_TEST_NODE_CONTAINER`에 검사를 위해 만든 `studio-k8s-check-*` k3s 컨테이너를
 지정하면 해당 로컬 노드만 재시작하여 핸들 소실·복원·실행 재생 방지를 검증한다.
 
+배포된 Kubernetes 백엔드는 worker Pod 안에서
+`node build/workspace-deployment-check.cjs --confirm-namespace=agent-studio-workspaces`로 검증한다.
+설정된 namespace가 명시한 값과 같아야 실행한다. 별도 probe 설치 label의 임시 Pod에서
+UID·토큰·root·통신 격리, 취소, 체크포인트 복원과 오래된 핸들 fencing을 검사하고 생성한 UID만 삭제한다.
+운영 DB·Workspace 기록을 만들지 않으며 노드 장애나 디스크 압박 시험은 수행하지 않는다.
+
 ```bash
 KUBECONFIG=/path/to/disposable-kubeconfig.yaml \
 WORKSPACE_KUBERNETES_TEST_CONTEXT=studio-local-test \

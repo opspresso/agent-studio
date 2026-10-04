@@ -72,7 +72,12 @@ export function createKubernetesSandboxApi(namespace: string, context?: string, 
         // Control failure details can contain submitted input; do not surface them.
         const stderr = new Writable({ write(_chunk, _encoding, done) { done(); } });
         executor.exec(namespace, name, "sandbox", argv, stdout, stderr, stdin, false, status => {
-          finish(status.status === "Success" ? undefined : new SandboxProviderError("Kubernetes Sandbox control command failed"));
+          // Only the bounded numeric exit code is safe; status messages can contain submitted input.
+          const rawExit = status.details?.causes?.find(cause => cause.reason === "ExitCode")?.message;
+          const exitCode = rawExit && /^\d{1,3}$/.test(rawExit) && Number(rawExit) <= 255 ? Number(rawExit) : undefined;
+          finish(status.status === "Success" ? undefined : new SandboxProviderError(
+            `Kubernetes Sandbox control command failed${exitCode === undefined ? "" : ` (exit code ${exitCode})`}`,
+          ));
         }).then(opened => {
           socket = opened;
           if (settled) { socket.terminate(); return; }
