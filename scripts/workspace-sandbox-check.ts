@@ -7,6 +7,7 @@ import { createDockerSandboxBackend } from "@/infrastructure/workspace/dockerPro
 import { foldWorkspaceOutput } from "@/application/workspace/output";
 import type { SandboxProvider } from "@/domain/workspace/ports";
 import type { Workspace, WorkspaceRun } from "@/domain/workspace/types";
+import { createWorkspaceGitFixtureBundle } from "./fixtures/workspace-git";
 
 /** Exercise compilers and package managers through the real, unprivileged command boundary. */
 async function checkToolchains(provider: SandboxProvider, id: string) {
@@ -169,7 +170,8 @@ async function main() {
     assert.equal((await run(id, "test ! -e /var/run/docker.sock && test -z \"$DATABASE_URL$AWS_SECRET_ACCESS_KEY$GITHUB_TOKEN\" && echo isolated")).stdout.trim(), "isolated");
     assert.equal((await run(id, "printf first > state.txt; mkdir -p \"$HOME/.codex/sessions\"; printf native > \"$HOME/.codex/sessions/session.jsonl\"; printf excluded > \"$HOME/.codex/auth.json\"; ln -s state.txt state-link")).exitCode, 0);
     assert.equal((await run(id, "printf second >> state.txt; cat state.txt")).stdout, "firstsecond");
-    await assert.rejects(control(id, "git-prepare", { branch: "agent/preserve-files", baseBranch: "main", url: "https://example.com/repo.git" }), /workdir is not empty/);
+    const bundle = await createWorkspaceGitFixtureBundle(id);
+    await assert.rejects(control(id, "git-prepare", { branch: "agent/preserve-files", baseBranch: "main", url: "https://example.com/repo.git", bundle }), /workdir is not empty/);
     assert.equal((await run(id, "cat state.txt")).stdout, "firstsecond", "repository attachment must not overwrite task files");
     assert.equal((await run(id, "printf private > locked.txt; chmod 000 locked.txt")).exitCode, 0);
     assert.equal((await run(id, 'mkdir -p "$HOME/.codex/.tmp" "$HOME/.npm"; truncate -s 70000000 "$HOME/.npm/cache"; ln -s /usr/bin/node "$HOME/.codex/.tmp/alias"')).exitCode, 0);
