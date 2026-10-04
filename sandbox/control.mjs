@@ -6,6 +6,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { gzipSync, gunzipSync } from "node:zlib";
 import { StringDecoder } from "node:string_decoder";
+import { setTimeout as delay } from "node:timers/promises";
 import { handleGit, checkpointGitFiles } from "./git.mjs";
 
 const root = "/control";
@@ -65,19 +66,31 @@ function safeCommand(spec) {
   }
   return { cwd, env };
 }
+async function readProcessFile(id, file) {
+  // Exec credential transitions can briefly deny proc reads. Never skip a live,
+  // persistently unreadable process: cleanup must retain its fail-closed contract.
+  for (let attempt = 0; ; attempt++) {
+    try { return await fs.readFile(`/proc/${id}/${file}`, "utf8"); }
+    catch (error) {
+      if (["ENOENT", "ESRCH"].includes(error.code)) return null;
+      if (error.code !== "EACCES" || attempt >= 9) throw error;
+      await delay(10);
+    }
+  }
+}
 async function killWorkload() {
   // No command's daemon may continue modifying files after that command has ended.
   for (const id of await fs.readdir("/proc")) {
     if (!/^\d+$/.test(id)) continue;
     try {
-      const status = await fs.readFile(`/proc/${id}/status`, "utf8");
-      if (/^Uid:\s+1000\s/m.test(status)) process.kill(Number(id), "SIGKILL");
+      const status = await readProcessFile(id, "status");
+      if (status && /^Uid:\s+1000\s/m.test(status)) process.kill(Number(id), "SIGKILL");
     } catch (error) { if (!["ENOENT", "ESRCH"].includes(error.code)) throw error; }
   }
 }
 async function birth(pid) {
-  try { const stat = await fs.readFile(`/proc/${pid}/stat`, "utf8"); return stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19]; }
-  catch (error) { if (error.code === "ENOENT") return null; throw error; }
+  const stat = await readProcessFile(pid, "stat");
+  return stat === null ? null : stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19];
 }
 async function operation(id) {
   const dir = `${root}/operations/${identifier(id)}`;
