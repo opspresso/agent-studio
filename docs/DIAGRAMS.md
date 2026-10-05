@@ -198,6 +198,8 @@ flowchart TB
 
 ## 6. 저장 모델: PostgreSQL 하나와 오브젝트 스토어
 
+물리 테이블 ERD와 업무 데이터의 논리 관계는 [데이터베이스 구조](DATABASE.md)를 보라.
+
 데이터베이스 하나에 아이템 테이블 `items`(`pk`/`sk` + JSONB `data`, 파생 컬럼 `gsi1*`/`gsi2*`/
 `expires_at`), Better Auth 테이블, `catalog_vectors`(pgvector), 암호화된 `runtime_sessions`가 있다. 런이 만든 바이트는
 S3 호환 오브젝트 스토어(선택)에 있고 행이 그 키를 지목한다. 항목 단위 접근은 기본 키로,

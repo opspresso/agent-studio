@@ -83,6 +83,7 @@ Agent → Integrations에서 본인의 API token을 발급한다. 이 Bearer tok
 | 설치·폐쇄망·worker 구성 | [INSTALL](docs/INSTALL.md) |
 | 로컬 개발·검증·기여 | [DEVELOPMENT](docs/DEVELOPMENT.md) |
 | 코드의 계층·저장소·실행 경로 | [ARCHITECTURE](docs/ARCHITECTURE.md), [DIAGRAMS](docs/DIAGRAMS.md) |
+| DB 테이블·업무 데이터 관계·인덱스 | [DATABASE](docs/DATABASE.md) |
 | 서브시스템의 동작과 제약 | [설계 문서 색인](docs/ARCHITECTURE.md#서브시스템) |
 | HTTP 요청·응답·인증 | [API](docs/API.md) |
 | 환경변수·기본값·고정 한계 | [CONFIGURATION](docs/CONFIGURATION.md) |
