@@ -2,6 +2,7 @@ export const MAX_DOCUMENT_EDITS = 100;
 export const MAX_DOCUMENT_ASSETS = 12;
 export const MAX_DOCUMENT_ASSET_BYTES = 6 * 1024 * 1024;
 export const MAX_DOCUMENT_TOOL_CHARS = 90_000;
+export const HIDDEN_SHEETS_INSPECTION_ERROR = "include_hidden is supported only for XLSX inspection";
 
 /** Document operations consume bytes; file identity and storage belong to the caller. */
 export const DOCUMENT_FORMATS = ["docx", "pdf", "hwpx", "pptx", "xlsx"] as const;

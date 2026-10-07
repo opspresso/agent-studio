@@ -44,6 +44,13 @@ DOCX·HWPX·PPTX·RTF에 문자로 기록된 목록 번호는 시작 값과 불�
 SVG는 일반 문서 첨부의 대상이 아니며, 위 작업은 이미 보관된 SVG artifact에 적용한다.
 PNG·JPEG는 문서 생성의 이미지 asset으로 사용한다. OCR과 원본 PDF 편집은 제공하지 않는다.
 
+PDF 본문은 `File`의 `operation=read`로 읽는다. `inspect`·`edit`는 읽기 방법과 지원
+범위를 안내하는 오류를 반환한다. PDF 읽기는 호출자가 전달한 원본 바이트를 보존한다.
+HWP 5.x·ODT/ODS/ODP·RTF는 `inspect`의 기본 모드 또는 `mode=structure`로 검사한다.
+이 형식에 `mode=edit_targets`나 `edit`를 요청하면 읽기 전용이라는 사실과 가능한 작업을 안내한다.
+UTF-8 텍스트·HTML·SVG 검사는 원문을 반환하며 페이지 나눔을 지원하지 않는다. `from`은
+생략하거나 0이어야 한다. `include_hidden=true`는 XLSX 검사에서만 사용할 수 있다.
+
 ## 생성
 
 `DocumentRenderer` 포트는 `src/domain/document/processor.ts`에 정의한다.
@@ -200,8 +207,9 @@ V8 old-space는 256MiB로 제한한다. 이 값은 프로세스 전체 RSS 제�
 
 `pnpm dev`와 `pnpm build`는 esbuild로 `build/document-worker.cjs`를 만든다.
 워커 의존성과 한글 폰트는 standalone 배포물에 포함한다. 런타임 패키지 설치나
-외부 폰트 다운로드는 필요하지 않다. `pnpm test:documents`는 실제 IPC와 다섯 형식의
-왕복을 검증한다. 현재 CI의 verify job에는 이 검사가 없으므로 standalone 배포물의 번들·폰트
+외부 폰트 다운로드는 필요하지 않다. `pnpm test:documents`는 실제 IPC로 다섯 생성 형식의
+읽기와 지원하는 검사·편집, HWP·ODT/ODS/ODP·RTF의 읽기·검사, 미지원 작업 안내를 검증한다.
+현재 CI의 verify job에는 이 검사가 없으므로 standalone 배포물의 번들·폰트
 검증이 필요하면 별도로 실행한다. 자동 검사 범위는 [개발 문서](../DEVELOPMENT.md#ci)를 따른다.
 
 ## 채널 간 파일 참조

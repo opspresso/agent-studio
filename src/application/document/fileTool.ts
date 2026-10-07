@@ -1,4 +1,4 @@
-import { MAX_DOCUMENT_EDITS, MAX_DOCUMENT_ASSETS, MAX_DOCUMENT_ASSET_BYTES, MAX_DOCUMENT_TOOL_CHARS } from "@/domain/document/processor";
+import { MAX_DOCUMENT_EDITS, MAX_DOCUMENT_ASSETS, MAX_DOCUMENT_ASSET_BYTES, MAX_DOCUMENT_TOOL_CHARS, HIDDEN_SHEETS_INSPECTION_ERROR } from "@/domain/document/processor";
 import { DocumentExtractionError } from "@/domain/llm/documentExtractor";
 import type { McpToolResult } from "@/domain/llm/types";
 import type { RunOrigin } from "@/domain/execution/actor";
@@ -166,6 +166,8 @@ export function buildFileTool(
         if (args.include_hidden !== undefined && typeof args.include_hidden !== "boolean") throw new DocumentProcessingError("include_hidden must be boolean");
         const kind = documentKind(file.mimeType, file.name);
         if (kind === "text" || kind === "html" || svg) {
+          if (from !== 0) throw new DocumentProcessingError("Text, HTML and SVG inspection does not support pagination; omit from or use from=0");
+          if (args.include_hidden) throw new DocumentProcessingError(HIDDEN_SHEETS_INSPECTION_ERROR);
           const text = decodeUtf8Text(file.bytes);
           if (text === null) throw new DocumentProcessingError("This file is not UTF-8 text");
           assertFileContent(text);
