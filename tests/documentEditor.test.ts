@@ -309,6 +309,21 @@ describe("workbook editing", () => {
 });
 
 describe("inspection and edit boundaries", () => {
+  it("preserves the format diagnosis for malformed Office files in every operation", async () => {
+    const file = { name: "broken.docx", mimeType: "application/octet-stream", bytes: Buffer.from("not a package") };
+    for (const mode of ["structure", "edit_targets"] as const) {
+      await expect(documentEditor.inspect(file, { mode })).rejects.toThrow("contents are not DOCX");
+    }
+    await expect(documentEditor.edit(file, [{ operation: "replace_text", part: "word/document.xml", index: 0, text: "a", replacement: "b" }]))
+      .rejects.toThrow("contents are not DOCX");
+  });
+
+  it.each(["docx", "pptx", "hwpx"] as const)("rejects hidden-sheet inspection for %s while preserving normal inspection", async format => {
+    const file = await source(format);
+    await expect(documentEditor.inspect(file, { includeHidden: true })).rejects.toThrow("include_hidden is supported only for XLSX");
+    expect((await documentEditor.inspect(file, { includeHidden: false })).targets.length).toBeGreaterThan(0);
+  });
+
   it("inspects structure in read-only Office formats", async () => {
     const result = await documentEditor.inspect({ name: "report.rtf", mimeType: "text/rtf", bytes: Buffer.from("{\\rtf1 report text}") });
     expect(result.format).toBe("rtf");

@@ -20,20 +20,11 @@ const PAGE_SEPARATOR = "\n\n";
  * PDF.js refuses a Node `Buffer` outright — "provide binary data as
  * `Uint8Array`" — even though a Buffer is one.
  *
- * It also **detaches** the array it is handed, so what goes in must not be a
- * window onto memory anything else owns. `Buffer.concat` allocates small results
- * out of a shared 8KB pool, and a caller is free to pass any view.
- *
- * So this copies unless the argument already owns its whole buffer. Testing the
- * constructor alone was not enough: a plain `new Uint8Array(buffer, offset, n)`
- * passes that test and is exactly the aliasing case.
+ * PDF.js also detaches its input buffer. Always copy: even a whole-buffer view
+ * still belongs to the caller and may be reused for storage or another read.
  */
 function asPlainBytes(bytes: Uint8Array): Uint8Array {
-  const ownsWholeBuffer =
-    bytes.constructor === Uint8Array &&
-    bytes.byteOffset === 0 &&
-    bytes.byteLength === bytes.buffer.byteLength;
-  return ownsWholeBuffer ? bytes : new Uint8Array(bytes);
+  return new Uint8Array(bytes);
 }
 
 /** Turn PDF.js's exception vocabulary into something the attacher can act on. */

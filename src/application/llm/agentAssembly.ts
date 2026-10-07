@@ -622,6 +622,9 @@ const FILE_TOOL_DEF: ChannelToolDef = {
   function: {
     name: FILE_TOOL_NAME,
     description: "Read, inspect, create or edit files using stable file IDs from attachments and earlier outputs. " +
+      "Read extracts text from PDF, DOCX, XLSX, PPTX, HWP 5.x, HWPX, ODT/ODS/ODP, RTF and UTF-8 text formats; stored SVG returns markup. " +
+      "PDF supports read and create only: use operation=read, never inspect or edit. Scanned PDFs require OCR, which is not provided. " +
+      "HWP, ODT/ODS/ODP and RTF support read and read-only inspect with mode=structure; they have no edit_targets or original-file editing. " +
       "For create, provide format and Markdown content (DOCX/PDF/PPTX/HWPX), or sheets with named rows of scalar cells (XLSX). " +
       `Profile selects purpose (default ${DEFAULT_DOCUMENT_PROFILE}); theme selects brand independently (default ${DEFAULT_DOCUMENT_THEME}). ` +
       "Page layout defaults compact with an inline title; report promotes an opening # to a cover and adds contents when there are enough headings. Decks default report. " +
@@ -632,7 +635,8 @@ const FILE_TOOL_DEF: ChannelToolDef = {
       "XLSX uses set_cell with sheet, cell and value. Plain text uses replace_text, part=text, index=0 and an original substring that occurs once. " +
       "Edits create a new file and preserve the source. Document text edits cannot add paragraphs or line breaks. " +
       "If editing is unsupported, report it; rebuilding from extracted text does not preserve original formatting. " +
-      "Use mode=structure to inspect document layout information, or edit_targets for text targets. " +
+      "Use mode=structure for Office document structure, or edit_targets for DOCX/PPTX/HWPX text targets. XLSX inspection returns cells and formulas in either mode. " +
+      "Text/HTML/SVG inspect returns source text in either mode, without pagination; include_hidden=true is only supported for XLSX. " +
       "Use SaveFile to create plain text, Markdown, CSV, JSON, HTML or SVG. Assets map names to PNG/JPEG file IDs and are referenced as asset://name in Markdown. " +
       FILE_DELIVERY_INSTRUCTION,
     parameters: {
@@ -650,8 +654,8 @@ const FILE_TOOL_DEF: ChannelToolDef = {
         sheets: { type: "array", items: { type: "object", properties: { name: { type: "string" }, rows: { type: "array", items: { type: "array", items: {} } } }, required: ["name", "rows"] } },
         assets: { type: "object", additionalProperties: { type: "string" } },
         from: { type: "integer", minimum: 0, description: "Zero-based inspection offset for supported document/spreadsheet formats. read and plain text/HTML/SVG inspect return bounded text without pagination." },
-        mode: { type: "string", enum: ["structure", "edit_targets"] },
-        include_hidden: { type: "boolean" },
+        mode: { type: "string", enum: ["structure", "edit_targets"], description: "Office structure or DOCX/PPTX/HWPX edit targets. HWP/ODT/ODS/ODP/RTF accept structure only. PDF has no inspection; use read." },
+        include_hidden: { type: "boolean", description: "Include hidden XLSX sheets during inspection. Omit or set false for other formats." },
         edits: { type: "array", items: { type: "object", properties: {
           operation: { type: "string", enum: ["replace_text", "set_cell"] },
           part: { type: "string" }, index: { type: "integer", minimum: 0 }, text: { type: "string" }, replacement: { type: "string" },

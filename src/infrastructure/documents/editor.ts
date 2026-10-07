@@ -1,6 +1,7 @@
 import {
   DOCUMENT_MIME_TYPES,
   MAX_DOCUMENT_EDITS,
+  HIDDEN_SHEETS_INSPECTION_ERROR,
   type CreatedDocument,
   type DocumentEditor,
   type DocumentFile,
@@ -10,9 +11,9 @@ import {
   type ReplaceDocumentText,
   type SetDocumentCell,
 } from "@/domain/document/processor";
-import { MAX_DOCUMENT_BYTES } from "@/domain/llm/documentLimits";
+import { MAX_DOCUMENT_BYTES, documentKind } from "@/domain/llm/documentLimits";
 import { cutCodePoints, decodeUtf8Text } from "@/shared/utf8Text";
-import { detect } from "./engine/detect";
+import { detect, type Format } from "./engine/detect";
 import { DocumentError } from "./engine/errors";
 import { MAX_INSPECTED_BLOCKS, MAX_MARKDOWN_CHARS, MAX_RENDERED_BYTES, MAX_TEXT_CHARS } from "./engine/limits";
 import { inspectXlsx } from "./engine/read/xlsx";
@@ -31,11 +32,29 @@ const TEXT_PARTS = {
 const TEXT_TAGS = { docx: "w:t", pptx: "a:t", hwpx: "hp:t" };
 type EditableFormat = keyof typeof TEXT_PARTS;
 
+/** Inspection and editing accept Office packages; PDF text uses the extractor. */
+function officeFormat(file: DocumentFile): Format {
+  if (documentKind(file.mimeType, file.name) === "pdf") {
+    throw new DocumentError("PDF structure inspection and original-file editing are not supported. Use File with operation=read to extract its text; scanned pages require OCR, which is not provided");
+  }
+  const detected = detect(file.bytes, file.mimeType, file.name);
+  if (detected.format === "unsupported") throw new DocumentError(detected.reason);
+  return detected.format;
+}
+
+function isReadOnly(format: Format): format is Exclude<Format, EditableFormat | "xlsx"> {
+  return format === "hwp" || format === "odf" || format === "rtf";
+}
+
+function readOnlyError(format: Format): DocumentError {
+  return new DocumentError(`This ${format === "odf" ? "OpenDocument" : format.toUpperCase()} document is read-only. Use File with operation=read or operation=inspect, mode=structure; edit targets and original-file editing are not supported`);
+}
+
 function packageOf(file: DocumentFile, editing = false) {
   if (file.bytes.byteLength > MAX_DOCUMENT_BYTES) throw new DocumentError("The source document is too large to edit");
-  const detected = detect(file.bytes, file.mimeType, file.name);
-  if (detected.format !== "docx" && detected.format !== "pptx" && detected.format !== "hwpx" && detected.format !== "xlsx") {
-    throw new DocumentError("Editing supports DOCX, PPTX, HWPX and XLSX only");
+  const format = officeFormat(file);
+  if (isReadOnly(format)) {
+    throw readOnlyError(format);
   }
   const zip = openZip(file.bytes);
   const names = zip.entries.map(({ name }) => name);
@@ -51,7 +70,7 @@ function packageOf(file: DocumentFile, editing = false) {
   if (editing && signed) {
     throw new DocumentError("Cannot edit a signed document without invalidating its signature");
   }
-  return { format: detected.format, parts: zip.read(names), signed };
+  return { format, parts: zip.read(names), signed };
 }
 
 function xmlOf(bytes: Uint8Array): string {
@@ -68,8 +87,10 @@ export async function inspectDocument(file: DocumentFile, options: DocumentInspe
   const from = options.from ?? 0;
   if (!Number.isInteger(from) || from < 0) throw new DocumentError("Inspection offset must be a non-negative integer");
   if (file.bytes.byteLength > MAX_DOCUMENT_BYTES) throw new DocumentError("The source document is too large to inspect");
-  const detected = detect(file.bytes, file.mimeType, file.name);
-  if (detected.format !== "xlsx" && (options.mode === "structure" || ["hwp", "odf", "rtf"].includes(detected.format))) {
+  const detectedFormat = officeFormat(file);
+  if (options.includeHidden && detectedFormat !== "xlsx") throw new DocumentError(HIDDEN_SHEETS_INSPECTION_ERROR);
+  if (isReadOnly(detectedFormat) && options.mode === "edit_targets") throw readOnlyError(detectedFormat);
+  if (detectedFormat !== "xlsx" && (options.mode === "structure" || isReadOnly(detectedFormat))) {
     const read = await readBlocks({ bytes: file.bytes, mimeType: file.mimeType, filename: file.name, label: file.name });
     const inspection = from >= read.blocks.length ? { text: "", complete: true } : inspectBlocks(read.blocks, { from });
     return { format: read.format, text: inspection.text, complete: inspection.complete, targets: [], warnings: read.omissions };
@@ -192,7 +213,7 @@ export async function editDocument(file: DocumentFile, operations: readonly Docu
   const reopened = openZip(output);
   if (reopened.entries.length !== parts.size) throw new DocumentError("The edited package lost entries");
   // Explicit edits can clear every text target or leave only uncached formulas.
-  await inspectDocument({ bytes: output, mimeType: DOCUMENT_MIME_TYPES[format], name: file.name }, { includeHidden: true });
+  await inspectDocument({ bytes: output, mimeType: DOCUMENT_MIME_TYPES[format], name: file.name }, { includeHidden: format === "xlsx" });
   let externalRelationships = 0;
   for (const [name, bytes] of parts) {
     if (!name.endsWith(".rels")) continue;

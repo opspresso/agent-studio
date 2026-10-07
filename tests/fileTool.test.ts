@@ -15,6 +15,8 @@ import { documentEditor } from "@/infrastructure/documents/editor";
 import { documentExtractor } from "@/infrastructure/llm/documentExtractor";
 import { runAgent } from "@/application/runtime";
 import { FakeChannel, toolCallChunk, contentChunk } from "./fakeChannel";
+import { READ_ONLY_DOCUMENT_EXTENSIONS, readOnlyDocumentFixture } from "./readOnlyDocumentFixtures";
+import { DOCUMENT_FORMATS } from "@/domain/document/processor";
 
 const ids = vi.hoisted(() => ({ next: 0 }));
 vi.mock("node:crypto", async (original) => ({ ...await original<typeof import("node:crypto")>(), randomUUID: () => `00000000-0000-4000-8000-${String(++ids.next).padStart(12, "0")}` }));
@@ -67,6 +69,80 @@ describe("private Artifact inputs", () => {
 });
 
 describe("native File tool", () => {
+  it.each(DOCUMENT_FORMATS)("reads generated %s and enforces its inspection and editing capabilities", async format => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const f = setup();
+    const created = await f.call({ operation: "create", format, title: "Report", ...(format === "xlsx"
+      ? { sheets: [{ name: "Summary", rows: [["Original content."]] }] }
+      : { content: "Original content." }) });
+    expect(created.files).toHaveLength(1);
+    await f.capture(created);
+    const file = created.files![0]!;
+    const file_id = file.artifactId;
+    expect((await f.call({ operation: "read", file_id })).text).toContain("Original content.");
+    if (format === "pdf") {
+      for (const mode of [undefined, "structure", "edit_targets"]) {
+        expect((await f.call({ operation: "inspect", file_id, mode })).text).toMatch(/^Error:.*PDF.*operation=read/);
+      }
+      expect((await f.call({ operation: "edit", file_id, edits: [{ operation: "replace_text", part: "text", index: 0, text: "Original content.", replacement: "Edited content." }] })).text)
+        .toMatch(/^Error:.*PDF.*operation=read/);
+    } else {
+      for (const mode of ["structure", "edit_targets"]) {
+        expect((await f.call({ operation: "inspect", file_id, mode })).text).toContain("Original content.");
+      }
+      const inspection = await documentEditor.inspect({ name: file.name!, mimeType: file.mimeType, bytes: Buffer.from(file.b64, "base64") });
+      const edits = format === "xlsx"
+        ? [{ operation: "set_cell", sheet: "Summary", cell: "A1", value: "Edited content." }]
+        : [{ ...inspection.targets.find(target => target.text === "Original content.")!, operation: "replace_text", replacement: "Edited content." }];
+      const edited = await f.call({ operation: "edit", file_id, edits });
+      expect(edited.files).toHaveLength(1);
+      const result = edited.files![0]!;
+      expect((await documentExtractor.extract({ name: result.name!, mimeType: result.mimeType, bytes: Buffer.from(result.b64, "base64"), maxChars: 20_000 })).text).toContain("Edited content.");
+    }
+    expect((await f.call({ operation: "read", file_id })).text).toContain("Original content.");
+  });
+
+  it.each(READ_ONLY_DOCUMENT_EXTENSIONS)("reads and inspects %s while rejecting unsupported edit requests", async extension => {
+    const f = setup();
+    const file = readOnlyDocumentFixture(extension);
+    f.bytes.set("source", file.bytes);
+    f.rows.set("source", { artifactId: "source", key: "source", kind: "document", source: "attachment", actor,
+      agentName: "agent", filename: file.name, mimeType: file.mimeType, byteSize: file.bytes.length, createdAt: now.toISOString() });
+    const file_id = "source";
+    expect((await f.call({ operation: "read", file_id })).text).toContain("Original content.");
+    for (const mode of [undefined, "structure"]) {
+      expect((await f.call({ operation: "inspect", file_id, mode })).text).toContain("Original content.");
+    }
+    expect((await f.call({ operation: "inspect", file_id, mode: "edit_targets" })).text).toMatch(/^Error:.*read-only.*mode=structure/);
+    expect((await f.call({ operation: "edit", file_id, edits: [{ operation: "replace_text", part: "text", index: 0, text: "Original content.", replacement: "Edited content." }] })).text)
+      .toMatch(/^Error:.*read-only.*mode=structure/);
+    expect((await f.call({ operation: "inspect", file_id, include_hidden: true })).text).toMatch(/^Error:.*include_hidden.*XLSX/);
+    expect((await f.call({ operation: "read", file_id })).text).toContain("Original content.");
+  });
+
+  it.each(["txt", "text", "md", "markdown", "csv", "tsv", "json", "jsonl", "ndjson", "xml", "yaml", "yml", "toml", "ini", "log", "html", "htm", "rst", "tex", "svg"])(
+    "reads, inspects and edits UTF-8 %s without ignoring inspection options", async extension => {
+      const f = setup();
+      const content = extension === "json" ? '{"text":"Original content."}'
+        : ["html", "htm"].includes(extension) ? "<p>Original content.</p><script>hiddenScript()</script>"
+        : extension === "svg" ? '<svg xmlns="http://www.w3.org/2000/svg"><text>Original content.</text></svg>' : "Original content.";
+      f.bytes.set("source", Buffer.from(content));
+      f.rows.set("source", { artifactId: "source", key: "source", kind: "document", source: "attachment", actor,
+        agentName: "agent", filename: `source.${extension}`, mimeType: extension === "svg" ? "image/svg+xml" : "application/octet-stream", byteSize: Buffer.byteLength(content), createdAt: now.toISOString() });
+      const file_id = "source";
+      const read = await f.call({ operation: "read", file_id });
+      expect(read.text).toContain("Original content.");
+      if (["html", "htm"].includes(extension)) expect(read.text).not.toContain("hiddenScript");
+      expect((await f.call({ operation: "inspect", file_id })).text).toContain(content);
+      expect((await f.call({ operation: "inspect", file_id, from: 1 })).text).toMatch(/^Error:.*pagination/);
+      expect((await f.call({ operation: "inspect", file_id, include_hidden: true })).text).toMatch(/^Error:.*include_hidden.*XLSX/);
+      const edited = await f.call({ operation: "edit", file_id, edits: [{ operation: "replace_text", part: "text", index: 0, text: "Original content.", replacement: "Edited content." }] });
+      expect(edited.files).toHaveLength(1);
+      expect(Buffer.from(edited.files![0]!.b64, "base64").toString("utf8")).toBe(content.replace("Original content.", "Edited content."));
+      expect((await f.call({ operation: "read", file_id })).text).toContain("Original content.");
+    },
+  );
+
   it("refuses a concurrent stale replacement after another run publishes the new file", async () => {
     const run = setup();
     const first = await buildFileSaver(run.deps)!({ name: "report.txt", mimeType: "text/plain", content: "original" });

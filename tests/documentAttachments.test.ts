@@ -5,7 +5,8 @@ import { resolveMessageFiles } from "@/application/chat/resolveFiles";
 import type { ArtifactStorage } from "@/application/artifact/storeArtifact";
 import type { Artifact } from "@/domain/artifact/types";
 import { fakeArtifactContent } from "./fakeArtifactContent";
-import { MAX_DOCUMENT_BYTES, MAX_DOCUMENTS } from "@/domain/llm/documentLimits";
+import { MAX_DOCUMENT_BYTES, MAX_DOCUMENTS, documentKind } from "@/domain/llm/documentLimits";
+import { ACCEPTED_DOCUMENT_TYPES, isDocumentFile } from "@/app/_lib/documentAttachments";
 
 const ids = vi.hoisted(() => ({ next: 0 }));
 vi.mock("node:crypto", async (original) => ({
@@ -128,5 +129,26 @@ describe("original document attachments", () => {
     const unavailable = await resolveMessageFiles(messages, undefined, 900);
     expect(unavailable.dropped).toBe(1);
     expect(JSON.stringify(unavailable.messages)).not.toContain("artifacts/document/");
+  });
+});
+
+describe("document picker and upload agreement", () => {
+  it.each(["text", "jsonl", "ndjson", "toml", "ini", "html", "htm", "rst", "tex"])(
+    "offers .%s even when the browser provides no MIME type", extension => {
+      const file = new File(["content"], `source.${extension}`);
+      expect(isDocumentFile(file)).toBe(true);
+      expect(ACCEPTED_DOCUMENT_TYPES).toContain(`.${extension}`);
+    },
+  );
+
+  it("accepts every offered extension through the server document classifier", () => {
+    for (const extension of ACCEPTED_DOCUMENT_TYPES.filter(value => value.startsWith("."))) {
+      expect(documentKind("application/octet-stream", `source${extension}`), extension).not.toBeNull();
+    }
+  });
+
+  it.each(["doc", "xls", "ppt", "svg", "png", "zip"])("keeps unsupported .%s files outside document attachments", extension => {
+    expect(isDocumentFile(new File(["content"], `source.${extension}`))).toBe(false);
+    expect(ACCEPTED_DOCUMENT_TYPES).not.toContain(`.${extension}`);
   });
 });

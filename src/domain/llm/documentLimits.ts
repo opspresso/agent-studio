@@ -108,6 +108,9 @@ const TEXT_EXTENSIONS = new Set([
   "tex",
 ]);
 
+/** File-picker extensions share the same owner as server-side classification. */
+export const SUPPORTED_DOCUMENT_EXTENSIONS: readonly string[] = ["pdf", ...OFFICE_EXTENSIONS, ...TEXT_EXTENSIONS];
+
 /** Types the file picker offers and the API bodies accept. */
 export const SUPPORTED_DOCUMENT_TYPES = [
   "application/pdf",

@@ -157,7 +157,7 @@
 | 선언 없이 온 그림의 종류를 바이트로 알아내기 | `src/domain/llm/imageSniff.ts` | 구조 |
 | Teams 답변이 어떻게 전달되는가. activity 를 보내고 갱신하며, Markdown 은 그대로, 그림은 inline `data:` 첨부 | `src/application/teams/replyChannel.ts` | 구조 |
 | 바이트가 UTF-8 텍스트인지 판정하기 | `src/shared/utf8Text.ts` | 구조 |
-| 사용자 문서의 상한 | `src/domain/llm/documentLimits.ts` | 구조 |
+| 사용자 문서의 상한·지원 MIME·확장자 | `src/domain/llm/documentLimits.ts`; 파일 선택창도 서버 판정과 같은 확장자 목록을 사용한다 | 구조·회귀 테스트 |
 | Office 문서 파싱과 렌더링 | `src/infrastructure/documents/engine/` — 프로토콜·저장소와 독립적인 내부 엔진. 첨부 추출은 `src/infrastructure/llm/documentExtractor.ts`가 연결한다 | 구조 |
 | Office 읽기의 명시적 목록 번호와 Markdown 목록 병합 | `engine/read/blocks.ts`의 `ReadListBuilder`; 각 reader는 형식별 번호와 depth를 전달한다 | 코드 |
 | 문서 목적·브랜드·layout의 wire 선택과 기본값, 폰트 이름·허용 색 역할 | `src/domain/document/processor.ts`; 실제 팔레트·지면·활자와 색 대비는 `engine/write/theme.ts`, 스킬 배포용 투영은 `engine/write/catalog.ts`가 소유한다 | 코드 |

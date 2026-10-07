@@ -3,6 +3,7 @@ import {
   MAX_DOCUMENT_BYTES,
   MAX_DOCUMENT_SIZE_LABEL,
   SUPPORTED_DOCUMENT_TYPES,
+  SUPPORTED_DOCUMENT_EXTENSIONS,
 } from "@/domain/llm/documentLimits";
 import { readAttachmentDataUrl } from "./readAttachmentDataUrl";
 
@@ -24,26 +25,7 @@ export interface DocumentAttachment {
  */
 export const ACCEPTED_DOCUMENT_TYPES: readonly string[] = [
   ...SUPPORTED_DOCUMENT_TYPES,
-  ".pdf",
-  ".txt",
-  ".md",
-  ".markdown",
-  ".csv",
-  ".tsv",
-  ".json",
-  ".xml",
-  ".yaml",
-  ".yml",
-  ".log",
-  ".docx",
-  ".xlsx",
-  ".pptx",
-  ".hwp",
-  ".hwpx",
-  ".odt",
-  ".ods",
-  ".odp",
-  ".rtf",
+  ...SUPPORTED_DOCUMENT_EXTENSIONS.map(extension => `.${extension}`),
 ];
 
 /** True when this file should go down the document path rather than the image one. */
