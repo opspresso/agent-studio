@@ -511,7 +511,7 @@ export function RunPanel({
       )}
     </Stack>
     </CollapsibleSection>
-    <CollapsibleSection title={t("evaluation.title")} defaultOpen keepActive>
+    <CollapsibleSection title={t("evaluation.title")} keepActive>
       <EvaluationPanel agentName={agentName} inputKey={inputKey} receipt={receipt}
         canEvaluate={canRun && !unsaved} running={running} unsaved={unsaved}
         ensureRun={ensureRun} onBusyChange={setEvaluating} />

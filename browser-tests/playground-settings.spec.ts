@@ -206,6 +206,9 @@ for (const width of [1440, 390]) {
   test(`evaluates a fresh run, reuses its result and marks changed criteria stale (${width}px)`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 1000 });
     await page.goto(`${base}?role=owner`);
+    await expect(page.getByRole("button", { name: "Evaluation", exact: true })).toHaveAttribute("aria-expanded", "false");
+    await expect(page.getByRole("textbox", { name: "Expected result", exact: true })).toBeHidden();
+    await page.getByRole("button", { name: "Evaluation", exact: true }).click();
     await page.getByRole("textbox", { name: "Message", exact: true }).fill("Create a report");
     await page.getByRole("combobox", { name: "Expected Skills", exact: true }).fill("report");
     await page.getByRole("combobox", { name: "Expected Skills", exact: true }).press("Enter");
@@ -250,6 +253,7 @@ test("reuses an explicitly started failed run and retries only evaluation after 
   runError = true;
   failEvaluation = true;
   await page.goto(`${base}?role=owner`);
+  await page.getByRole("button", { name: "Evaluation", exact: true }).click();
   await page.getByRole("textbox", { name: "Message", exact: true }).fill("Create a report");
   await page.getByRole("button", { name: "Run", exact: true }).last().click();
   await expect(page.getByText("Synthetic execution failure", { exact: true })).toBeVisible();
@@ -265,6 +269,7 @@ test("reuses an explicitly started failed run and retries only evaluation after 
 test("does not replay a run with missing evidence and requires saving edited settings", async ({ page }) => {
   omitReceipt = true;
   await page.goto(`${base}?role=owner`);
+  await page.getByRole("button", { name: "Evaluation", exact: true }).click();
   await page.getByRole("textbox", { name: "Message", exact: true }).fill("Create a report");
   await page.getByRole("button", { name: "Run and evaluate", exact: true }).click();
   await expect(page.getByText(/The run did not return evaluation evidence/)).toBeVisible();
@@ -283,6 +288,7 @@ test("keeps evaluation alive when its section is collapsed", async ({ page }) =>
     await route.fallback();
   });
   await page.goto(`${base}?role=owner`);
+  await page.getByRole("button", { name: "Evaluation", exact: true }).click();
   await page.getByRole("textbox", { name: "Message", exact: true }).fill("Create a report");
   await page.getByRole("button", { name: "Run and evaluate", exact: true }).click();
   await expect.poll(() => Boolean(release)).toBe(true);
