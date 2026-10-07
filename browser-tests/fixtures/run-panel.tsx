@@ -9,6 +9,6 @@ import { RunPanel } from "../../src/app/agents/[name]/_components/RunPanel";
 
 createRoot(document.getElementById("root")!).render(
   <MantineProvider theme={theme}><I18nProvider locale="en"><ViewerProvider viewer={{ email: "member@example.test", tier: "member", isAdmin: false }}><ImageViewerProvider>
-    <div style={{ padding: 24 }}><RunPanel agentName="root" configured modelAcceptsImages /></div>
+    <div style={{ padding: 24 }}><RunPanel agentName="root" configured configurationUpdatedAt="2026-10-07T00:00:00Z" unsaved={false} modelAcceptsImages /></div>
   </ImageViewerProvider></ViewerProvider></I18nProvider></MantineProvider>,
 );

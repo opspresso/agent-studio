@@ -1,4 +1,6 @@
 import type { AgentCredentialPurpose } from "@/domain/auth/agentCredential";
+import type { AgentEvaluation } from "@/application/evaluation/evaluationUseCases";
+import type { EvaluationExpectations } from "@/domain/evaluation/types";
 import { notifyConfigurationChange } from "./configurationEvents";
 import type {
   CostLimits,
@@ -207,15 +209,22 @@ export async function streamAgent(
   messages: unknown[],
   signal?: AbortSignal,
   documents?: unknown[],
+  evaluation?: { captureEvaluation: true; expectedUpdatedAt: string },
 ): Promise<Response> {
   const res = await fetch(`/api/agents/${name}/agent`, {
     method: "POST",
     headers: jsonHeaders,
-    body: JSON.stringify({ messages, documents }),
+    body: JSON.stringify({ messages, documents, ...evaluation }),
     signal,
   });
   await assertOk(res);
   return res;
+}
+
+export function evaluateAgent(name: string, token: string, expectations: EvaluationExpectations, locale: "en" | "ko", signal?: AbortSignal): Promise<AgentEvaluation> {
+  return fetch(`/api/agents/${name}/evaluate`, {
+    method: "POST", headers: jsonHeaders, body: JSON.stringify({ token, expectations, locale }), signal,
+  }).then(response => readJson<AgentEvaluation>(response));
 }
 
 export type { ActorUsageView };

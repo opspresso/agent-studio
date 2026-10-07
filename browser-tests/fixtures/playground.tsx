@@ -12,7 +12,7 @@ createRoot(document.getElementById("root")!).render(
     {/* The Next layout supplies these variables in the application. */}
     <style>{":root { --font-sans: system-ui; --font-mono: monospace; }"}</style>
     <main style={{ maxWidth: 760, margin: "auto", padding: 16 }}>
-      <RunPanel agentName="fixture" configured />
+      <RunPanel agentName="fixture" configured configurationUpdatedAt="2026-10-07T00:00:00Z" unsaved={false} />
     </main>
   </ImageViewerProvider></ViewerProvider></I18nProvider></MantineProvider>,
 );

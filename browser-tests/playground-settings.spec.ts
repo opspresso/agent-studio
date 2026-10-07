@@ -1,6 +1,9 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { pathToFileURL } from "node:url";
+import { resolve } from "node:path";
 import { build } from "esbuild";
+import postcss, { type AcceptedPlugin } from "postcss";
 import { test, expect } from "@playwright/test";
 
 let server: Server;
@@ -9,6 +12,11 @@ let toolRequests: unknown[];
 let connectionRequests: string[];
 let configurationWrites: Record<string, unknown>[];
 let connected: boolean;
+let runRequests: Record<string, unknown>[];
+let evaluationRequests: Record<string, unknown>[];
+let omitReceipt: boolean;
+let runError: boolean;
+let failEvaluation: boolean;
 const prefix = "/api/agents/fixture-agent";
 const serverName = "personal-tools";
 
@@ -24,6 +32,15 @@ test.beforeAll(async () => {
       }));
     } }],
   });
+  // Use the application's breakpoint variables, which esbuild alone does not expand.
+  const cssConfig = (await import(pathToFileURL(resolve("postcss.config.mjs")).href)).default as { plugins: Record<string, object> };
+  const plugins = await Promise.all(Object.entries(cssConfig.plugins).map(async ([name, options]) => {
+    const createPlugin = (await import(name)).default as (options: object) => AcceptedPlugin;
+    return createPlugin(options);
+  }));
+  for (const file of bundle.outputFiles.filter(file => file.path.endsWith(".css"))) {
+    file.contents = new TextEncoder().encode((await postcss(plugins).process(file.text, { from: undefined })).css);
+  }
   server = createServer((request, response) => {
     const file = bundle.outputFiles.find(file => request.url === `/${file.path.split("/").at(-1)}`);
     response.setHeader("Content-Type", `${file ? file.path.endsWith(".css") ? "text/css" : "text/javascript" : "text/html"}; charset=utf-8`);
@@ -35,10 +52,28 @@ test.beforeAll(async () => {
 test.afterAll(async () => { if (server) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); });
 test.beforeEach(async ({ page }) => {
   toolRequests = []; connectionRequests = []; configurationWrites = []; connected = true;
+  runRequests = []; evaluationRequests = []; omitReceipt = false; runError = false; failEvaluation = false;
   page.on("pageerror", error => { throw error; });
   await page.route("**/api/**", route => {
     const path = new URL(route.request().url()).pathname;
     const method = route.request().method();
+    if (path === `${prefix}/agent`) {
+      runRequests.push(route.request().postDataJSON());
+      const chunks = [runError ? { error: "Synthetic execution failure" } : { delta: { content: "A report with verified sources" } }, { done: true },
+        ...(!omitReceipt ? [{ evaluation: { token: `receipt-${runRequests.length}`, expiresAt: "2099-01-01T00:00:00Z" } }] : [])];
+      return route.fulfill({ contentType: "text/event-stream", body: chunks.map(chunk => `data: ${JSON.stringify(chunk)}\n\n`).join("") + "data: [DONE]\n\n" });
+    }
+    if (path === `${prefix}/evaluate`) {
+      evaluationRequests.push(route.request().postDataJSON());
+      if (failEvaluation) return route.fulfill({ status: 502, json: { error: "Evaluation provider unavailable" } });
+      return route.fulfill({ json: { summary: "The requested report is supported by the run.", model: "fixture-model", evaluatedAt: "2026-10-07T00:00:00Z",
+        usage: { inputTokens: 10, outputTokens: 20, costUsd: 0.003 },
+        checks: Object.fromEntries(["capabilities", "output", "toolUsage", "prompt"].map(key => [key, {
+          status: "pass", summary: `${key} matches the request`, evidence: ["Search call lookup-1 returned the cited sources"], improvements: [],
+        }])),
+        evidence: { request: "Create a report", configured: "fixture-model", modelRequests: ['{"instructions":"Shared prompt"}'], toolTraffic: [], output: "A report with verified sources", artifacts: [], warnings: [], limitations: [] },
+      } });
+    }
     if (path === prefix) return route.fulfill({ json: { name: "fixture-agent", ownerEmail: "owner@example.test" } });
     if (path === `${prefix}/configuration`) {
       if (method === "PUT") configurationWrites.push(route.request().postDataJSON());
@@ -166,3 +201,96 @@ for (const [replacement, masked] of [["test", "••••"], ["head-synthetic-
     expect(configurationWrites[2]?.mcpList).toEqual([{ name: serverName, headers: { "X-Shared": masked }, tools: ["lookup"] }]);
   });
 }
+
+for (const width of [1440, 390]) {
+  test(`evaluates a fresh run, reuses its result and marks changed criteria stale (${width}px)`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto(`${base}?role=owner`);
+    await page.getByRole("textbox", { name: "Message", exact: true }).fill("Create a report");
+    await page.getByRole("combobox", { name: "Expected Skills", exact: true }).fill("report");
+    await page.getByRole("combobox", { name: "Expected Skills", exact: true }).press("Enter");
+    await page.getByRole("textbox", { name: "Expected result", exact: true }).fill("Include source links");
+    await page.getByRole("button", { name: "Run and evaluate", exact: true }).click();
+    await expect(page.getByText("The requested report is supported by the run.", { exact: true })).toBeVisible();
+    expect(runRequests).toHaveLength(1);
+    expect(runRequests[0]).toMatchObject({ captureEvaluation: true, expectedUpdatedAt: "2026-10-02T00:00:00Z" });
+    expect(evaluationRequests[0]).toMatchObject({ token: "receipt-1", expectations: { skills: ["report"], tools: [], outcome: "Include source links" } });
+    await expect(page.getByText("Meets criteria", { exact: true })).toHaveCount(4);
+    await page.getByRole("textbox", { name: "Expected result", exact: true }).fill("Also include a conclusion");
+    await expect(page.getByText(/This evaluation describes the previous result/)).toBeVisible();
+    await page.getByRole("button", { name: "Evaluate result", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Evaluate result", exact: true })).toBeEnabled();
+    expect(runRequests).toHaveLength(1);
+    expect(evaluationRequests).toHaveLength(2);
+    await expect(page.getByText(/This evaluation describes the previous result/)).toHaveCount(0);
+    await page.getByRole("textbox", { name: "Message", exact: true }).fill("Temporary edit");
+    await expect(page.getByText(/This evaluation describes the previous result/)).toBeVisible();
+    await page.getByRole("textbox", { name: "Message", exact: true }).fill("Create a report");
+    await expect(page.getByRole("button", { name: "Evaluate result", exact: true })).toBeEnabled();
+    await expect(page.getByText(/This evaluation describes the previous result/)).toHaveCount(0);
+    await page.getByRole("button", { name: "Recorded run evidence", exact: true }).click();
+    await expect(page.locator("pre").filter({ hasText: "modelRequests" })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`evaluation-${width}.png`), fullPage: true, animations: "disabled" });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    if (width === 390) {
+      const prompt = await page.getByRole("textbox", { name: "System prompt", exact: true }).boundingBox();
+      const message = await page.getByRole("textbox", { name: "Message", exact: true }).boundingBox();
+      expect(message!.width).toBeGreaterThan(280);
+      expect(message!.y).toBeGreaterThan(prompt!.y + prompt!.height);
+    }
+    await page.getByRole("textbox", { name: "Message", exact: true }).fill("Create a different report");
+    await page.getByRole("button", { name: "Run and evaluate", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Evaluate result", exact: true })).toBeEnabled();
+    expect(runRequests).toHaveLength(2);
+    expect(evaluationRequests.at(-1)?.token).toBe("receipt-2");
+  });
+}
+
+test("reuses an explicitly started failed run and retries only evaluation after a judge failure", async ({ page }) => {
+  runError = true;
+  failEvaluation = true;
+  await page.goto(`${base}?role=owner`);
+  await page.getByRole("textbox", { name: "Message", exact: true }).fill("Create a report");
+  await page.getByRole("button", { name: "Run", exact: true }).last().click();
+  await expect(page.getByText("Synthetic execution failure", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Evaluate result", exact: true }).click();
+  await expect(page.getByText("Evaluation provider unavailable", { exact: true })).toBeVisible();
+  failEvaluation = false;
+  await page.getByRole("button", { name: "Evaluate result", exact: true }).click();
+  await expect(page.getByText("The requested report is supported by the run.", { exact: true })).toBeVisible();
+  expect(runRequests).toHaveLength(1);
+  expect(evaluationRequests).toHaveLength(2);
+});
+
+test("does not replay a run with missing evidence and requires saving edited settings", async ({ page }) => {
+  omitReceipt = true;
+  await page.goto(`${base}?role=owner`);
+  await page.getByRole("textbox", { name: "Message", exact: true }).fill("Create a report");
+  await page.getByRole("button", { name: "Run and evaluate", exact: true }).click();
+  await expect(page.getByText(/The run did not return evaluation evidence/)).toBeVisible();
+  await page.getByRole("button", { name: "Run and evaluate", exact: true }).click();
+  expect(runRequests).toHaveLength(1);
+  expect(evaluationRequests).toHaveLength(0);
+  await page.getByRole("textbox", { name: "System prompt", exact: true }).fill("Updated instructions");
+  await expect(page.getByRole("button", { name: "Run and evaluate", exact: true })).toBeDisabled();
+  await expect(page.getByText(/Save your changes before evaluating/)).toBeVisible();
+});
+
+test("keeps evaluation alive when its section is collapsed", async ({ page }) => {
+  let release: (() => void) | undefined;
+  await page.route(`**${prefix}/evaluate`, async route => {
+    await new Promise<void>(resolve => { release = resolve; });
+    await route.fallback();
+  });
+  await page.goto(`${base}?role=owner`);
+  await page.getByRole("textbox", { name: "Message", exact: true }).fill("Create a report");
+  await page.getByRole("button", { name: "Run and evaluate", exact: true }).click();
+  await expect.poll(() => Boolean(release)).toBe(true);
+  await page.getByRole("button", { name: "Evaluation", exact: true }).click();
+  release!();
+  await expect.poll(() => evaluationRequests.length).toBe(1);
+  await page.getByRole("button", { name: "Evaluation", exact: true }).click();
+  await expect(page.getByText("The requested report is supported by the run.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Evaluate result", exact: true })).toBeEnabled();
+  expect(runRequests).toHaveLength(1);
+});

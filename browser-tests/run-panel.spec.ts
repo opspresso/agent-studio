@@ -70,8 +70,8 @@ test("offers isolated previews for addressed viewable files", async ({ page }) =
     body: chunks.map(chunk => `data: ${JSON.stringify(chunk)}\n\n`).join("") + "data: [DONE]\n\n",
   }));
   await page.goto(base);
-  await page.getByRole("textbox").fill("Create reports");
-  await page.getByRole("button", { name: "Run", exact: true }).click();
+  await page.getByRole("textbox", { name: "Message", exact: true }).fill("Create reports");
+  await page.getByRole("button", { name: "Run", exact: true }).last().click();
   await expect(page.getByRole("link", { name: "report.html", exact: true })).toHaveAttribute("href", "/download/report.html");
   await expect(page.getByRole("link", { name: "View", exact: true })).toHaveCount(1);
   await expect(page.getByRole("link", { name: "View", exact: true })).toHaveAttribute("href", "/api/artifacts/artifact-html/view");
@@ -86,8 +86,8 @@ test("downloads inline files when object storage is unavailable", async ({ page 
     contentType: "text/event-stream", body: `data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`,
   }));
   await page.goto(base);
-  await page.getByRole("textbox").fill("Create an inline report");
-  await page.getByRole("button", { name: "Run", exact: true }).click();
+  await page.getByRole("textbox", { name: "Message", exact: true }).fill("Create an inline report");
+  await page.getByRole("button", { name: "Run", exact: true }).last().click();
   await expect(page.getByRole("link", { name: "View", exact: true })).toHaveCount(0);
   const completed = page.waitForEvent("download");
   await page.getByRole("link", { name: "report.html", exact: true }).click();
@@ -102,8 +102,8 @@ test("reports an invalid inline file without promising a later download", async 
     contentType: "text/event-stream", body: `data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`,
   }));
   await page.goto(base);
-  await page.getByRole("textbox").fill("Create a report");
-  await page.getByRole("button", { name: "Run", exact: true }).click();
+  await page.getByRole("textbox", { name: "Message", exact: true }).fill("Create a report");
+  await page.getByRole("button", { name: "Run", exact: true }).last().click();
   await expect(page.getByRole("alert")).toContainText("invalid base64 bytes");
   await expect(page.getByRole("link", { name: "broken.html", exact: true })).toHaveCount(0);
   await expect(page.getByText("available when this reply finishes", { exact: true })).toHaveCount(0);
@@ -114,8 +114,8 @@ for (const same of [false, true]) {
     const errors: string[] = [];
     page.on("pageerror", error => errors.push(error.message));
     await page.goto(base);
-    await page.getByRole("textbox").fill(same ? "same" : "different");
-    await page.getByRole("button", { name: "Run", exact: true }).click();
+    await page.getByRole("textbox", { name: "Message", exact: true }).fill(same ? "same" : "different");
+    await page.getByRole("button", { name: "Run", exact: true }).last().click();
     const activity = page.getByText("running:", { exact: true }).locator("..");
     await expect(activity.getByText(same ? "child" : "beta", { exact: true })).toBeVisible();
     if (!same) await expect(activity.getByText("alpha", { exact: true })).toHaveCount(0);
@@ -134,8 +134,8 @@ for (const same of [false, true]) {
 for (const ending of ["fail", "interrupt"] as const) {
   test(`clears active invocation badges when the stream ends through ${ending}`, async ({ page }) => {
     await page.goto(base);
-    await page.getByRole("textbox").fill("different");
-    await page.getByRole("button", { name: "Run", exact: true }).click();
+    await page.getByRole("textbox", { name: "Message", exact: true }).fill("different");
+    await page.getByRole("button", { name: "Run", exact: true }).last().click();
     const activity = page.getByText("running:", { exact: true }).locator("..");
     await expect(activity.getByText("beta", { exact: true })).toBeVisible();
     expect((await page.request.get(`${base}/${ending}`)).status()).toBe(200);

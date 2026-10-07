@@ -136,10 +136,9 @@ export default function PlaygroundPage() {
         {canPreview && <CollapsibleSection title={t("playground.preview")}>
           <PromptPreview agentName={name} draft={parsed ?? draft} validationError={schemaError} />
         </CollapsibleSection>}
-        <CollapsibleSection title={t("playground.run")} defaultOpen>
-          <RunPanel key={name} agentName={name} configured={configuration !== null}
-            modelAcceptsImages={runModel?.capabilities.imageInput} />
-        </CollapsibleSection>
+        <RunPanel key={name} agentName={name} configured={configuration !== null}
+          configurationUpdatedAt={updatedAt} unsaved={dirty}
+          modelAcceptsImages={runModel?.capabilities.imageInput} />
       </Stack>
     </div>
   </div>;

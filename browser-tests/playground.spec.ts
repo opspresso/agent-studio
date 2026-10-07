@@ -44,7 +44,7 @@ for (const width of [1200, 390]) {
     }));
     await page.goto(base);
     await page.getByRole("textbox", { name: "Message", exact: true }).fill("Run the fixture");
-    await page.getByRole("button", { name: "Run", exact: true }).click();
+    await page.getByRole("button", { name: "Run", exact: true }).last().click();
     await expect(page.getByRole("heading", { name: "Result" })).toBeVisible();
     await expect(page.locator("strong")).toHaveText("Verified");
     await expect(page.getByRole("cell", { name: "300", exact: true })).toBeVisible();
@@ -66,7 +66,7 @@ for (const width of [1200, 390]) {
     await expect(page.getByText("Unsafe", { exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: "Unsafe", exact: true })).toHaveCount(0);
     await expect(page.locator("main script")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Run", exact: true })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Run", exact: true }).last()).toBeEnabled();
     const geometry = await page.locator("pre").evaluate(element => ({
       overflow: getComputedStyle(element).overflow,
       overflowY: getComputedStyle(element).overflowY,

@@ -1,6 +1,9 @@
 "use client";
 
 import { canRunAgents, useViewer } from "@/app/_lib/useViewer";
+import type { EvaluationReceipt } from "@/domain/evaluation/types";
+import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
+import { EvaluationPanel } from "./EvaluationPanel";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { EngineChunk } from "../../lib/api";
 import { readSse, streamAgent } from "../../lib/api";
@@ -70,13 +73,22 @@ function toolCallView(raw: unknown, chunk: EngineChunk): ToolCallView {
   return { ...parseWireToolCall(raw), author: chunk.author, authorPath: chunk.authorPath, transferId: chunk.transferId };
 }
 
+type RunPanelInput = Pick<ReturnType<typeof useAttachments>, "attachments" | "documents"> & {
+  message: string;
+  configurationUpdatedAt: string;
+};
+
 export function RunPanel({
   agentName,
   configured,
   modelAcceptsImages,
+  configurationUpdatedAt,
+  unsaved,
 }: {
   agentName: string;
   configured: boolean;
+  configurationUpdatedAt: string;
+  unsaved: boolean;
   /** From the model registry; `undefined` when the model is not in the catalog. */
   modelAcceptsImages?: boolean;
 }) {
@@ -84,6 +96,9 @@ export function RunPanel({
   const [message, setMessage] = useState("");
 
   const [running, setRunning] = useState(false);
+  const [evaluating, setEvaluating] = useState(false);
+  const [lastAttempt, setLastAttempt] = useState<RunPanelInput | null>(null);
+  const [lastReceipt, setLastReceipt] = useState<{ input: RunPanelInput; receipt: EvaluationReceipt } | null>(null);
   const [text, setText] = useState("");
   const [reasoning, setReasoning] = useState("");
   const [reasoningTokens, setReasoningTokens] = useState(0);
@@ -115,11 +130,17 @@ export function RunPanel({
   } = useAttachments({ documents: true });
   const t = useT();
   const view = useImageViewer();
+  // Compare references instead of repeatedly serializing attachment bytes on every chunk.
+  const editedInput = useMemo(() => ({ message, attachments, documents, configurationUpdatedAt }),
+    [message, attachments, documents, configurationUpdatedAt]);
+  const inputKey = [lastReceipt?.input, lastAttempt].find(input => input && input.message === message &&
+    input.attachments === attachments && input.documents === documents && input.configurationUpdatedAt === configurationUpdatedAt) ?? editedInput;
+  const receipt = lastReceipt?.input === inputKey ? lastReceipt.receipt : null;
 
   // An image-only turn is a legitimate run: "what is in this picture?" needs no words.
   const canRun =
     mayRun && configured &&
-    !running &&
+    !running && !evaluating &&
     !reading &&
     (message.trim() !== "" || attachments.length > 0 || documents.length > 0);
   const attachHint = t("run.attachHintLook");
@@ -132,15 +153,17 @@ export function RunPanel({
     [],
   );
 
-  async function run() {
-    if (!canRun) return;
+  async function run(): Promise<EvaluationReceipt | null> {
+    if (!canRun) return null;
     if (!configured || activeRequest.current !== null) {
-      return;
+      return null;
     }
     const controller = new AbortController();
     activeRequest.current = controller;
     const isCurrent = () => activeRequest.current === controller;
     setRunning(true);
+    setLastAttempt(inputKey);
+    setLastReceipt(null);
     // Reasoning arrives token by token and can run far longer than the answer,
     // so it is committed in batches rather than per token — the same rule the
     // chat thread's store applies to what it draws.
@@ -169,6 +192,7 @@ export function RunPanel({
     setAgentFiles([]);
     const fileDownload = createFileDownloads();
     let totalCost = 0;
+    let runReceipt: EvaluationReceipt | null = null;
 
     try {
 
@@ -186,11 +210,16 @@ export function RunPanel({
         }],
         controller.signal,
         documents,
+        { captureEvaluation: true, expectedUpdatedAt: configurationUpdatedAt },
       );
 
       for await (const chunk of readSse(res) as AsyncGenerator<EngineChunk>) {
         if (!isCurrent()) {
           break;
+        }
+        if (chunk.evaluation) {
+          runReceipt = chunk.evaluation;
+          setLastReceipt({ input: inputKey, receipt: runReceipt });
         }
         if (chunk.error) {
           // A subagent failure is reported to the parent as a tool error and the
@@ -198,7 +227,7 @@ export function RunPanel({
           // authored one in the banner reported a finished run as failed.
           if (isTopLevelChunk(chunk)) {
             setError(chunk.error);
-            break;
+            continue;
           }
           continue;
         }
@@ -270,7 +299,8 @@ export function RunPanel({
       }
     } catch (e) {
       if (isCurrent()) {
-        setError(e instanceof Error ? e.message : t("run.failed"));
+        const message = e instanceof Error ? e.message : t("run.failed");
+        setError(previous => previous ?? message);
       }
     } finally {
       // Whatever the last batch was holding, on every exit path: a run that
@@ -283,14 +313,26 @@ export function RunPanel({
         setRunning(false);
       }
     }
+    return runReceipt;
+  }
+
+  async function ensureRun(): Promise<EvaluationReceipt> {
+    if (receipt) return receipt;
+    // Missing evidence after an attempted run is uncertain; evaluation must not replay tools.
+    if (lastAttempt === inputKey) throw new Error(t("evaluation.missingEvidence"));
+    const captured = await run();
+    if (!captured) throw new Error(t("evaluation.missingEvidence"));
+    return captured;
   }
 
   // Pasted and dropped images become inputs for image understanding or EditImage.
   const attach = useCallback((files: File[]) => void addFiles(files), [addFiles]);
-  const { dragging, handlers } = useFileDrop(attach, running || !mayRun);
-  const onPaste = useMemo(() => onFilePaste(attach, running || !mayRun), [attach, running, mayRun]);
+  const { dragging, handlers } = useFileDrop(attach, running || evaluating || !mayRun);
+  const onPaste = useMemo(() => onFilePaste(attach, running || evaluating || !mayRun), [attach, running, evaluating, mayRun]);
 
   return (
+    <>
+    <CollapsibleSection title={t("playground.run")} defaultOpen>
     <Stack
       gap="md"
       onKeyDown={onModEnter(() => {
@@ -306,7 +348,7 @@ export function RunPanel({
 
       <Textarea
         label={t("run.messageLabel")}
-        readOnly={!mayRun}
+        readOnly={!mayRun || running || evaluating}
         value={message}
         onChange={(e) => setMessage(e.currentTarget.value)}
         onPaste={onPaste}
@@ -327,13 +369,13 @@ export function RunPanel({
             attachments={attachments}
             documents={documents}
             attachError={attachError}
-            onRemove={removeAt}
-            onRemoveDocument={removeDocumentAt}
+            onRemove={running || evaluating ? undefined : removeAt}
+            onRemoveDocument={running || evaluating ? undefined : removeDocumentAt}
           />
           <Group>
             <AttachButton
               onPick={attach}
-              disabled={running || !mayRun}
+              disabled={running || evaluating || !mayRun}
               documents
             />
           </Group>
@@ -468,5 +510,12 @@ export function RunPanel({
         </Text>
       )}
     </Stack>
+    </CollapsibleSection>
+    <CollapsibleSection title={t("evaluation.title")} defaultOpen keepActive>
+      <EvaluationPanel agentName={agentName} inputKey={inputKey} receipt={receipt}
+        canEvaluate={canRun && !unsaved} running={running} unsaved={unsaved}
+        ensureRun={ensureRun} onBusyChange={setEvaluating} />
+    </CollapsibleSection>
+    </>
   );
 }

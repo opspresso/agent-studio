@@ -392,8 +392,10 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
           requestFields: [
             { name: "messages", type: "array[object]", required: true, description: "Conversation so far." },
             DOCUMENTS_FIELD,
+            { name: "captureEvaluation", type: "boolean", description: "Include an encrypted evaluation receipt after this run settles. It belongs to this Agent and caller and expires after one hour." },
+            { name: "expectedUpdatedAt", type: "string", description: "Optional saved Agent revision (ISO timestamp). A mismatch returns 409 before execution." },
           ],
-          errorCodes: [400, 401, 403, 404, 413, 429, 500, 502, 503, 504],
+          errorCodes: [400, 401, 403, 404, 409, 413, 429, 500, 502, 503, 504],
           codeExamples: [
             curlExample({
               method: "POST",
@@ -404,6 +406,27 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
               extraHeaders: CONVERSATION_HEADER,
             }),
           ],
+        });
+        const evaluatePath = `${agentBase}/evaluate`;
+        endpoints.push({
+          id: "evaluate", method: "POST", path: evaluatePath, title: "Evaluate an Agent run", auth: "token", streaming: false,
+          description: "Evaluate recorded skills, tools, output and prompts with the saved Agent model. First run /agent with captureEvaluation: true. This call never reruns Agent tools and records its own model usage. Evidence must belong to the caller and Agent, be unexpired, and match the current saved configuration. Results are model assessments, not correctness guarantees.",
+          requestFields: [
+            { name: "token", type: "string", required: true, description: "evaluation.token from the Agent stream." },
+            { name: "locale", type: '"en" | "ko"', required: true, description: "Language of the assessment." },
+            { name: "expectations", type: "object", required: true, description: "skills and tools arrays (up to 32 names each, 128 characters per name), and outcome text (up to 4,000 characters). Empty arrays/text infer expectations from the request." },
+          ],
+          responseFields: [
+            { name: "summary", type: "string", description: "Overall model assessment." },
+            { name: "checks", type: "object", description: "capabilities, output, toolUsage and prompt. Each has status, summary, evidence and improvements." },
+            { name: "evidence", type: "object", description: "Bounded run evidence and explicit limitations. No image/file bytes or hidden reasoning." },
+            { name: "model", type: "string", description: "Model used to evaluate." },
+            { name: "evaluatedAt", type: "string", description: "Assessment time (ISO timestamp)." },
+            { name: "usage", type: "object", description: "Evaluation model usage and cost." },
+          ],
+          errorCodes: [400, 401, 403, 404, 409, 413, 429, 500, 502, 503, 504],
+          codeExamples: [curlExample({ method: "POST", url: abs(evaluatePath), auth: "token",
+            body: { token: "YOUR_EVALUATION_RECEIPT", locale: "en", expectations: { skills: [], tools: [], outcome: "" } } })],
         });
       }
     }
