@@ -165,6 +165,10 @@ worker는 1분마다 설치 label로 제한한 Pod 목록을 50건씩 순회한�
 Pod만 DB의 Workspace·Sandbox·lease와 대조하고 소유자가 없는 자원을 정리한다. DB·API 조회
 실패에는 자원을 보존한다. 정상 유휴 종료는 기존 체크포인트 저장 → 삭제 순서를 사용한다.
 
+PreSync 검사는 Docker sidecar를 가진 worker 또는 전용 Docker daemon이 남아 있을 때
+중지된 컨테이너까지 비었는지 확인한다. Docker가 없는 Kubernetes worker만 남은 설치는
+철거된 daemon에 접속하지 않는다. Pod 목록이 불완전하거나 확인에 실패하면 전환을 거절한다.
+
 Docker에서 전환할 때 `WORKSPACE_LEGACY_DOCKER=true`와 기존 daemon 연결을 유지하면
 기존 Docker 핸들의 실행·Git·체크포인트·종료는 Docker로 라우팅된다. 새 Sandbox는 Kubernetes로
 만든다. 기존 작업과 복구 checkpoint를 확인한 뒤 별도 승인으로 DinD 리소스를 철거한다.
