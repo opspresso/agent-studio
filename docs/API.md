@@ -95,6 +95,7 @@ admin 목록에 속함(목록이 비면 member 이상). `owner` = 해당 Agent�
 | `/api/agents/{name}/predict` | `POST` | member 또는 member가 발급한 Agent 토큰 |
 | `/api/agents/{name}/chat/completions` | `POST` | member 또는 member가 발급한 Agent 토큰 |
 | `/api/agents/{name}/agent` | `POST` | member 또는 member가 발급한 Agent 토큰 |
+| `/api/agents/{name}/evaluate` | `POST` | 실행 권한 + 본인의 실행 증거 |
 | `/api/agents/{name}/token` | `GET` `POST` `DELETE` | session + 본인 토큰 / 발급은 member |
 | `/api/agents/{name}/token/reveal` | `POST` | member + 본인 토큰 |
 | `/api/agents/{name}/webhook-token` | `GET` `POST` `DELETE` | session + 본인 토큰 / 발급은 member |
@@ -408,6 +409,43 @@ recall과 capability discovery를 실제로 수행하므로 MCP와 embedding·re
 바인딩에 대해서만 해석되므로, 소유자가 아닌 사람의 미리보기는 그가 이미 시작할 수 있는 런이
 보내지 않을 것을 아무것도 보내지 않는다. Memory도 그 agent의 런이 같은 사용자 identity로
 회상할 내용이다. URL은 언제나 레지스트리에서 오므로 SSRF 표면은 런의 것이다.
+
+### 실행 결과 평가
+
+`POST /api/agents/{name}/agent`에 `captureEvaluation: true`를 보내면 실행이 정산된 뒤
+`{ evaluation: { token, expiresAt } }` SSE 조각을 추가로 받는다. `expectedUpdatedAt`을
+보내면 현재 Agent 수정 시각과 비교하며 다를 때 실행 전에 409를 반환한다.
+평가 증거는 실제 모델 요청, 도구 호출·결과, 출력, 파일·이미지 전달 정보와 제한 사항이다.
+암호화 토큰은 해당 Agent와 실행 사용자에 묶이며 한 시간 뒤 만료된다.
+
+`POST /api/agents/{name}/evaluate` 요청은 다음 형태다.
+
+```json
+{
+  "token": "<evaluation.token>",
+  "locale": "ko",
+  "expectations": { "skills": ["report"], "tools": ["Search"], "outcome": "근거가 있는 보고서" }
+}
+```
+
+`skills`·`tools`는 각각 최대 32개, 이름은 128자, `outcome`은 최대 4,000자다. 기대 항목을
+비워도 사용자 요청과 실행 증거를 기준으로 평가한다. 현재 저장된 Agent 모델로 도구 없는
+평가 호출을 한 번 수행하며, 실행 권한·비용·동시 실행 제한을 적용하고 사용량을 기록한다.
+응답은 `summary`, `checks`, `model`, `evaluatedAt`, `usage`, `evidence`, `observations`다. `checks`에는
+`capabilities`, `output`, `toolUsage`, `prompt`가 있으며 각각 `status`, `summary`,
+`evidence[]`, `improvements[]`를 반환한다. 상태는 `pass`, `needs-improvement`, `unknown`,
+`not-applicable`이다. 모델의 판단이며 정확성 보증은 아니다.
+
+`evidence.capabilities`는 실제 모델에 제공한 도구 이름·MCP 서버·Skill 목록과 호출·결과 횟수를
+긴 스키마와 별도로 보존한다. `savedBindings`는 동적 검색 전 저장 설정이므로 실제 제공 목록과
+다를 수 있다. `observations[]`는 사용자가 지정한 예상 Skill·도구 또는 MCP 서버 이름을 실제
+기록과 대조한 `{kind, name, available, requests}`다. `available`은 `offered`, `not-offered`,
+`unknown`이고, 횟수의 근거가 불완전하거나 서버별 호출을 구분할 수 없으면 `requests`는 `null`이다.
+호출 요청이나 결과 개수만으로 도구 실행 성공을 뜻하지 않는다.
+
+변조되거나 다른 사용자·Agent의 증거는 400, 만료 또는 저장 설정 변경은 409다. 이 API는
+Agent 도구를 재실행하지 않는다. 새 실행은 호출자가 명시적으로 시작한다. 이미지·파일 bytes와
+숨겨진 추론은 평가 증거에 포함하지 않으며, 수집 한도로 생략한 내용은 `limitations`로 알린다.
 
 ## 앱 설정
 

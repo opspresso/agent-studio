@@ -259,4 +259,6 @@ export const chatCompletionsSchema = z.object({
 export const agentSchema = z.object({
   messages: z.array(chatMessageSchema).min(1),
   documents: attachedDocumentsSchema,
+  captureEvaluation: z.boolean().optional(),
+  expectedUpdatedAt: z.string().datetime().optional(),
 });

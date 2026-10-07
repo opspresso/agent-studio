@@ -352,7 +352,7 @@ export function AttachmentBar({
   attachments: Attachment[];
   documents?: DocumentAttachment[];
   attachError: string | null;
-  onRemove: (index: number) => void;
+  onRemove?: (index: number) => void;
   onRemoveDocument?: (index: number) => void;
 }) {
   const t = useT();
@@ -400,7 +400,7 @@ export function AttachmentBar({
                 radius="md"
                 fit="cover"
               />
-              <ActionIcon
+              {onRemove && <ActionIcon
                 variant="filled"
                 color="dark"
                 radius="xl"
@@ -412,7 +412,7 @@ export function AttachmentBar({
                 aria-label={t("attach.remove", { name: attachment.name })}
               >
                 <IconX size={12} />
-              </ActionIcon>
+              </ActionIcon>}
             </Box>
           ))}
         </Group>

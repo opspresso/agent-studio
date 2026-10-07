@@ -32,7 +32,7 @@ function codeOf(endpoint: ApiEndpoint, language: string): string | undefined {
 
 describe("buildApiReference — Agent execution endpoints", () => {
   it("exposes predict, chat/completions, and agent", () => {
-    expect(ids()).toEqual(["predict", "chat-completions", "agent"]);
+    expect(ids()).toEqual(["predict", "chat-completions", "agent", "evaluate"]);
   });
 });
 

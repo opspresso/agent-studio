@@ -495,8 +495,9 @@ describe("the client bundle", () => {
   // The exact count detects missing entry points. Update it deliberately when
   // adding or removing a client component.
   it("is scanned from every client entry point", () => {
-    expect(entries.length).toBe(131);
+    expect(entries.length).toBe(132);
     expect(entries.map((file) => file.path)).toEqual(expect.arrayContaining([
+      "src/app/agents/[name]/_components/EvaluationPanel.tsx",
       "src/app/chats/_components/ChatRouteSelection.tsx",
       "src/app/profile/messaging/page.tsx",
       "src/app/agents/[name]/integrations/McpConnectionsSection.tsx",
@@ -639,6 +640,7 @@ describe("response shapes", () => {
  * Keep the named sites and deadline-composing import sites in agreement.
  */
 const RUN_ENDING_SITES = [
+  "src/application/evaluation/evaluationUseCases.ts",
   "src/application/execution/runAgent.ts",
 ];
 

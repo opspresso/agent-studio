@@ -35,7 +35,7 @@ export async function buildAgentDeps(
   const common = { channel: deps.channel, callRouting: routingConfigured ? deps.callRouting : undefined,
     ...(deps.reviewSource ? { reviewSource: deps.reviewSource } : {}),
     authorizeExecution: executionAuthorization(deps, agentName, origin),
-    modelRoutingPolicy,
+    modelRoutingPolicy, onModelRequest: deps.onModelRequest,
     createToolSchemaValidator: deps.createToolSchemaValidator, recordUsage, loadSkillContent: buildSkillLoader(createSkillReader(deps)) };
   if (origin.backgroundTask) return { ...common, workspaceTool: configuration.parameters.workspaceTools ? deps.reviewWorkspace : undefined };
   const imageModel = resolveImageModel(configuration, agentName);

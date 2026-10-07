@@ -29,6 +29,7 @@ export function CollapsibleSection({
   selected,
   onSelect,
   selectLabel,
+  keepActive,
   children,
 }: {
   title: string;
@@ -38,6 +39,8 @@ export function CollapsibleSection({
   selected?: boolean;
   onSelect?: () => void;
   selectLabel?: string;
+  /** Keep in-flight work alive while the section is collapsed. */
+  keepActive?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -46,6 +49,7 @@ export function CollapsibleSection({
       chevronPosition="left"
       radius="md"
       defaultValue={defaultOpen ? "section" : null}
+      keepMountedMode={keepActive ? "display-none" : "activity"}
     >
       <Accordion.Item value="section" className={selected ? classes.selected : undefined}>
         <div className={classes.heading}>

@@ -1,6 +1,6 @@
 import type { RunContextBudget } from "@/application/llm/contextBudget";
 import type { ToolResultBudget } from "@/application/llm/toolResultBudget";
-import type { ModelProvider, Session, AgentInputItem, RunState, Agent, AgentOutputType } from "@openai/agents";
+import type { ModelProvider, ModelRequest, Session, AgentInputItem, RunState, Agent, AgentOutputType } from "@openai/agents";
 import type { ChannelToolDef } from "@/domain/llm/channel";
 import type { RunCaller } from "@/domain/execution/actor";
 import type { ChatMessageInput, EngineParameters, McpToolResult } from "@/domain/llm/types";
@@ -28,6 +28,8 @@ export interface EngineDeps {
   modelRoutingPolicy?: import("@/domain/llm/callRouting").CallRoutingPolicy;
   callRouting?: import("@/application/llm/callModelRouter").CallRoutingDeps;
   onSdkSpan?: (span: TraceSpan) => void;
+  /** Opt-in, run-local evidence after masking and runtime prompt preparation. */
+  onModelRequest?: (agentName: string, model: string, request: ModelRequest, servers: readonly McpServerInfo[]) => void;
   channel: ModelProvider;
   recordUsage?: RecordUsageFn;
 }
