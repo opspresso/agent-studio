@@ -17,7 +17,7 @@ import { createRunContextBudget } from "@/application/llm/contextBudget";
 import { PiiFilter } from "@/application/llm/pii";
 import { runtimeFingerprint } from "@/application/runtime/session";
 import { modelResponseIsTruncated, modelResponseUsage } from "@/application/runtime/modelUsage";
-import { disposeRunDeadline, withRunDeadline } from "@/shared/runDeadline";
+import { disposeRunDeadline, runDeadlineExceeded, withRunDeadline } from "@/shared/runDeadline";
 import { createEvidenceCollector, type RunEvidence } from "./evidence";
 import { EVALUATION_INSTRUCTIONS, EVALUATION_REPORT_SCHEMA, parseEvaluationReport } from "./report";
 
@@ -123,7 +123,10 @@ export function createEvaluationUseCases(deps: ExecutionDeps) {
         const report = parseEvaluationReport(text, deps.createToolSchemaValidator());
         failed = false;
         return { ...report, model, evaluatedAt: runClock(deps).toISOString(), usage: cost, evidence };
-      } catch (error) { throw runEnding(error, signal); }
+      } catch (error) {
+        failed = runDeadlineExceeded(signal) || !input.signal?.aborted;
+        throw runEnding(error, signal);
+      }
       finally {
         disposeRunDeadline(signal);
         await usage.flush();

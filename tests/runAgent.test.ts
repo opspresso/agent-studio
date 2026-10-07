@@ -2294,6 +2294,45 @@ describe("Agent evaluation", () => {
     expect(recorded).toHaveLength(2);
   });
 
+  it("closes a cancelled evaluation without marking it as an execution failure", async () => {
+    const { service, runInput, receipt, channel } = await fixture();
+    resetRunMetrics();
+    const controller = new AbortController();
+    channel.chatCompletion = async () => {
+      controller.abort(new Error("Evaluation cancelled"));
+      throw controller.signal.reason;
+    };
+    await expect(service.evaluate({ ...runInput, token: receipt.token, expectations, locale: "en", signal: controller.signal })).rejects.toThrow("Evaluation cancelled");
+    expect(runMetricsSnapshot()).toMatchObject({ activeRuns: 0, runsStarted: 1, runsFinished: 1, runsFailed: 0 });
+  });
+
+  it("retains a failed model attempt as evidence without rerunning the Agent", async () => {
+    const channel = new FakeChannel([[contentChunk(JSON.stringify(report)), usageChunk(1, 1)]]);
+    channel.chatCompletionStream = async function* () { throw new Error("Provider failed before output"); };
+    const { deps } = executionDepsFixture(channel);
+    const service = createEvaluationUseCases(deps);
+    const runInput = input();
+    const chunks = await collect(service.run(runInput));
+    expect(chunks.some(chunk => chunk.error === "Provider failed before output")).toBe(true);
+    const result = await service.evaluate({ ...runInput, token: chunks.at(-1)!.evaluation!.token, expectations, locale: "en" });
+    expect(result.evidence.termination).toBe("error");
+    expect(result.evidence.modelRequests).toHaveLength(1);
+    expect(result.evidence.output).toBe("");
+    expect(channel.calls).toBe(1);
+  });
+
+  it("masks request and restored output before the evaluation model when PII filtering is enabled", async () => {
+    const channel = new FakeChannel([[contentChunk("Contact alice@example.com"), usageChunk(1, 1)], [contentChunk(JSON.stringify(report)), usageChunk(1, 1)]]);
+    const { deps } = executionDepsFixture(channel);
+    const service = createEvaluationUseCases(deps);
+    const runInput = { ...input(), configuration: configurationFixture({ piiFiltering: true }), messages: [{ role: "user" as const, content: "Contact alice@example.com" }] };
+    const chunks = await collect(service.run(runInput));
+    const result = await service.evaluate({ ...runInput, token: chunks.at(-1)!.evaluation!.token, expectations, locale: "en" });
+    expect(JSON.stringify(channel.seenParams[1]?.messages)).not.toContain("alice@example.com");
+    expect(result.evidence.modelRequests.join("")).not.toContain("alice@example.com");
+    expect(result.evidence.limitations.join("")).toContain("masked identities");
+  });
+
   it("captures Skill loading and subsequent output without repeating the Skill during evaluation", async () => {
     const channel = new FakeChannel([
       [toolCallChunk(0, "skill-1", "Skill", '{"skill_name":"guide"}'), usageChunk(1, 1)],

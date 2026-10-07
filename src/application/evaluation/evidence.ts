@@ -19,6 +19,9 @@ export interface RunEvidence {
 /** Separate budgets keep a long prompt/tool result from displacing the answer. */
 export function createEvidenceCollector(configuration: AgentConfiguration, messages: ChatMessageInput[]) {
   const limitations = new Set<string>();
+  if (configuration.parameters.piiFiltering) {
+    limitations.add("PII is masked in model requests and again for evaluation; masked identities cannot be compared literally across these records.");
+  }
   function budget(max: number, label: string) {
     let left = max;
     return (text: string) => {
