@@ -29,7 +29,7 @@ export interface EngineDeps {
   callRouting?: import("@/application/llm/callModelRouter").CallRoutingDeps;
   onSdkSpan?: (span: TraceSpan) => void;
   /** Opt-in, run-local evidence after masking and runtime prompt preparation. */
-  onModelRequest?: (agentName: string, model: string, request: ModelRequest) => void;
+  onModelRequest?: (agentName: string, model: string, request: ModelRequest, servers: readonly McpServerInfo[]) => void;
   channel: ModelProvider;
   recordUsage?: RecordUsageFn;
 }

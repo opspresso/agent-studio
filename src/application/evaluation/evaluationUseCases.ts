@@ -20,10 +20,11 @@ import { modelResponseIsTruncated, modelResponseUsage } from "@/application/runt
 import { disposeRunDeadline, runDeadlineExceeded, withRunDeadline } from "@/shared/runDeadline";
 import { createEvidenceCollector, type RunEvidence } from "./evidence";
 import { EVALUATION_INSTRUCTIONS, EVALUATION_REPORT_SCHEMA, parseEvaluationReport } from "./report";
+import { observeExpectations, type CapabilityObservation } from "./capabilityEvidence";
 
 const RECEIPT_LIFETIME_MS = 60 * 60 * 1_000;
 interface EvidenceEnvelope {
-  version: 1;
+  version: 2;
   expiresAt: number;
   configuration: string;
   evidence: RunEvidence;
@@ -33,6 +34,7 @@ export interface AgentEvaluation extends EvaluationReport {
   evaluatedAt: string;
   usage: UsageInfo;
   evidence: RunEvidence;
+  observations: CapabilityObservation[];
 }
 interface EvaluateInput extends RunIdentity {
   agent: Agent;
@@ -46,7 +48,7 @@ interface EvaluateInput extends RunIdentity {
 export function createEvaluationUseCases(deps: ExecutionDeps) {
   function seal(input: AgentRunInput, evidence: RunEvidence): EvaluationReceipt {
     const expiresAt = runClock(deps).getTime() + RECEIPT_LIFETIME_MS;
-    const envelope: EvidenceEnvelope = { version: 1, expiresAt, configuration: runtimeFingerprint(input.configuration), evidence };
+    const envelope: EvidenceEnvelope = { version: 2, expiresAt, configuration: runtimeFingerprint(input.configuration), evidence };
     const token = deps.cipher.encrypt(JSON.stringify(envelope), evaluationContext(input.agent.name, input.user.userId));
     if (token.length > MAX_EVALUATION_TOKEN_CHARS) throw new ValidationError("Evaluation evidence exceeds its size limit");
     return { token, expiresAt: new Date(expiresAt).toISOString() };
@@ -56,7 +58,7 @@ export function createEvaluationUseCases(deps: ExecutionDeps) {
     try {
       if (!input.token.startsWith(CONTEXT_ENCRYPTED_PREFIX) || input.token.length > MAX_EVALUATION_TOKEN_CHARS) throw new Error();
       envelope = JSON.parse(deps.cipher.decrypt(input.token, evaluationContext(input.agent.name, input.user.userId))) as EvidenceEnvelope;
-      if (envelope.version !== 1 || !Number.isFinite(envelope.expiresAt) || !envelope.evidence) throw new Error();
+      if (envelope.version !== 2 || !Number.isFinite(envelope.expiresAt) || !envelope.evidence?.capabilities) throw new Error();
     } catch { throw new ValidationError("Invalid evaluation evidence"); }
     if (envelope.expiresAt <= runClock(deps).getTime()) throw new ConflictError("Evaluation evidence expired; run the Agent again");
     if (envelope.configuration !== runtimeFingerprint(input.configuration)) throw new ConflictError("Agent configuration changed; run the Agent again");
@@ -94,9 +96,10 @@ export function createEvaluationUseCases(deps: ExecutionDeps) {
       const authorize = executionAuthorization(deps, input.agent.name, input);
       await authorize();
       const evidence = unseal(input);
+      const observations = observeExpectations(evidence.capabilities, input.expectations);
       const model = input.configuration.model;
       const pii = input.configuration.parameters.piiFiltering ? new PiiFilter() : undefined;
-      const data = JSON.stringify({ expectations: input.expectations, evidence });
+      const data = JSON.stringify({ expectations: input.expectations, observations, evidence });
       const instructions = `${EVALUATION_INSTRUCTIONS}\nWrite human-readable fields in ${input.locale === "ko" ? "Korean" : "English"}.\nJSON schema:\n${JSON.stringify(EVALUATION_REPORT_SCHEMA)}`;
       const prompt = pii?.mask(data) ?? data;
       const params = applyModelConstraints({ model, messages: [], maxTokens: 4_096 });
@@ -122,7 +125,7 @@ export function createEvaluationUseCases(deps: ExecutionDeps) {
           : item.content.flatMap(part => part.type === "output_text" ? [part.text] : [])).join("\n");
         const report = parseEvaluationReport(text, deps.createToolSchemaValidator());
         failed = false;
-        return { ...report, model, evaluatedAt: runClock(deps).toISOString(), usage: cost, evidence };
+        return { ...report, model, evaluatedAt: runClock(deps).toISOString(), usage: cost, evidence, observations };
       } catch (error) {
         failed = runDeadlineExceeded(signal) || !input.signal?.aborted;
         throw runEnding(error, signal);

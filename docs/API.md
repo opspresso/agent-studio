@@ -431,10 +431,17 @@ recall과 capability discovery를 실제로 수행하므로 MCP와 embedding·re
 `skills`·`tools`는 각각 최대 32개, 이름은 128자, `outcome`은 최대 4,000자다. 기대 항목을
 비워도 사용자 요청과 실행 증거를 기준으로 평가한다. 현재 저장된 Agent 모델로 도구 없는
 평가 호출을 한 번 수행하며, 실행 권한·비용·동시 실행 제한을 적용하고 사용량을 기록한다.
-응답은 `summary`, `checks`, `model`, `evaluatedAt`, `usage`, `evidence`다. `checks`에는
+응답은 `summary`, `checks`, `model`, `evaluatedAt`, `usage`, `evidence`, `observations`다. `checks`에는
 `capabilities`, `output`, `toolUsage`, `prompt`가 있으며 각각 `status`, `summary`,
 `evidence[]`, `improvements[]`를 반환한다. 상태는 `pass`, `needs-improvement`, `unknown`,
 `not-applicable`이다. 모델의 판단이며 정확성 보증은 아니다.
+
+`evidence.capabilities`는 실제 모델에 제공한 도구 이름·MCP 서버·Skill 목록과 호출·결과 횟수를
+긴 스키마와 별도로 보존한다. `savedBindings`는 동적 검색 전 저장 설정이므로 실제 제공 목록과
+다를 수 있다. `observations[]`는 사용자가 지정한 예상 Skill·도구 또는 MCP 서버 이름을 실제
+기록과 대조한 `{kind, name, available, requests}`다. `available`은 `offered`, `not-offered`,
+`unknown`이고, 횟수의 근거가 불완전하거나 서버별 호출을 구분할 수 없으면 `requests`는 `null`이다.
+호출 요청이나 결과 개수만으로 도구 실행 성공을 뜻하지 않는다.
 
 변조되거나 다른 사용자·Agent의 증거는 400, 만료 또는 저장 설정 변경은 409다. 이 API는
 Agent 도구를 재실행하지 않는다. 새 실행은 호출자가 명시적으로 시작한다. 이미지·파일 bytes와

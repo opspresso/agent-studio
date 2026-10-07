@@ -420,6 +420,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
             { name: "summary", type: "string", description: "Overall model assessment." },
             { name: "checks", type: "object", description: "capabilities, output, toolUsage and prompt. Each has status, summary, evidence and improvements." },
             { name: "evidence", type: "object", description: "Bounded run evidence and explicit limitations. No image/file bytes or hidden reasoning." },
+            { name: "observations", type: "array[object]", description: "Recorded availability and request counts for expected Skills, tools or MCP servers, independent of model assessments. Incomplete counts are null." },
             { name: "model", type: "string", description: "Model used to evaluate." },
             { name: "evaluatedAt", type: "string", description: "Assessment time (ISO timestamp)." },
             { name: "usage", type: "object", description: "Evaluation model usage and cost." },

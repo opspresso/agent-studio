@@ -2251,6 +2251,8 @@ describe("Agent evaluation", () => {
     expect(result.summary).toBe(report.summary);
     expect(result.evidence.output).toBe("Hello");
     expect(result.evidence.termination).toBe("completed");
+    expect(result.evidence.capabilities).toMatchObject({ modelRequests: 1, toolCalls: 0, toolResults: 0, inventoryComplete: true, activityComplete: true });
+    expect(result.observations).toEqual([]);
     const captured = JSON.parse(result.evidence.modelRequests[0]!);
     expect(captured.instructions).toBe(channel.seenParams[0]?.messages[0]?.content);
     expect(captured.input).toEqual(expect.arrayContaining([expect.objectContaining({ role: "user" })]));
@@ -2333,6 +2335,24 @@ describe("Agent evaluation", () => {
     expect(result.evidence.limitations.join("")).toContain("masked identities");
   });
 
+  it("preserves MCP server identity through the native model request and encrypted receipt", async () => {
+    const channel = new FakeChannel([[contentChunk("No lookup was performed"), usageChunk(1, 1)], [contentChunk(JSON.stringify(report)), usageChunk(1, 1)]]);
+    const { deps } = executionDepsFixture(channel);
+    deps.mcps.get = async name => ({ name, url: "https://docs.example.test/mcp", description: "Public documentation", headers: {}, createdAt: "", updatedAt: "" });
+    deps.mcpSessions = { open: async () => ({
+      tools: [{ type: "function", function: { name: "Lookup", description: "Search documentation", parameters: { type: "object", properties: {} } } }],
+      toolNamesByServer: new Map([["aws-knowledge", ["Lookup"]]]), warnings: [], unauthorizedServers: [],
+      callTool: async () => { throw new Error("The evaluator must not dispatch tools"); }, aliasFor: (_server, name) => name, close: async () => {},
+    }) };
+    const service = createEvaluationUseCases(deps);
+    const runInput = { ...input(), configuration: { ...input().configuration, mcpList: [{ name: "aws-knowledge" }] } };
+    const chunks = await collect(service.run(runInput));
+    const result = await service.evaluate({ ...runInput, token: chunks.at(-1)!.evaluation!.token, expectations: { ...expectations, tools: ["aws-knowledge"] }, locale: "en" });
+    expect(result.observations).toEqual([{ kind: "tool", name: "aws-knowledge", available: "offered", requests: 0 }]);
+    expect(result.evidence.capabilities.toolCalls).toBe(0);
+    expect(JSON.stringify(channel.seenParams[1]?.messages)).toContain("observations");
+  });
+
   it("captures Skill loading and subsequent output without repeating the Skill during evaluation", async () => {
     const channel = new FakeChannel([
       [toolCallChunk(0, "skill-1", "Skill", '{"skill_name":"guide"}'), usageChunk(1, 1)],
@@ -2347,6 +2367,7 @@ describe("Agent evaluation", () => {
     const result = await service.evaluate({ ...runInput, token: chunks.at(-1)!.evaluation!.token, expectations: { ...expectations, skills: ["guide"] }, locale: "en" });
     expect(result.evidence.toolTraffic.join("\n")).toContain("skill-1");
     expect(result.evidence.toolTraffic.join("\n")).toContain("Answer clearly");
+    expect(result.observations).toEqual([{ kind: "skill", name: "guide", available: "offered", requests: 1 }]);
     expect(channel.calls).toBe(3);
   });
 });

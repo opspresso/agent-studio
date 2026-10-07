@@ -2,10 +2,13 @@ import type { ModelRequest } from "@openai/agents";
 import type { AgentConfiguration } from "@/domain/agent/types";
 import { collectedWarning, isTopLevelChunk, runTermination, type ChatMessageInput, type EngineChunk, type RunTerminationReason } from "@/domain/llm/types";
 import { cutCodePoints } from "@/shared/utf8Text";
+import type { McpServerInfo } from "@/application/llm/agentAssembly";
+import { createCapabilityEvidence, type CapabilityEvidence } from "./capabilityEvidence";
 
 export interface RunEvidence {
   request: string;
-  configured: string;
+  savedBindings: string;
+  capabilities: CapabilityEvidence;
   modelRequests: string[];
   toolTraffic: string[];
   output: string;
@@ -19,6 +22,7 @@ export interface RunEvidence {
 /** Separate budgets keep a long prompt/tool result from displacing the answer. */
 export function createEvidenceCollector(configuration: AgentConfiguration, messages: ChatMessageInput[]) {
   const limitations = new Set<string>();
+  const capabilities = createCapabilityEvidence(configuration.agentName);
   if (configuration.parameters.piiFiltering) {
     limitations.add("PII is masked in model requests and again for evaluation; masked identities cannot be compared literally across these records.");
   }
@@ -58,9 +62,10 @@ export function createEvidenceCollector(configuration: AgentConfiguration, messa
   const evidence: RunEvidence = {
     request: requestBudget(json(messages)),
     // No provider credentials, binding headers, or configuration ciphertext.
-    configured: budget(4_000, "Configured capabilities")(json({ model: configuration.model,
+    savedBindings: budget(4_000, "Saved bindings")(json({ model: configuration.model,
       skills: configuration.skillList, tools: configuration.mcpList.map(({ name, tools }) => ({ name, tools })),
       subagents: configuration.subagentList })),
+    capabilities: capabilities.evidence,
     modelRequests: [], toolTraffic: [], output: "", artifacts: [], warnings: [], limitations: [],
   };
   function append(list: string[], value: unknown, bound: (text: string) => string, label: string) {
@@ -69,11 +74,13 @@ export function createEvidenceCollector(configuration: AgentConfiguration, messa
     if (text) list.push(text);
   }
   return {
-    onModelRequest(agentName: string, model: string, request: ModelRequest) {
+    onModelRequest(agentName: string, model: string, request: ModelRequest, servers: readonly McpServerInfo[] = []) {
+      capabilities.observeRequest(agentName, model, request, servers);
       append(evidence.modelRequests, { agentName, model, instructions: request.systemInstructions,
         input: request.input, tools: request.tools, handoffs: request.handoffs, outputType: request.outputType }, promptBudget, "Model request");
     },
     observe(chunk: EngineChunk) {
+      capabilities.observeChunk(chunk);
       if (isTopLevelChunk(chunk)) {
         if (chunk.delta?.content) evidence.output += outputBudget(chunk.delta.content);
         evidence.termination = runTermination(chunk) ?? evidence.termination;
@@ -95,6 +102,8 @@ export function createEvidenceCollector(configuration: AgentConfiguration, messa
       }
     },
     finish() {
+      if (!capabilities.evidence.inventoryComplete) limitations.add("Some offered capability sets were omitted; absence from the inventory is not proof of unavailability.");
+      if (!capabilities.evidence.activityComplete) limitations.add("Some per-capability request counts were omitted; total call and result counts remain complete.");
       if (!evidence.modelRequests.length) limitations.add("No model request was captured.");
       if (!evidence.termination) limitations.add("The run did not report a terminal outcome.");
       evidence.limitations = [...limitations];

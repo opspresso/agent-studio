@@ -188,7 +188,7 @@ export function createRunModel(
       await authorizeRuntimeEffect(deps, request.signal);
       const requestResponse = async () => {
         const source = await deps.channel.getModel(model);
-        deps.onModelRequest?.(input.agentName, model, prepared);
+        deps.onModelRequest?.(input.agentName, model, prepared, input.mcpServers ?? []);
         return source.getResponse(prepared);
       };
       try { response = await requestResponse(); }
@@ -229,7 +229,7 @@ export function createRunModel(
         turn.model = model;
         const source = await deps.channel.getModel(model);
         const prepared = prepare(request, model);
-        deps.onModelRequest?.(input.agentName, model, prepared);
+        deps.onModelRequest?.(input.agentName, model, prepared, input.mcpServers ?? []);
         for await (const event of source.getStreamedResponse(prepared)) {
           started = true;
           if (event.type === "output_text_delta" && event.delta) {

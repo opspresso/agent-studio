@@ -80,6 +80,18 @@ export function EvaluationPanel({ agentName, inputKey, receipt, canEvaluate, run
     {error && <Alert color="red">{error}</Alert>}
     {stale && <Alert color="yellow">{t("evaluation.stale")}</Alert>}
     {result && <Stack gap="sm">
+      <Paper withBorder p="sm">
+        <Stack gap="xs">
+          <Text fw={600} size="sm">{t("evaluation.observedFacts")}</Text>
+          <Text size="sm">{t("evaluation.activity", { calls: result.report.evidence.capabilities.toolCalls, results: result.report.evidence.capabilities.toolResults })}</Text>
+          {result.report.observations.map((item, index) => <Group key={index} gap="xs">
+            <Text size="sm" ff="monospace">{item.name}</Text>
+            <Badge color={item.available === "offered" ? "teal" : "gray"}>{t(`evaluation.availability.${item.available}`)}</Badge>
+            <Text size="xs">{item.requests === null ? t("evaluation.requestsUnknown") : t("evaluation.requests", { count: item.requests })}</Text>
+          </Group>)}
+          <Text size="xs" c="dimmed">{t("evaluation.factsHint")}</Text>
+        </Stack>
+      </Paper>
       <Text fw={600}>{result.report.summary}</Text>
       <Text size="xs" c="dimmed">{t("evaluation.modelAssessment", { model: result.report.model })}</Text>
       {EVALUATION_CRITERIA.map(key => {

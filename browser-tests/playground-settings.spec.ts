@@ -71,7 +71,8 @@ test.beforeEach(async ({ page }) => {
         checks: Object.fromEntries(["capabilities", "output", "toolUsage", "prompt"].map(key => [key, {
           status: "pass", summary: `${key} matches the request`, evidence: ["Search call lookup-1 returned the cited sources"], improvements: [],
         }])),
-        evidence: { request: "Create a report", configured: "fixture-model", modelRequests: ['{"instructions":"Shared prompt"}'], toolTraffic: [], output: "A report with verified sources", artifacts: [], warnings: [], limitations: [] },
+        observations: [{ kind: "tool", name: "aws-knowledge", available: "offered", requests: 0 }],
+        evidence: { capabilities: { toolCalls: 0, toolResults: 0, snapshots: [], inventoryComplete: true, activityComplete: true, modelRequests: 1, calls: [], skillCalls: [] }, request: "Create a report", savedBindings: "fixture-model", modelRequests: ['{"instructions":"Shared prompt"}'], toolTraffic: [], output: "A report with verified sources", artifacts: [], warnings: [], limitations: [] },
       } });
     }
     if (path === prefix) return route.fulfill({ json: { name: "fixture-agent", ownerEmail: "owner@example.test" } });
@@ -219,6 +220,8 @@ for (const width of [1440, 390]) {
     expect(runRequests[0]).toMatchObject({ captureEvaluation: true, expectedUpdatedAt: "2026-10-02T00:00:00Z" });
     expect(evaluationRequests[0]).toMatchObject({ token: "receipt-1", expectations: { skills: ["report"], tools: [], outcome: "Include source links" } });
     await expect(page.getByText("Meets criteria", { exact: true })).toHaveCount(4);
+    await expect(page.getByText("Tool requests: 0 · Results received: 0", { exact: true })).toBeVisible();
+    await expect(page.getByText("Offered", { exact: true })).toBeVisible();
     await page.getByRole("textbox", { name: "Expected result", exact: true }).fill("Also include a conclusion");
     await expect(page.getByText(/This evaluation describes the previous result/)).toBeVisible();
     await page.getByRole("button", { name: "Evaluate result", exact: true }).click();
