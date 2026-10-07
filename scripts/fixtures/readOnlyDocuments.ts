@@ -4,7 +4,7 @@ import { buildZip, stored } from "@/infrastructure/documents/engine/zip";
 
 export const READ_ONLY_DOCUMENT_EXTENSIONS = ["hwp", "odt", "ods", "odp", "rtf"] as const;
 
-/** Small real packages exercise format dispatch without mocking the document engine. */
+/** Shared by unit and worker checks; remains available in Docker build contexts. */
 export function readOnlyDocumentFixture(extension: typeof READ_ONLY_DOCUMENT_EXTENSIONS[number]): DocumentFile {
   const text = "Original content.";
   const name = `report.${extension}`;

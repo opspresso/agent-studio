@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { DOCUMENT_FORMATS } from "../src/domain/document/processor";
 import { DocumentWorkerPool } from "../src/infrastructure/documents/workerPool";
-import { READ_ONLY_DOCUMENT_EXTENSIONS, readOnlyDocumentFixture } from "../tests/readOnlyDocumentFixtures";
+import { READ_ONLY_DOCUMENT_EXTENSIONS, readOnlyDocumentFixture } from "./fixtures/readOnlyDocuments";
 
 async function main() {
   const pool = new DocumentWorkerPool();

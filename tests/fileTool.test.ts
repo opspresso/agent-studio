@@ -15,7 +15,7 @@ import { documentEditor } from "@/infrastructure/documents/editor";
 import { documentExtractor } from "@/infrastructure/llm/documentExtractor";
 import { runAgent } from "@/application/runtime";
 import { FakeChannel, toolCallChunk, contentChunk } from "./fakeChannel";
-import { READ_ONLY_DOCUMENT_EXTENSIONS, readOnlyDocumentFixture } from "./readOnlyDocumentFixtures";
+import { READ_ONLY_DOCUMENT_EXTENSIONS, readOnlyDocumentFixture } from "../scripts/fixtures/readOnlyDocuments";
 import { DOCUMENT_FORMATS } from "@/domain/document/processor";
 
 const ids = vi.hoisted(() => ({ next: 0 }));

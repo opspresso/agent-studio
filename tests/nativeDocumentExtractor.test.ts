@@ -6,7 +6,7 @@ import { renderHwpx } from "@/infrastructure/documents/engine/write/hwpx";
 import { renderPptx } from "@/infrastructure/documents/engine/write/pptx";
 import { renderXlsx } from "@/infrastructure/documents/engine/write/xlsx";
 import { PDFDocument, StandardFonts } from "pdf-lib";
-import { READ_ONLY_DOCUMENT_EXTENSIONS, readOnlyDocumentFixture } from "./readOnlyDocumentFixtures";
+import { READ_ONLY_DOCUMENT_EXTENSIONS, readOnlyDocumentFixture } from "../scripts/fixtures/readOnlyDocuments";
 
 const meta = { title: "Quarterly report", created: "2026-09-07T00:00:00.000Z" };
 const markdown = parseMarkdown("# Revenue\n\nQuarterly revenue rose.");
