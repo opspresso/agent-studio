@@ -41,6 +41,7 @@ import type { PullRequestReviewTarget, ReviewWorkspaceTool } from "@/domain/trig
  * a policy that silently stops applying to text runs.
  */
 export interface ExecutionDeps extends RunBracketDeps {
+  onModelRequest?: import("@/application/runtime/types").EngineDeps["onModelRequest"];
   reviewWorkspace?: ReviewWorkspaceTool;
   reviewSource?: (args: Record<string, unknown>) => Promise<McpToolResult>;
   authorizeRun: (agentName: string, identity: RunIdentity) => Promise<void>;

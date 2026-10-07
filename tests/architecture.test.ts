@@ -639,6 +639,7 @@ describe("response shapes", () => {
  * Keep the named sites and deadline-composing import sites in agreement.
  */
 const RUN_ENDING_SITES = [
+  "src/application/evaluation/evaluationUseCases.ts",
   "src/application/execution/runAgent.ts",
 ];
 

@@ -53,6 +53,7 @@
 | 실행 중 Agent 배지와 참여 경로 | `src/app/_lib/authorPaths.ts`의 `foldActiveAuthors`/`activeAuthorPaths`는 위임 호출별 완료를 추적하고 표시 경로를 합친다. `mergeVisitedPath`는 참여 기록을 별도로 유지한다. Chat과 Playground가 공유한다 | 코드 |
 | top-level 런을 감싸는 것 | `src/application/run/runBracket.ts` | 구조 |
 | Agent 실행과 완료 응답 수집 | `src/application/execution/runAgent.ts` | 코드 |
+| 실행 증거 수집·평가 기준·평가 호출 | `src/application/evaluation/`; 평가 상태·입력 한도는 `domain/evaluation/types.ts`, 실제 요청 관찰은 `runtime/model.ts`, 암호화 문맥은 `domain/security/secretContext.ts` | 코드 |
 | 런의 프롬프트가 자기 caller 를 이름으로 불러도 되는가 | `src/application/execution/deps.ts` 의 `callerFor` | 구조 |
 | tool 결과가 무엇을, 어떤 순서로 해야 하는가 | `src/application/runtime/output.ts` 의 `writeToolResult` | 구조 |
 | SDK Agent·Handoff·Agent-as-Tool 조립과 동시 호출의 identity | `src/application/runtime/agent.ts`, `boundAgent.ts`; SDK가 실행을 소유하고 앱이 호출별 자원을 연결한다 | 코드 |

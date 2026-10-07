@@ -1,4 +1,5 @@
 import { releaseRunSlot } from "@/application/run/concurrencyGuard";
+import { createEvaluationUseCases } from "@/application/evaluation/evaluationUseCases";
 import { createWorkspaceModelGateway } from "@/application/workspace/modelGateway";
 import { workspaceModelCalls } from "@/infrastructure/db/repositories/workspaceModelCalls";
 import { createWorkspaceModelTokens } from "@/infrastructure/workspace/modelToken";
@@ -959,6 +960,8 @@ function authorizeAgentRun(agentName: string, identity: RunIdentity) {
 }
 
 export const executionDeps: ExecutionDeps = {
+  // Only opt-in Playground runs collect request evidence.
+  onModelRequest: undefined,
   // A verified PR prepares its own scoped reader; ordinary runs never receive one.
   reviewSource: undefined,
   reviewWorkspace: undefined,
@@ -1492,3 +1495,5 @@ export async function workspaceBranches(agentName: string, user: import("@/domai
   if (!workspaceAllowsRepository(policy, repo)) throw new ValidationError("Repository is not enabled for this agent");
   return agentCodingGitHub(agentName, user).forge.branches(repo);
 }
+
+export const evaluationUseCases = createEvaluationUseCases(executionDeps);

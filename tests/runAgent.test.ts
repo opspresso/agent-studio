@@ -1,4 +1,6 @@
 import { executionIdentity } from "./runIdentity";
+import { createEvaluationUseCases } from "@/application/evaluation/evaluationUseCases";
+import { EVALUATION_CRITERIA } from "@/domain/evaluation/types";
 import { withConfigurations } from "./agentConfigurations";
 import { createToolSchemaValidator } from "@/infrastructure/llm/toolSchema";
 import { scriptedModels } from "./scriptedModels";
@@ -2220,5 +2222,92 @@ describe("a transfer carries who is asking", () => {
     const prompt = await childPrompt(channel, deps, false);
 
     expect(prompt).toContain("You are answering Bruce.");
+  });
+});
+
+describe("Agent evaluation", () => {
+  const report = { summary: "The requested answer is supported.", checks: Object.fromEntries(EVALUATION_CRITERIA.map(key => [key,
+    { status: "pass", summary: `${key} checked`, evidence: ["Model request 1 and the final answer"], improvements: [] }])) };
+  const expectations = { skills: [], tools: [], outcome: "Answer the request" };
+  const input = () => ({ ...executionIdentity(), agent: agentFixture(), configuration: configurationFixture({ piiFiltering: false }),
+    messages: [{ role: "user" as const, content: "Say hello" }] });
+  beforeEach(() => { vi.stubEnv("AES_ENCRYPTION_KEY", Buffer.alloc(32, 7).toString("base64")); });
+  afterEach(() => { vi.unstubAllEnvs(); });
+
+  async function fixture(answer = JSON.stringify(report)) {
+    const channel = new FakeChannel([[contentChunk("Hello"), usageChunk(1, 1)], [contentChunk(answer), usageChunk(2, 3)]]);
+    const { deps, recorded } = executionDepsFixture(channel);
+    const service = createEvaluationUseCases(deps);
+    const runInput = input();
+    const chunks = await collect(service.run(runInput));
+    const receipt = chunks.at(-1)?.evaluation;
+    expect(receipt?.token.startsWith("enc:v2:")).toBe(true);
+    return { channel, deps, recorded, service, runInput, receipt: receipt! };
+  }
+
+  it("captures the actual prepared prompt and evaluates the existing result without rerunning tools", async () => {
+    const { service, runInput, receipt, channel, recorded } = await fixture();
+    const result = await service.evaluate({ ...runInput, token: receipt.token, expectations, locale: "ko" });
+    expect(result.summary).toBe(report.summary);
+    expect(result.evidence.output).toBe("Hello");
+    expect(result.evidence.termination).toBe("completed");
+    const captured = JSON.parse(result.evidence.modelRequests[0]!);
+    expect(captured.instructions).toBe(channel.seenParams[0]?.messages[0]?.content);
+    expect(captured.input).toEqual(expect.arrayContaining([expect.objectContaining({ role: "user" })]));
+    expect(channel.calls).toBe(2);
+    expect(channel.seenParams[1]?.tools ?? []).toEqual([]);
+    expect(channel.seenParams[1]?.messages[0]?.content).toContain("Korean");
+    expect(recorded).toHaveLength(2);
+    expect(recorded[1]).toMatchObject({ inputTokens: 2, outputTokens: 3, userId: runInput.user.userId });
+  });
+
+  it("rejects another user, Agent, tampering and plaintext before a model call", async () => {
+    const { service, runInput, receipt, channel } = await fixture();
+    const base = { ...runInput, token: receipt.token, expectations, locale: "en" as const };
+    await expect(service.evaluate({ ...base, ...executionIdentity({ kind: "user", id: "other@example.com" }) })).rejects.toThrow("Invalid evaluation evidence");
+    await expect(service.evaluate({ ...base, agent: { ...base.agent, name: "other" } })).rejects.toThrow("Invalid evaluation evidence");
+    await expect(service.evaluate({ ...base, token: receipt.token.slice(0, -8) + "AAAAAAAA" })).rejects.toThrow("Invalid evaluation evidence");
+    await expect(service.evaluate({ ...base, token: JSON.stringify({ evidence: {} }) })).rejects.toThrow("Invalid evaluation evidence");
+    expect(channel.calls).toBe(1);
+  });
+
+  it("refuses expired evidence and changed saved settings", async () => {
+    const { service, runInput, receipt, channel, deps } = await fixture();
+    const base = { ...runInput, token: receipt.token, expectations, locale: "en" as const };
+    await expect(service.evaluate({ ...base, configuration: { ...base.configuration, systemPrompt: "Changed" } })).rejects.toThrow("configuration changed");
+    deps.now = () => new Date(receipt.expiresAt);
+    await expect(service.evaluate(base)).rejects.toThrow("expired");
+    expect(channel.calls).toBe(1);
+  });
+
+  it("rechecks current permission before evaluating a valid receipt", async () => {
+    const { service, runInput, receipt, channel, deps } = await fixture();
+    deps.authorizeRun = async () => { throw new Error("access revoked"); };
+    await expect(service.evaluate({ ...runInput, token: receipt.token, expectations, locale: "en" })).rejects.toThrow("access revoked");
+    expect(channel.calls).toBe(1);
+  });
+
+  it("rejects malformed judge output and still bills the model call", async () => {
+    const { service, runInput, receipt, channel, recorded } = await fixture('{"summary":"all good"}');
+    await expect(service.evaluate({ ...runInput, token: receipt.token, expectations, locale: "en" })).rejects.toThrow("invalid report");
+    expect(channel.calls).toBe(2);
+    expect(recorded).toHaveLength(2);
+  });
+
+  it("captures Skill loading and subsequent output without repeating the Skill during evaluation", async () => {
+    const channel = new FakeChannel([
+      [toolCallChunk(0, "skill-1", "Skill", '{"skill_name":"guide"}'), usageChunk(1, 1)],
+      [contentChunk("Used the guide"), usageChunk(1, 1)],
+      [contentChunk(JSON.stringify(report)), usageChunk(1, 1)],
+    ]);
+    const { deps } = executionDepsFixture(channel);
+    deps.skills = fakeSkillRepository(async name => ({ name, description: "Guide", content: "Answer clearly", createdAt: "", updatedAt: "" }));
+    const service = createEvaluationUseCases(deps);
+    const runInput = { ...input(), configuration: { ...input().configuration, skillList: ["guide"] } };
+    const chunks = await collect(service.run(runInput));
+    const result = await service.evaluate({ ...runInput, token: chunks.at(-1)!.evaluation!.token, expectations: { ...expectations, skills: ["guide"] }, locale: "en" });
+    expect(result.evidence.toolTraffic.join("\n")).toContain("skill-1");
+    expect(result.evidence.toolTraffic.join("\n")).toContain("Answer clearly");
+    expect(channel.calls).toBe(3);
   });
 });

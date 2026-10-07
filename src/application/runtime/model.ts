@@ -186,7 +186,12 @@ export function createRunModel(
       let response: ModelResponse;
       let prepared = prepare(request, model);
       await authorizeRuntimeEffect(deps, request.signal);
-      try { response = await (await deps.channel.getModel(model)).getResponse(prepared); }
+      const requestResponse = async () => {
+        const source = await deps.channel.getModel(model);
+        deps.onModelRequest?.(input.agentName, model, prepared);
+        return source.getResponse(prepared);
+      };
+      try { response = await requestResponse(); }
       catch (error) {
         request.signal?.throwIfAborted();
         const fallback = fallbackFor(request, model);
@@ -196,7 +201,7 @@ export function createRunModel(
         beginFallbackBudget(request, model);
         prepared = prepare(request, model);
         await authorizeRuntimeEffect(deps, request.signal);
-        response = await (await deps.channel.getModel(model)).getResponse(prepared);
+        response = await requestResponse();
       }
       turn.model = model;
       turn.outputCut = modelResponseIsTruncated(response, prepared.modelSettings.maxTokens);
@@ -224,6 +229,7 @@ export function createRunModel(
         turn.model = model;
         const source = await deps.channel.getModel(model);
         const prepared = prepare(request, model);
+        deps.onModelRequest?.(input.agentName, model, prepared);
         for await (const event of source.getStreamedResponse(prepared)) {
           started = true;
           if (event.type === "output_text_delta" && event.delta) {

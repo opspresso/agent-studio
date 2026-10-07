@@ -116,6 +116,8 @@ export function toolCallKey(
 
 /** A single streamed unit emitted by the engine's async generators. */
 export interface EngineChunk {
+  /** Opt-in Playground evidence; emitted only after the run settles. */
+  evaluation?: import("@/domain/evaluation/types").EvaluationReceipt;
   approval?: { pending: true };
   /**
    * App Trace ID supplied by the producer. Native SDK child spans belong to
