@@ -21,6 +21,7 @@ import {
 } from "@/domain/artifact/types";
 import type { Artifact, InlineView } from "@/domain/artifact/types";
 import { boundedPageLimit } from "@/shared/pageLimit";
+import { readStoredFile } from "./readStoredFile";
 
 /** How many artifacts one page may carry. A gallery page, not a bulk export. */
 export const MAX_ARTIFACT_PAGE = 100;
@@ -97,7 +98,7 @@ export function createArtifactUseCases(
       if (artifact.privateFileId && (!privateFiles || !isOwnRow(artifact, viewerEmail))) throw new NotFoundError("Private artifact not found");
       const { bytes } = artifact.privateFileId
         ? await privateFiles!.read(artifact.agentName, artifact.privateFileId, viewerEmail, MAX_INLINE_VIEW_BYTES)
-        : await objects.read(artifact.key, MAX_INLINE_VIEW_BYTES);
+        : await readStoredFile(() => objects.read(artifact.key, MAX_INLINE_VIEW_BYTES));
       return { artifact, bytes, view };
     },
 

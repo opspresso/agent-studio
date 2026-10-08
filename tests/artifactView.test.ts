@@ -11,6 +11,7 @@ import {
 import type { Artifact } from "@/domain/artifact/types";
 import type { Agent } from "@/domain/agent/types";
 import type { AgentRepository } from "@/domain/agent/repository";
+import { ObjectNotFoundError } from "@/domain/artifact/objectStore";
 
 const ids = vi.hoisted(() => ({ sequence: 0 }));
 vi.mock("node:crypto", async importOriginal => ({
@@ -84,7 +85,7 @@ function setup(stored: Artifact | null) {
     },
     async delete() {},
   };
-  return { useCases: createArtifactUseCases(rows, objects, agents), reads };
+  return { useCases: createArtifactUseCases(rows, objects, agents), reads, objects, rows };
 }
 
 beforeEach(() => {
@@ -197,6 +198,24 @@ describe("reading an artifact for a view", () => {
   it("is a 404 when no such row exists", async () => {
     const { useCases } = setup(null);
     await expect(useCases.readForView("missing", OWNER)).rejects.toThrow(/Artifact not found/);
+  });
+
+  it("reports missing stored bytes as 404 while preserving the artifact record", async () => {
+    const { useCases, objects, rows } = setup(artifact());
+    vi.spyOn(objects, "read").mockRejectedValue(new ObjectNotFoundError("artifacts/document/a1.html"));
+    const remove = vi.spyOn(rows, "delete");
+    await expect(useCases.readForView("a1", OWNER)).rejects.toMatchObject({
+      status: 404, message: "That file is no longer stored",
+    });
+    expect(remove).not.toHaveBeenCalled();
+    expect(objects.read).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not turn storage failures into missing files", async () => {
+    const { useCases, objects } = setup(artifact());
+    const failure = new Error("storage unavailable");
+    vi.spyOn(objects, "read").mockRejectedValue(failure);
+    await expect(useCases.readForView("a1", OWNER)).rejects.toBe(failure);
   });
 });
 

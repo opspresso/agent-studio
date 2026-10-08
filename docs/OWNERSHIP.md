@@ -134,6 +134,7 @@
 | mime 타입에서 파라미터를 떼어낸 형태. 아래 세 규칙이 모두 이것 위에 쓰여 있어 서로 어긋날 수 없다 | `src/domain/artifact/types.ts` 의 `baseMimeType` | 구조 |
 | 저장된 artifact 가 화면에 닿는 방식(쓰인 그대로 / 렌더해서), 그리고 그 상한 | `src/domain/artifact/types.ts` 의 `inlineViewOf` / `MAX_INLINE_VIEW_BYTES` | 구조 |
 | 저장된 artifact 를 그 타입답게 페이지로 만들기 | `src/app/api/artifacts/[artifactId]/view/_lib/viewPage.tsx` | 구조 |
+| 저장된 파일의 바이트 누락을 읽기 오류로 전달 | `src/application/artifact/readStoredFile.ts`. 일반 Artifact 보기와 비공개 파일 읽기는 누락만 404로 바꾸고 다른 저장소 오류는 보존한다 | 코드 |
 | 구분자로 나뉜 행의 파싱 (RFC 4180) | `src/app/api/artifacts/[artifactId]/view/_lib/csv.ts` 의 `parseCsv` | 구조 |
 | 런이 파일로 쓸 수 있는 타입과 그 크기 | `src/domain/artifact/types.ts` 의 `SAVABLE_TYPES` / `isSavable` / `MAX_SAVED_FILE_BYTES` | 구조 |
 | MIME에 맞는 파일 이름. 다운로드와 이미지 편집 업로드가 같은 확장자 규칙을 쓴다 | `src/domain/artifact/types.ts` 의 `savedFileName` | 구조 |

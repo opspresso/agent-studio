@@ -1678,6 +1678,8 @@ GET /api/artifacts/{artifactId}/view
 
 `/view`는 지원되는 텍스트 기반 파일을 HTML 응답으로 렌더링한다.
 PDF·Office 등 대상이 아닌 MIME은 400으로 거절한다.
+메타데이터가 남아 있어도 저장된 바이트가 없으면 404로 답한다. 비공개 파일 다운로드도
+같은 규칙을 적용하며, 저장소 장애나 접근 거절을 파일 누락으로 처리하지 않는다.
 바이트를 반환하는 다른 경로로 proxied 객체와 비공개 파일 다운로드가 있으며 각각 인증 계약이 다르다.
 
 응답은 `text/html; charset=utf-8` 이다. 저장된 HTML 은 선언된 charset 으로 디코딩한 뒤
@@ -1736,6 +1738,7 @@ Webhook은 토큰 발급자, Schedule은 등록자의 현재 계정으로 실행
 Agent별 목록은 해당 Agent의 일반 Artifact 인덱스를 읽으며 Agent 소유자만 조회한다.
 비공개 Audio 파일은 개인 목록에만 포함한다. `from`/`to`는 실제 날짜로 검증하는 UTC 일이고,
 `before`는 이전 페이지의 `nextBefore`다.
+Agent의 Artifacts 탭은 비공개 파일의 위치를 안내하고 개인 Artifacts로 이동하는 링크를 제공한다.
 
 삭제는 생성자 또는 해당 Agent 소유자에게 허용된다. 남의 출력을 지우면
 `artifact.delete` 감사 행이 기록되고, 자기 것을 지우면 그렇지 않다. chat 메시지는 object key 의

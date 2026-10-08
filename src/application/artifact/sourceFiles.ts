@@ -12,6 +12,7 @@ import { SourceObjectExistsError, type SourceObjectStore } from "@/domain/artifa
 import type { SourceByteStream } from "@/domain/artifact/sourceReference";
 import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
 import { fileExpiresAt } from "./fileRetention";
+import { readStoredFile } from "./readStoredFile";
 
 const MAX_SOURCE_BYTES = 512 * 1024 * 1024;
 const INCOMPLETE_UPLOAD_MS = 24 * 60 * 60 * 1000;
@@ -173,7 +174,7 @@ export function createSourceFileUseCases(deps: SourceFileDeps) {
       if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0 || maxBytes > MAX_SOURCE_BYTES) throw new ValidationError("Invalid source read limit");
       const file = await deps.files.get(agentName, id);
       assertReadable(file, userEmail, deps.now().toISOString());
-      const result = await deps.objects.read(sourceFileObjectKey(id), maxBytes, signal);
+      const result = await readStoredFile(() => deps.objects.read(sourceFileObjectKey(id), maxBytes, signal));
       signal?.throwIfAborted();
       const latest = await deps.files.get(agentName, id);
       assertReadable(latest, userEmail, deps.now().toISOString());

@@ -6,6 +6,7 @@ import { createSourceFileUseCases } from "@/application/artifact/sourceFiles";
 import { fakeArtifactContent } from "./fakeArtifactContent";
 import { SourceObjectExistsError } from "@/domain/artifact/sourceObjectStore";
 import type { SourceObjectStore } from "@/domain/artifact/sourceObjectStore";
+import { ObjectNotFoundError } from "@/domain/artifact/objectStore";
 import { ValidationError } from "@/application/errors";
 import { createAudioCleanup } from "@/application/audio/cleanup";
 import type { AudioJob } from "@/domain/audio/job";
@@ -40,7 +41,7 @@ beforeEach(() => {
       const item = contents.get(key);
       return item ? { byteSize: item.bytes.length, mimeType: item.mimeType, storedAt: item.storedAt } : null;
     }),
-    read: vi.fn(async (key) => { const item = contents.get(key); if (!item) throw new Error("missing"); return item; }),
+    read: vi.fn(async (key) => { const item = contents.get(key); if (!item) throw new ObjectNotFoundError(key); return item; }),
     delete: vi.fn(async (key) => { contents.delete(key); }),
   };
 });
@@ -131,6 +132,24 @@ describe("private source file lifecycle", () => {
       return bytes;
     });
     await expect(api.read(input.agentName, input.id, input.userEmail)).rejects.toMatchObject({ status: 409 });
+  });
+  it("reports missing private bytes as 404 without deleting ready inventory", async () => {
+    const api = useCases();
+    await api.import(input, openBody);
+    contents.clear();
+    await expect(api.read(input.agentName, input.id, input.userEmail)).rejects.toMatchObject({
+      status: 404, message: "That file is no longer stored",
+    });
+    expect((await files.get(input.agentName, input.id))?.status).toBe("ready");
+    expect(objects.read).toHaveBeenCalledTimes(1);
+    expect(objects.delete).not.toHaveBeenCalled();
+  });
+  it("preserves private storage failures rather than reporting a missing file", async () => {
+    const api = useCases();
+    await api.import(input, openBody);
+    const failure = new Error("storage unavailable");
+    vi.mocked(objects.read).mockRejectedValue(failure);
+    await expect(api.read(input.agentName, input.id, input.userEmail)).rejects.toBe(failure);
   });
   it("retries artifact publication without downloading the completed file again", async () => {
     const publish = vi.fn().mockRejectedValueOnce(new Error("inventory unavailable")).mockResolvedValue(undefined);
