@@ -461,6 +461,7 @@ export const en = {
   // App chrome: the header, the sidebar and its groups.
   "chrome.openNavigation": "Open navigation",
   "chrome.skipToContent": "Skip to main content",
+  "chrome.navigation": "Main navigation",
   "chrome.closeNavigation": "Close navigation",
   "chrome.openAgents": "Open Agents",
   "chrome.status": "Version {version}",

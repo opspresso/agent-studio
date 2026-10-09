@@ -454,6 +454,7 @@ export const ko: Messages = {
 
   "chrome.openNavigation": "내비게이션 열기",
   "chrome.skipToContent": "본문으로 바로가기",
+  "chrome.navigation": "기본 내비게이션",
   "chrome.closeNavigation": "내비게이션 닫기",
   "chrome.openAgents": "Agents 열기",
   "chrome.status": "버전 {version}",

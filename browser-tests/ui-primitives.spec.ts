@@ -1,6 +1,9 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { pathToFileURL } from "node:url";
+import { resolve } from "node:path";
 import { build } from "esbuild";
+import postcss, { type AcceptedPlugin } from "postcss";
 import { test, expect } from "@playwright/test";
 let server: Server;
 let base: string;
@@ -10,10 +13,21 @@ test.beforeAll(async () => {
     define: { "process.env.NODE_ENV": '"production"', "process.env": "{}" },
     plugins: [{ name: "auth-client", setup(build) {
       build.onResolve({ filter: /^@\/lib\/auth-client$/ }, () => ({ path: "auth", namespace: "fixture" }));
-      build.onLoad({ filter: /.*/, namespace: "fixture" }, () => ({ contents:
-        'export const authClient = { signIn: { email: async () => ({ error: { message: "Synthetic sign-in error" } }) } }; export const signIn = {}; export const signInWithOidc = () => { throw new Error("Unexpected provider action"); };', loader: "js" }));
+      build.onLoad({ filter: /^auth$/, namespace: "fixture" }, () => ({ contents:
+        'export const authClient = { signIn: { email: async () => ({ error: { message: "Synthetic sign-in error" } }) } }; export const signIn = {}; export const signOut = () => {}; export const signInWithOidc = () => { throw new Error("Unexpected provider action"); };', loader: "js" }));
+      build.onResolve({ filter: /^next\/navigation$/ }, () => ({ path: "navigation", namespace: "fixture" }));
+      build.onLoad({ filter: /^navigation$/, namespace: "fixture" }, () => ({ contents:
+        'export const usePathname = () => "/agents"; export const useRouter = () => ({ refresh() {} });', loader: "js" }));
     } }],
   });
+  const cssConfig = (await import(pathToFileURL(resolve("postcss.config.mjs")).href)).default as { plugins: Record<string, object> };
+  const plugins = await Promise.all(Object.entries(cssConfig.plugins).map(async ([name, options]) => {
+    const createPlugin = (await import(name)).default as (options: object) => AcceptedPlugin;
+    return createPlugin(options);
+  }));
+  for (const file of bundle.outputFiles.filter(file => file.path.endsWith(".css"))) {
+    file.contents = new TextEncoder().encode((await postcss(plugins).process(file.text, { from: undefined })).css);
+  }
   server = createServer((request,response) => {
     const asset=bundle.outputFiles.find(file => request.url===`/${file.path.split("/").at(-1)}`);
     response.setHeader("Content-Type", asset ? asset.path.endsWith(".css") ? "text/css" : "text/javascript" : "text/html");
@@ -23,6 +37,24 @@ test.beforeAll(async () => {
   base=`http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
 test.afterAll(async()=>{if(server)await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));});
+
+test("mobile shell retains its brand name and hides closed navigation from keyboard access", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${base}?page=shell`);
+  await expect(page.getByRole("link", { name: "Agent Studio", exact: true })).toBeVisible();
+  const navigation = page.getByRole("navigation", { name: "Main navigation", exact: true });
+  const open = page.getByRole("button", { name: "Open navigation", exact: true });
+  await expect(open).toHaveAttribute("aria-expanded", "false");
+  await expect(navigation).toHaveCount(0);
+  await open.focus();
+  await page.keyboard.press("Space");
+  const close = page.getByRole("button", { name: "Close navigation", exact: true });
+  await expect(close).toHaveAttribute("aria-expanded", "true");
+  await expect(navigation).toBeVisible();
+  await expect(navigation.getByRole("link", { name: "Agents", exact: true })).toHaveAttribute("aria-current", "page");
+  await close.press("Space");
+  await expect(navigation).toHaveCount(0);
+});
 for (const locale of ["en", "ko"]) {
   test(`credential badges distinguish absent configuration in ${locale}`, async ({ page }) => {
     await page.goto(`${base}?page=credentials&locale=${locale}`);

@@ -10,6 +10,8 @@ import { SearchSelectInput } from "../../src/app/agents/[name]/_components/input
 import { SignInButton } from "../../src/components/SignInButton";
 import { CodeBlock } from "../../src/app/_components/CodeBlock";
 import { CredentialBadges } from "../../src/app/tools/_components/CredentialBadges";
+import { AppLayout } from "../../src/components/AppLayout";
+import { resolveBranding } from "../../src/shared/branding";
 
 function Pickers() {
   const [values, setValues] = useState(["first", "second"]);
@@ -20,7 +22,9 @@ function Pickers() {
 document.documentElement.style.setProperty("--font-sans", "system-ui");
 const query = new URLSearchParams(location.search);
 createRoot(document.getElementById("root")!).render(<I18nProvider locale={query.get("locale") === "ko" ? "ko" : "en"}><ConsoleThemeProvider>
-  <Paper p="lg" m="lg">{query.get("page") === "sign-in" ? <SignInButton providers={{ password: true, keycloak: false, google: false, oidc: undefined }} />
+  <Paper p="lg" m="lg">{query.get("page") === "shell" ? <AppLayout branding={resolveBranding()} version="fixture" viewer={{email:"viewer@example.test", tier:"admin", isAdmin:true}}
+    userName="Viewer" userImage={null} signInProviders={{ password:false, keycloak:false, google:false, oidc:undefined }}><h1>Agents</h1></AppLayout>
+    : query.get("page") === "sign-in" ? <SignInButton providers={{ password: true, keycloak: false, google: false, oidc: undefined }} />
     : query.get("page") === "credentials" ? <Stack><CredentialBadges server={{ headers: {} }} /><CredentialBadges server={{ headers: { "X-Example": "fixture" } }} /></Stack>
     : query.get("page") === "pickers" ? <Pickers /> : <Stack>{Object.entries(BADGE).map(([tone,color]) => <Group key={tone}>
     <Badge color={color} data-testid={`badge-${tone}`}>{tone}</Badge>

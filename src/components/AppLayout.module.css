@@ -135,6 +135,10 @@
 }
 
 @media (max-width: $mantine-breakpoint-md) {
+  .navbar:not([data-mobile-opened]) {
+    visibility: hidden;
+  }
+
   .navLink {
     min-height: 44px;
   }
