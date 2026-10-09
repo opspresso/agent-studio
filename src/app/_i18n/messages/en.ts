@@ -1267,6 +1267,12 @@ export const en = {
   "evaluation.cost": "Evaluation cost: {cost}",
 
   // What an Agent binds: MCP servers, their tools, header overrides, subagents.
+  "common.removeNamed": "Remove {name}",
+  "bindings.inheritedHeaders": "Select a registry header to override it here.",
+  "bindings.overridden": "overridden",
+  "bindings.headerCount": "Header overrides: {count}",
+  "bindings.toolCount": "Tools: {count}",
+  "bindings.allTools": "all tools",
   "bindings.mcpServers": "MCP servers",
   "bindings.searchServers": "Search registered MCP servers",
   "bindings.subagents": "Subagents",

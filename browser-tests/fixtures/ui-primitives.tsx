@@ -1,16 +1,25 @@
 import { createRoot } from "react-dom/client";
+import { useState } from "react";
 import { Badge, Button, Group, Paper, Stack } from "@mantine/core";
 import "@mantine/core/styles.css";
 import "../../src/app/globals.css";
 import { I18nProvider } from "../../src/app/_i18n/provider";
 import { ConsoleThemeProvider } from "../../src/app/_components/ConsoleThemeProvider";
 import { BADGE } from "../../src/app/_components/badgeColors";
+import { SearchSelectInput } from "../../src/app/agents/[name]/_components/inputs";
+
+function Pickers() {
+  const [values, setValues] = useState(["first", "second"]);
+  return <SearchSelectInput label="Skills" values={values} onChange={setValues}
+    options={["first", "second", "third"].map(value => ({ value }))} />;
+}
 
 document.documentElement.style.setProperty("--font-sans", "system-ui");
-createRoot(document.getElementById("root")!).render(<I18nProvider locale="en"><ConsoleThemeProvider>
-  <Paper p="lg" m="lg"><Stack>{Object.entries(BADGE).map(([tone,color]) => <Group key={tone}>
+const query = new URLSearchParams(location.search);
+createRoot(document.getElementById("root")!).render(<I18nProvider locale={query.get("locale") === "ko" ? "ko" : "en"}><ConsoleThemeProvider>
+  <Paper p="lg" m="lg">{query.get("page") === "pickers" ? <Pickers /> : <Stack>{Object.entries(BADGE).map(([tone,color]) => <Group key={tone}>
     <Badge color={color} data-testid={`badge-${tone}`}>{tone}</Badge>
     <Button color={color} variant="light" data-testid={`light-${tone}`}>{tone}</Button>
     <Button color={color} data-testid={`filled-${tone}`}>{tone}</Button>
-  </Group>)}</Stack></Paper>
+  </Group>)}</Stack>}</Paper>
 </ConsoleThemeProvider></I18nProvider>);

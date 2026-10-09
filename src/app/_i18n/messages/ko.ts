@@ -1227,6 +1227,12 @@ export const ko: Messages = {
   "evaluation.recordedEvidence": "실행에서 수집한 근거",
   "evaluation.cost": "평가 비용: {cost}",
 
+  "common.removeNamed": "{name} 제거",
+  "bindings.inheritedHeaders": "덮어쓸 레지스트리 헤더를 선택하세요.",
+  "bindings.overridden": "덮어씀",
+  "bindings.headerCount": "헤더 재정의: {count}",
+  "bindings.toolCount": "도구: {count}",
+  "bindings.allTools": "모든 도구",
   "bindings.mcpServers": "MCP 서버",
   "bindings.searchServers": "등록된 MCP 서버 검색",
   "bindings.subagents": "서브에이전트",

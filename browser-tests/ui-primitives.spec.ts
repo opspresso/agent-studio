@@ -17,6 +17,26 @@ test.beforeAll(async () => {
   base=`http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
 test.afterAll(async()=>{if(server)await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));});
+for (const locale of ["en", "ko"]) {
+  test(`selection controls support named keyboard removal in ${locale}`, async ({ page }) => {
+    await page.goto(`${base}?page=pickers&locale=${locale}`);
+    const remove = page.getByRole("button", { name: locale === "ko" ? "first 제거" : "Remove first", exact: true });
+    const box = await remove.boundingBox();
+    expect(box!.width).toBeGreaterThanOrEqual(24);
+    expect(box!.height).toBeGreaterThanOrEqual(24);
+    await page.getByText("Skills", { exact: true }).click();
+    await expect(remove).toBeVisible();
+    await remove.focus();
+    await page.keyboard.press("Space");
+    await expect(remove).toHaveCount(0);
+    const picker = page.getByRole("combobox", { name: "Skills", exact: true });
+    await picker.fill("third");
+    await picker.press("ArrowDown");
+    await picker.press("Enter");
+    await expect(picker).toHaveValue("");
+    await expect(page.getByRole("button", { name: locale === "ko" ? "third 제거" : "Remove third", exact: true })).toBeVisible();
+  });
+}
 for(const scheme of ["light","dark"] as const){
   test(`semantic control text remains readable in ${scheme}`,async({page})=>{
     await page.emulateMedia({colorScheme:scheme});
