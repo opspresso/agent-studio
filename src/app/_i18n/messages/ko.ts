@@ -675,6 +675,8 @@ export const ko: Messages = {
   "confirm.typeToConfirm": "확인하려면 “{text}” 를 입력하세요",
 
   "headers.caption": "헤더",
+  "tools.headerCount": "헤더: {count}",
+  "tools.noCredentials": "설정된 인증 정보 없음",
   "headers.empty": "헤더가 없습니다. 서버에 인증이 필요하면 추가하세요.",
   "headers.add": "+ 헤더 추가",
   "headers.keyPlaceholder": "Header-Name",

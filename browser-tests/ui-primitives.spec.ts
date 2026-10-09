@@ -24,6 +24,11 @@ test.beforeAll(async () => {
 });
 test.afterAll(async()=>{if(server)await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));});
 for (const locale of ["en", "ko"]) {
+  test(`credential badges distinguish absent configuration in ${locale}`, async ({ page }) => {
+    await page.goto(`${base}?page=credentials&locale=${locale}`);
+    await expect(page.getByText(locale === "ko" ? "설정된 인증 정보 없음" : "No credentials configured", { exact: true })).toBeVisible();
+    await expect(page.getByText(locale === "ko" ? "헤더: 1" : "Headers: 1", { exact: true })).toBeVisible();
+  });
   test(`password visibility is named and keyboard operable in ${locale}`, async ({ page }) => {
     await page.goto(`${base}?page=sign-in&locale=${locale}`);
     const password = page.locator('input[autocomplete="current-password"]');

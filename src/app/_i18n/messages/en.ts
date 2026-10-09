@@ -690,6 +690,8 @@ export const en = {
 
   // The secret key/value editor, shared by the MCP registry and Agent bindings.
   "headers.caption": "Headers",
+  "tools.headerCount": "Headers: {count}",
+  "tools.noCredentials": "No credentials configured",
   "headers.empty": "No headers. Add one if the server needs auth.",
   "headers.add": "+ Add header",
   "headers.keyPlaceholder": "Header-Name",
