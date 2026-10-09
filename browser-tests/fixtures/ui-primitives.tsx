@@ -8,6 +8,7 @@ import { ConsoleThemeProvider } from "../../src/app/_components/ConsoleThemeProv
 import { BADGE } from "../../src/app/_components/badgeColors";
 import { SearchSelectInput } from "../../src/app/agents/[name]/_components/inputs";
 import { SignInButton } from "../../src/components/SignInButton";
+import { CodeBlock } from "../../src/app/_components/CodeBlock";
 
 function Pickers() {
   const [values, setValues] = useState(["first", "second"]);
@@ -23,5 +24,8 @@ createRoot(document.getElementById("root")!).render(<I18nProvider locale={query.
     <Badge color={color} data-testid={`badge-${tone}`}>{tone}</Badge>
     <Button color={color} variant="light" data-testid={`light-${tone}`}>{tone}</Button>
     <Button color={color} data-testid={`filled-${tone}`}>{tone}</Button>
-  </Group>)}</Stack>}</Paper>
+  </Group>)}
+    <CodeBlock language="javascript" code={'// Sample request\nconst result = fetch("$ENDPOINT", 42);'} />
+    <CodeBlock language="json" code={'{"message": "value", "count": 42}'} />
+  </Stack>}</Paper>
 </ConsoleThemeProvider></I18nProvider>);

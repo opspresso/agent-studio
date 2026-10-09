@@ -63,7 +63,7 @@ for(const scheme of ["light","dark"] as const){
     await page.emulateMedia({colorScheme:scheme});
     await page.goto(base);
     await expect(page.locator("html")).toHaveAttribute("data-mantine-color-scheme",scheme);
-    const measure=()=>page.locator('[data-testid]').evaluateAll(elements=>{
+    const measure=()=>page.locator('[data-testid], pre span').evaluateAll(elements=>{
       const canvas=document.createElement('canvas');canvas.width=canvas.height=1;
       const ctx=canvas.getContext('2d')!;
       const rgba=(color:string)=>{ctx.clearRect(0,0,1,1);ctx.fillStyle=color;ctx.fillRect(0,0,1,1);return [...ctx.getImageData(0,0,1,1).data];};
@@ -75,7 +75,7 @@ for(const scheme of ["light","dark"] as const){
         while(parent){const color=rgba(getComputedStyle(parent).backgroundColor);if(color[3]===255){surface=color;break;}parent=parent.parentElement;}
         const bg=blend(background,surface);const fg=blend(rgba(style.color),[...bg,255]);
         const first=luminance(fg),second=luminance(bg);
-        return {name:element.getAttribute('data-testid'),color:style.color,background:style.backgroundColor,ratio:(Math.max(first,second)+0.05)/(Math.min(first,second)+0.05)};
+        return {name:element.getAttribute('data-testid') ?? element.textContent,color:style.color,background:style.backgroundColor,ratio:(Math.max(first,second)+0.05)/(Math.min(first,second)+0.05)};
       });
     });
     const samples=await measure();
