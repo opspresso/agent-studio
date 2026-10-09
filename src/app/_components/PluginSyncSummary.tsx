@@ -12,22 +12,23 @@ import type {
 } from "@/domain/plugin/sync";
 import { BADGE } from "@/app/_components/badgeColors";
 import { reportError } from "@/app/_lib/reportError";
+import type { MessageKey } from "@/app/_i18n/messages/en";
 import { useT } from "@/app/_i18n/provider";
 
 /** What a skip means, in words an operator can act on. */
-const SKIP_REASONS: Record<SyncSkip["reason"], string> = {
-  "bad-name": "name is not a slug (lowercase letters, digits, hyphens)",
-  "invalid-url": "url refused",
-  "managed-url": "managed entry — its address comes from the provisioner, not the repo",
-  conflict: "raced a concurrent change; the next sync converges",
-  attachment: "an attachment file was not carried",
-  "invalid-manifest": "the manifest could not be used",
-  "invalid-skill": "SKILL.md does not conform to the Agent Skills spec",
-  "unsupported-transport": "a transport this deployment never runs",
-  "headers-dropped": "synced without its declared headers — credentials are set in the console",
-  "duplicate-name": "more than one plugin claims this name",
-  "credentials-reset": "its address moved, so stored credentials were dropped — re-enter them",
-  "write-failed": "one write failed; the rest of the sync continued",
+const SKIP_REASONS: Record<SyncSkip["reason"], MessageKey> = {
+  "bad-name": "sync.skip.bad-name",
+  "invalid-url": "sync.skip.invalid-url",
+  "managed-url": "sync.skip.managed-url",
+  conflict: "sync.skip.conflict",
+  attachment: "sync.skip.attachment",
+  "invalid-manifest": "sync.skip.invalid-manifest",
+  "invalid-skill": "sync.skip.invalid-skill",
+  "unsupported-transport": "sync.skip.unsupported-transport",
+  "headers-dropped": "sync.skip.headers-dropped",
+  "duplicate-name": "sync.skip.duplicate-name",
+  "credentials-reset": "sync.skip.credentials-reset",
+  "write-failed": "sync.skip.write-failed",
 };
 
 /** The skips that mean an operator has something to do, not just to know. */
@@ -44,9 +45,10 @@ function toggle(list: string[], name: string): string[] {
 }
 
 function SkipLine({ skip }: { skip: SyncSkip }) {
+  const t = useT();
   return (
     <Text fz="xs" c={ATTENTION_REASONS.has(skip.reason) ? "orange" : undefined}>
-      {skip.name} — {SKIP_REASONS[skip.reason]}
+      {skip.name} — {t(SKIP_REASONS[skip.reason])}
       {skip.detail ? `: ${skip.detail}` : ""}
     </Text>
   );
@@ -77,7 +79,7 @@ export function PluginSyncSummary({
   const [removePlugins, setRemovePlugins] = useState<string[]>([]);
   const [applyError, setApplyError] = useState<string | null>(null);
 
-  const totals = { created: 0, overwritten: 0, unchanged: 0, removed: 0, skipped: result.skipped.length };
+  const totals = { created: 0, overwritten: 0, unchanged: 0, removed: result.removedPlugins.length, skipped: result.skipped.length };
   for (const section of result.plugins) {
     for (const report of [section.skills, section.mcpServers]) {
       totals.created += report.created.length;
@@ -137,24 +139,24 @@ export function PluginSyncSummary({
         {report.created.length > 0 && (
           <Text fz="xs">
             <Badge component="span" size="xs" color={BADGE.on} mr={6}>
-              created
+              {t("sync.created")}
             </Badge>
             {report.created.join(", ")}
           </Text>
         )}
         {report.overwritten.map((entry: SyncWrite) => (
           <Text key={`ow-${entry.name}`} fz="xs">
-            <Badge component="span" size="xs" color="blue" mr={6}>
-              updated
+            <Badge component="span" size="xs" color={BADGE.owned} mr={6}>
+              {t("sync.updated")}
             </Badge>
             {entry.name} — {entry.fields.join(", ")}
-            {entry.fields.includes("source") ? " (adopted)" : ""}
+            {entry.fields.includes("source") ? ` (${t("sync.adopted")})` : ""}
           </Text>
         ))}
         {report.removed.length > 0 && (
           <Text fz="xs">
             <Badge component="span" size="xs" color={BADGE.broken} mr={6}>
-              deleted
+              {t("sync.deleted")}
             </Badge>
             {report.removed.join(", ")}
           </Text>
@@ -162,8 +164,7 @@ export function PluginSyncSummary({
         {report.orphaned.length > 0 && (
           <>
             <Text fz="xs" c="dimmed">
-              These {label} came from this plugin and are no longer in it — ticked entries are
-              deleted on Apply. An Agent still binding one keeps a dangling name.
+              {t("sync.orphanedEntries", { kind: label })}
             </Text>
             {report.orphaned.map((orphan: SyncOrphan) => (
               <Checkbox
@@ -176,8 +177,8 @@ export function PluginSyncSummary({
                   orphan.boundTo === null
                     ? `${orphan.name} — ${t("plugins.bindingsUnavailable")}`
                     : orphan.boundTo.length > 0
-                    ? `${orphan.name} — bound by ${orphan.boundTo.slice(0, 5).join(", ")}${
-                        orphan.boundTo.length > 5 ? ` +${orphan.boundTo.length - 5} more` : ""
+                    ? `${orphan.name} — ${t("sync.boundBy", { agents: orphan.boundTo.slice(0, 5).join(", ") })}${
+                        orphan.boundTo.length > 5 ? ` ${t("sync.more", { count: orphan.boundTo.length - 5 })}` : ""
                       }`
                     : orphan.name
                 }
@@ -196,11 +197,11 @@ export function PluginSyncSummary({
     <Alert color={attention ? "yellow" : "teal"} variant="light">
       <Stack gap="xs">
         <Text fz="sm">
-          Imported {totals.created}
-          {totals.overwritten > 0 ? ` · updated ${totals.overwritten}` : ""}
-          {totals.removed > 0 ? ` · deleted ${totals.removed}` : ""}
-          {` · unchanged ${totals.unchanged}`}
-          {totals.skipped > 0 ? ` · skipped ${totals.skipped}` : ""}
+          {t("sync.importedCount", { count: totals.created })}
+          {totals.overwritten > 0 ? ` · ${t("sync.updatedCount", { count: totals.overwritten })}` : ""}
+          {totals.removed > 0 ? ` · ${t("sync.deletedCount", { count: totals.removed })}` : ""}
+          {` · ${t("sync.unchangedCount", { count: totals.unchanged })}`}
+          {totals.skipped > 0 ? ` · ${t("sync.skippedCount", { count: totals.skipped })}` : ""}
         </Text>
 
         {result.skipped.map((skip) => (
@@ -234,8 +235,7 @@ export function PluginSyncSummary({
           <Stack gap={4}>
             <Divider label={t("nav.plugins")} labelPosition="left" />
             <Text fz="xs" c="dimmed">
-              These plugins are no longer in the repository — ticking one removes only its row;
-              its components stay and are offered individually above.
+              {t("sync.orphanedPlugins")}
             </Text>
             {result.orphanedPlugins.map((name) => (
               <Checkbox
@@ -252,8 +252,8 @@ export function PluginSyncSummary({
 
         {chosen > 0 && (
           <Group>
-            <Button size="xs" loading={busy} onClick={() => void apply()}>
-              Delete {chosen} entr{chosen === 1 ? "y" : "ies"}
+            <Button size="xs" color={BADGE.broken} loading={busy} onClick={() => void apply()}>
+              {t(chosen === 1 ? "sync.deleteOne" : "sync.deleteMany", { count: chosen })}
             </Button>
             {applyError ? (
               <Text size="sm" c="red">

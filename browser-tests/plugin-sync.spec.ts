@@ -29,6 +29,23 @@ test.beforeAll(async () => {
 });
 test.afterAll(async () => { if (server) await new Promise<void>(resolve => server.close(() => resolve())); });
 
+test("Korean deletion names the selected count and sends only reviewed entries", async ({ page }) => {
+  const selections: unknown[] = [];
+  await page.route("**/api/plugins", route => route.fulfill({ json: [] }));
+  await page.route("**/api/plugins/sync", route => {
+    if (route.request().method() === "GET") return route.fulfill({ json: { configured: true, repo: "fixture/plugins", branch: "main" } });
+    selections.push(route.request().postDataJSON());
+    return route.fulfill({ json: report(selections.length === 1) });
+  });
+  await page.goto(`${base}?locale=ko`);
+  await page.getByRole("button", { name: "GitHub에서 동기화", exact: true }).click();
+  await page.getByRole("checkbox", { name: "retired-plugin", exact: true }).check();
+  await page.getByRole("button", { name: "1개 항목 삭제", exact: true }).press("Enter");
+  await expect.poll(() => selections.length).toBe(2);
+  expect(selections[1]).toEqual({ remove: { plugins: ["retired-plugin"] } });
+  await expect(page.getByText(/가져옴 0 · 삭제 1 · 변경 없음 0/)).toBeVisible();
+});
+
 for (const source of ["github", "archive"] as const) {
   test(`serializes ${source} deletion with source changes and releases controls after completion`, async ({ page }) => {
     const errors: string[] = [];
