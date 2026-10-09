@@ -133,9 +133,13 @@ test("paginates user rows while keeping totals and zero-usage accounts complete"
     items: [{ ...rows[0], userId: "u30" }] } }));
   await page.goto(`${base}?admin`);
   await expect(page.getByRole("row")).toHaveCount(26);
+  await expect(page.getByRole("button", { name: "Previous page", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Next page", exact: true })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Member 30 (m30@test.example)" })).toBeVisible();
-  await page.getByRole("button", { name: "2", exact: true }).click();
+  await page.getByRole("button", { name: "Page 2", exact: true }).click();
   await expect(page.getByRole("row")).toHaveCount(7);
+  await expect(page.getByRole("button", { name: "Page 2", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("button", { name: "Next page", exact: true })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Member 29 (m29@test.example)" })).toBeVisible();
 });
 
