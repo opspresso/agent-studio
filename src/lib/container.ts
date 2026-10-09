@@ -1,4 +1,5 @@
 import { releaseRunSlot } from "@/application/run/concurrencyGuard";
+import { performanceSample } from "@/domain/usage/performance";
 import { createEvaluationUseCases } from "@/application/evaluation/evaluationUseCases";
 import { createWorkspaceModelGateway } from "@/application/workspace/modelGateway";
 import { workspaceModelCalls } from "@/infrastructure/db/repositories/workspaceModelCalls";
@@ -1208,6 +1209,7 @@ export function getAudioRuntime() {
       await usageRepository.record({ agentName: job.agentName, date: accounting.date, model: result.model,
         calls: 1, inputTokens: result.usage?.inputTokens ?? 0, outputTokens: result.usage?.outputTokens ?? 0,
         costUsd: accounting.costUsd, idempotencyKey: accounting.eventId,
+        ...performanceSample(result.usage?.outputTokens ?? 0, result.usage?.outputTokens === undefined ? undefined : result.modelDurationMs),
         actor: actorKey(job.actor), userId: job.user.userId });
     },
   });

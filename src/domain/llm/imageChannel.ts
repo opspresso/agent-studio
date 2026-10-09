@@ -49,6 +49,8 @@ export interface ImageGenerationResult {
   b64: string;
   mimeType: string;
   usage: ImageGenerationUsage;
+  /** Provider request/read time, before image storage or delivery. */
+  modelDurationMs?: number;
 }
 
 export interface ImageChannel {

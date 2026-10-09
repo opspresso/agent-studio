@@ -27,6 +27,7 @@ import { imageDataUrl } from "@/domain/llm/types";
 import { savedFileName } from "@/domain/artifact/types";
 import { readBodyText } from "@/shared/httpBody";
 import { fetchProvider } from "./providerFetch";
+import { createRequestTimer } from "@/shared/requestTimer";
 import { log } from "@/shared/logger";
 import type {
   ImageBytes,
@@ -177,7 +178,8 @@ async function jsonImageRequest(
   parse: (payload: unknown, what: string) => ImageGenerationResult,
   signal?: AbortSignal,
 ): Promise<ImageGenerationResult> {
-  const response = await fetchProvider(`${target.baseUrl.replace(/\/$/, "")}/${path}`, {
+  const timer = createRequestTimer();
+  const response = await timer.measure(() => fetchProvider(`${target.baseUrl.replace(/\/$/, "")}/${path}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -185,8 +187,8 @@ async function jsonImageRequest(
     },
     body: JSON.stringify(body),
     ...(signal ? { signal } : {}),
-  });
-  const responseText = await readBodyText(response, MAX_IMAGE_API_RESPONSE_BYTES);
+  }));
+  const responseText = await timer.measure(() => readBodyText(response, MAX_IMAGE_API_RESPONSE_BYTES));
   if (!response.ok) {
     // The SDK's error text is what every other provider's failure reads like in
     // a tool result, so match its shape: status, then whatever the body says.
@@ -195,7 +197,8 @@ async function jsonImageRequest(
     );
   }
   try {
-    return parse(JSON.parse(responseText) as unknown, what);
+    return { ...parse(JSON.parse(responseText) as unknown, what),
+      ...(timer.durationMs > 0 ? { modelDurationMs: timer.durationMs } : {}) };
   } catch (error) {
     if (error instanceof SyntaxError) {
       throw new Error(`Image ${what} returned invalid JSON`);
@@ -371,14 +374,15 @@ export function createImageChannel(resolveTarget: TargetResolver): ImageChannel 
           params.signal,
         );
       }
-      const response = (await getClient(target).images.generate({
+      const timer = createRequestTimer();
+      const response = (await timer.measure(() => getClient(target).images.generate({
         model: target.model,
         prompt: params.prompt,
         ...(params.size ? { size: params.size as never } : {}),
         ...(params.quality ? { quality: params.quality as never } : {}),
-      }, { signal: params.signal })) as unknown as ImagesApiResponse;
+      }, { signal: params.signal }))) as unknown as ImagesApiResponse;
 
-      return toImageResult(response, "generation");
+      return { ...toImageResult(response, "generation"), ...(timer.durationMs > 0 ? { modelDurationMs: timer.durationMs } : {}) };
     },
 
     async editImage(params: ImageEditParams): Promise<ImageGenerationResult> {
@@ -442,16 +446,17 @@ export function createImageChannel(resolveTarget: TargetResolver): ImageChannel 
       // One source image goes up as a single file: the older edit models reject an
       // array, and only the composing models accept several.
       const [first] = files;
-      const response = (await getClient(target).images.edit({
+      const timer = createRequestTimer();
+      const response = (await timer.measure(() => getClient(target).images.edit({
         model: target.model,
         prompt: params.prompt,
         image: first && files.length === 1 ? first : files,
         ...(mask ? { mask } : {}),
         ...(params.size ? { size: params.size as never } : {}),
         ...(params.quality ? { quality: params.quality as never } : {}),
-      }, { signal: params.signal })) as unknown as ImagesApiResponse;
+      }, { signal: params.signal }))) as unknown as ImagesApiResponse;
 
-      return toImageResult(response, "edit");
+      return { ...toImageResult(response, "edit"), ...(timer.durationMs > 0 ? { modelDurationMs: timer.durationMs } : {}) };
     },
   };
 }

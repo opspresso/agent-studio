@@ -6,6 +6,9 @@ function result(overrides: Partial<TranscriptionResult> = {}): TranscriptionResu
 }
 
 describe("transcription result contract", () => {
+  it.each([0, -1, NaN, Infinity])("rejects an invalid measured model duration: %s", modelDurationMs => {
+    expect(() => validateTranscription(result({ modelDurationMs }))).toThrow("duration is invalid");
+  });
   it("preserves text-only output without fabricated speakers, timing or usage", () => {
     expect(validateTranscription(result())).toEqual(result());
     expect(validateTranscription(result()).usage).toBeUndefined();

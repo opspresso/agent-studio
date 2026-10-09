@@ -27,6 +27,8 @@ export interface TranscriptionResult {
   model: string;
   /** Missing usage remains unknown rather than becoming zero. */
   usage?: TranscriptionUsage;
+  /** Active provider request/read time, retained in the durable segment result. */
+  modelDurationMs?: number;
   warnings: string[];
   /** Server-assigned accounting identity, preserved with a durable segment checkpoint. */
   accounting?: { eventId: string; date: string; costUsd?: number };
@@ -84,6 +86,9 @@ export function validateTranscription(result: TranscriptionResult): Transcriptio
     if (seconds !== undefined && (!Number.isFinite(seconds) || seconds < 0)) {
       invalid("Transcription audio usage is invalid");
     }
+  }
+  if (result.modelDurationMs !== undefined && (!Number.isFinite(result.modelDurationMs) || result.modelDurationMs <= 0)) {
+    invalid("Transcription model duration is invalid");
   }
   return result;
 }

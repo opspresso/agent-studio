@@ -116,7 +116,7 @@ async function recordImageResult(
   const usage = { model, ...toImageUsageRecord(model, {
     ...result.usage,
     ...(sourceImages === undefined ? {} : { sourceImages }),
-  }) };
+  }), ...(result.usage.imageOutputTokens > 0 && result.modelDurationMs !== undefined ? { modelDurationMs: result.modelDurationMs } : {}) };
   await recordUsage({ agentName, ...usage });
   return { b64: result.b64, mimeType: result.mimeType, model, usage };
 }
