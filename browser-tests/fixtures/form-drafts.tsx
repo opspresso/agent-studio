@@ -8,6 +8,7 @@ import { ModelRoutingSection } from "../../src/app/models/ModelRoutingSection";
 import Skills from "../../src/app/skills/page";
 import Skill from "../../src/app/skills/[name]/page";
 import Mcp from "../../src/app/tools/[name]/page";
+import Plugin from "../../src/app/plugins/[name]/page";
 
 const params = new URLSearchParams(location.search);
 const page = params.get("page");
@@ -16,7 +17,7 @@ createRoot(document.getElementById("root")!).render(
     <ViewerProvider viewer={{ email: "owner@example.test", tier: "admin", isAdmin: true }}>
       <style>{":root { --font-sans: system-ui; --font-mono: monospace; }"}</style>
       <main style={{ padding: 24 }}>{page === "routing" ? <ModelRoutingSection models={[]} />
-        : page === "skills" ? <Skills /> : page === "skill" ? <Skill /> : page === "mcp" ? <Mcp /> : <AgentSettings />}</main>
+        : page === "skills" ? <Skills /> : page === "skill" ? <Skill /> : page === "mcp" ? <Mcp /> : page === "plugin" ? <Plugin /> : <AgentSettings />}</main>
     </ViewerProvider>
   </ConsoleThemeProvider></I18nProvider>,
 );

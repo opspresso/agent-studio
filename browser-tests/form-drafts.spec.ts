@@ -49,6 +49,40 @@ for (const locale of ["en", "ko"] as const) {
     await expect(open).toBeFocused();
   });
 }
+
+for (const [view, endpoint] of [["skill", "skills"], ["mcp", "mcps"], ["plugin", "plugins"]]) {
+  test(`${view} detail keeps its heading and back link during loading and failure`, async ({ page }) => {
+    const pending = Promise.withResolvers<void>();
+    await page.route(`**/api/${endpoint}/fixture`, async route => {
+      await pending.promise;
+      await route.fulfill({ status: 503, json: { error: "Detail unavailable" } });
+    });
+    try {
+      await page.goto(`${base}?page=${view}`);
+      await expect(page.getByRole("heading", { level: 1, name: "fixture", exact: true })).toBeVisible();
+      await expect(page.getByRole("link", { name: /Back to/ })).toHaveAttribute("href", `/${endpoint === "mcps" ? "tools" : endpoint}`);
+      await expect(page.getByRole("status")).toContainText("Loading");
+      pending.resolve();
+      await expect(page.getByRole("alert")).toContainText("Detail unavailable");
+      await expect(page.getByRole("heading", { level: 1, name: "fixture", exact: true })).toBeVisible();
+    } finally { pending.resolve(); }
+  });
+}
+
+for (const [view, endpoint] of [["skill", "skills"], ["mcp", "mcps"]]) {
+  test(`${view} exposes its Plugin source as a named navigation link`, async ({ page }) => {
+    await page.route(`**/api/${endpoint}/fixture`, route => route.fulfill({ json: {
+      name: "fixture", description: "Description", content: "Content", files: [], headers: {},
+      url: "https://mcp.example.test", source: "github:fixture/repo#origin",
+    } }));
+    await page.goto(`${base}?page=${view}`);
+    const link = page.getByRole("link", { name: "Plugin: origin", exact: true });
+    await expect(link).toHaveAttribute("href", "/plugins/origin");
+    await link.focus();
+    await expect(link).toBeFocused();
+    expect((await link.boundingBox())!.height).toBeGreaterThanOrEqual(24);
+  });
+}
 test.beforeEach(async ({ page }) => {
   page.on("pageerror", error => { throw error; });
   await page.route("**/api/**", route => {
@@ -56,6 +90,7 @@ test.beforeEach(async ({ page }) => {
     if (path === "/api/agents/fixture") return route.fulfill({ json: agent });
     if (path === "/api/models/routing") return route.fulfill({ json: { policy: DEFAULT_CALL_ROUTING_POLICY } });
     if (path === "/api/skills") return route.fulfill({ json: [] });
+    if (path === "/api/mcps") return route.fulfill({ json: [] });
     if (path === "/api/skills/fixture") return route.fulfill({ json: { name: "fixture", description: "Original", content: "Original instructions", files: [] } });
     if (path === "/api/mcps/fixture") return route.fulfill({ json: { name: "fixture", url: "https://mcp.example.test", description: "Original", content: "Original notes", headers: {} } });
     return route.abort();

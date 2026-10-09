@@ -1393,6 +1393,8 @@ export const ko: Messages = {
 
   "registry.nameLabel": "이름",
   "registry.nameHint": "소문자·숫자·하이픈만 쓸 수 있습니다.",
+  "registry.pluginLink": "Plugin: {name}",
+  "registry.itemUnavailable": "이 항목을 불러오지 못했습니다.",
   "registry.description": "설명",
   "registry.discoveryPromptBadge": "검색 + 모델 프롬프트",
   "registry.content": "본문 (마크다운)",

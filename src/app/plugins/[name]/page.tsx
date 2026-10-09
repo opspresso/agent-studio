@@ -16,7 +16,7 @@ import {
 } from "@mantine/core";
 import { BackLink } from "@/app/_components/BackLink";
 import { CardList } from "@/app/_components/CardList";
-import { LoadingText } from "@/app/_components/PageState";
+import { DetailPageState } from "@/app/_components/PageState";
 import { MCP_RUNTIME_COLOR } from "@/app/_components/badgeColors";
 import { listSkills, type SkillSummary } from "@/app/skills/api";
 import { listMcps, type McpServer } from "@/app/tools/api";
@@ -25,10 +25,13 @@ import { useLocale, useT } from "@/app/_i18n/provider";
 import { formatDateTime } from "@/shared/date";
 
 export default function PluginDetailPage() {
+  const { name } = useParams<{ name: string }>();
+  return <PluginDetail key={name} name={name} />;
+}
+
+function PluginDetail({ name }: { name: string }) {
   const t = useT();
   const locale = useLocale();
-  const params = useParams<{ name: string }>();
-  const name = params.name;
 
   const [plugin, setPlugin] = useState<PluginDetail | null>(null);
   const [skills, setSkills] = useState<Map<string, SkillSummary>>(new Map());
@@ -68,19 +71,8 @@ export default function PluginDetailPage() {
     };
   }, [name]);
 
-  if (loading) {
-    return <LoadingText />;
-  }
-
-  if (error || !plugin) {
-    return (
-      <Stack gap="md">
-        <BackLink href="/plugins" label={t("nav.plugins")} />
-        <Alert color="red" variant="light">
-          {error ?? "Plugin not found"}
-        </Alert>
-      </Stack>
-    );
+  if (loading || error || !plugin) {
+    return <DetailPageState name={name} backHref="/plugins" backLabel={t("nav.plugins")} Icon={IconPackage} loading={loading} error={error} />;
   }
 
   const repoUrl = plugin.repositoryUrl;
@@ -216,7 +208,7 @@ function ComponentSection({
 /** A declared component absent from the current registry; its cause requires a sync report. */
 function MissingCard({ name }: { name: string }) {
   return (
-    <Card h="100%" opacity={0.6}>
+    <Card h="100%">
       <Text fw={500} c="dimmed">
         {name}
       </Text>

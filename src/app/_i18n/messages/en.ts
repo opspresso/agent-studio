@@ -1448,6 +1448,8 @@ export const en = {
   // Wording shared by the skill, tool and plugin registries.
   "registry.nameLabel": "Name",
   "registry.nameHint": "Lowercase letters, digits, and hyphens only.",
+  "registry.pluginLink": "Plugin: {name}",
+  "registry.itemUnavailable": "This item could not be loaded.",
   "registry.description": "Description",
   "registry.discoveryPromptBadge": "Discovery + model prompt",
   "registry.content": "Content (markdown)",
