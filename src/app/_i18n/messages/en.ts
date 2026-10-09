@@ -487,6 +487,8 @@ export const en = {
   "auth.signInWithPassword": "Sign in with password",
   "auth.email": "Email",
   "auth.password": "Password",
+  "auth.showPassword": "Show password",
+  "auth.hidePassword": "Hide password",
   "auth.passwordFailed": "Email or password is incorrect.",
   "auth.signInFailed": "Sign-in did not start. Try again.",
   "auth.or": "or",

@@ -7,7 +7,13 @@ let base: string;
 test.beforeAll(async () => {
   const bundle = await build({ entryPoints: ["browser-tests/fixtures/ui-primitives.tsx"], bundle: true, write: false,
     outdir: "/tmp/agent-studio-ui-primitives", platform: "browser", format: "iife", jsx: "automatic",
-    define: { "process.env.NODE_ENV": '"production"', "process.env": "{}" } });
+    define: { "process.env.NODE_ENV": '"production"', "process.env": "{}" },
+    plugins: [{ name: "auth-client", setup(build) {
+      build.onResolve({ filter: /^@\/lib\/auth-client$/ }, () => ({ path: "auth", namespace: "fixture" }));
+      build.onLoad({ filter: /.*/, namespace: "fixture" }, () => ({ contents:
+        'export const authClient = { signIn: { email: async () => ({ error: { message: "Synthetic sign-in error" } }) } }; export const signIn = {}; export const signInWithOidc = () => { throw new Error("Unexpected provider action"); };', loader: "js" }));
+    } }],
+  });
   server = createServer((request,response) => {
     const asset=bundle.outputFiles.find(file => request.url===`/${file.path.split("/").at(-1)}`);
     response.setHeader("Content-Type", asset ? asset.path.endsWith(".css") ? "text/css" : "text/javascript" : "text/html");
@@ -18,6 +24,21 @@ test.beforeAll(async () => {
 });
 test.afterAll(async()=>{if(server)await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));});
 for (const locale of ["en", "ko"]) {
+  test(`password visibility is named and keyboard operable in ${locale}`, async ({ page }) => {
+    await page.goto(`${base}?page=sign-in&locale=${locale}`);
+    const password = page.locator('input[autocomplete="current-password"]');
+    await expect(password).toHaveAccessibleName(locale === "ko" ? /^비밀번호/ : /^Password/);
+    await password.fill("fixture-only");
+    await expect(password).toHaveAttribute("type", "password");
+    await password.press("Tab");
+    const toggle = page.getByRole("button", { name: locale === "ko" ? "비밀번호 표시" : "Show password", exact: true });
+    await expect(toggle).toBeFocused();
+    await page.keyboard.press("Space");
+    await expect(password).toHaveAttribute("type", "text");
+    await page.getByRole("button", { name: locale === "ko" ? "비밀번호 숨기기" : "Hide password", exact: true }).press("Enter");
+    await expect(password).toHaveAttribute("type", "password");
+    await expect(password).toHaveValue("fixture-only");
+  });
   test(`selection controls support named keyboard removal in ${locale}`, async ({ page }) => {
     await page.goto(`${base}?page=pickers&locale=${locale}`);
     const remove = page.getByRole("button", { name: locale === "ko" ? "first 제거" : "Remove first", exact: true });

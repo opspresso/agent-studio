@@ -34,6 +34,7 @@ export function SignInButton({
   const [pending, setPending] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const t = useT();
   const size = compact ? "xs" : "md";
@@ -158,6 +159,10 @@ export function SignInButton({
             size={size}
             label={t("auth.password")}
             value={password}
+            visible={passwordVisible}
+            onVisibilityChange={setPasswordVisible}
+            visibilityToggleFocusable
+            visibilityToggleButtonProps={{ "aria-label": t(passwordVisible ? "auth.hidePassword" : "auth.showPassword") }}
             onChange={(event) => setPassword(event.currentTarget.value)}
             autoComplete="current-password"
             error={error}

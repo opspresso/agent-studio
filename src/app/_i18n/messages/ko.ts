@@ -479,6 +479,8 @@ export const ko: Messages = {
   "auth.signInWithPassword": "비밀번호로 로그인",
   "auth.email": "이메일",
   "auth.password": "비밀번호",
+  "auth.showPassword": "비밀번호 표시",
+  "auth.hidePassword": "비밀번호 숨기기",
   "auth.passwordFailed": "이메일 또는 비밀번호가 올바르지 않습니다.",
   "auth.signInFailed": "로그인을 시작하지 못했습니다. 다시 시도하세요.",
   "auth.or": "또는",
