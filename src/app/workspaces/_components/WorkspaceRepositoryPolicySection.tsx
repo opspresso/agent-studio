@@ -13,6 +13,11 @@ import Link from "next/link";
 import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
 import { WORKSPACE_REPOSITORY_MODES, workspaceRepositoryMode, type WorkspaceRepositoryMode } from "@/domain/workspace/policy";
 
+export function WorkspaceToolsHeading() {
+  const t = useT();
+  return <SectionHeading title={t("workspace.toolsTitle")} description={t("workspace.policy.description")} />;
+}
+
 export function WorkspaceRepositoryPolicySection({ agentName }: { agentName: string }) {
   const t = useT();
   const viewer = useViewer();
@@ -59,7 +64,7 @@ export function WorkspaceRepositoryPolicySection({ agentName }: { agentName: str
 
   return <Card component="section" id="workspace-repositories" style={{ scrollMarginTop: 80 }}>
     <Stack gap="md">
-      <SectionHeading title={t("workspace.toolsTitle")} description={t("workspace.policy.description")} />
+      <WorkspaceToolsHeading />
       {error && <Alert color="red">{error}</Alert>}
       {!view && !error && <LoadingText />}
       {view && !view.backendReady && <Alert>{t("workspace.backendUnavailable")}</Alert>}

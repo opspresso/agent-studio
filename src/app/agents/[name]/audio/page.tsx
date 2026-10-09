@@ -24,12 +24,16 @@ import { loadActiveAudioJobs, mergeAudioJobUpdates } from "./jobPolling";
 export default function AudioPage() {
   const { enabled, error } = useAgentAudio();
   const t = useT();
-  const mayRun = canRunAgents(useViewer());
-  if (!mayRun) return <Alert>{t("common.memberExecutionRequired")}</Alert>;
-  if (error) return <Alert color="red">{error}</Alert>;
-  if (enabled === undefined) return <LoadingText />;
-  if (!enabled) return <Alert color="blue">{t("audio.toolsRequired")}</Alert>;
-  return <AudioAgentPage />;
+  const viewer = useViewer();
+  return <Stack gap="lg">
+    <SectionHeading title={t("audio.title")} description={t("audio.pageHint")} />
+    {viewer === null ? <LoadingText />
+      : !canRunAgents(viewer) ? <Alert>{t("common.memberExecutionRequired")}</Alert>
+      : error ? <Alert color="red">{error}</Alert>
+      : enabled === undefined ? <LoadingText />
+      : !enabled ? <Alert color="blue">{t("audio.toolsRequired")}</Alert>
+      : <AudioAgentPage />}
+  </Stack>;
 }
 
 function AudioAgentPage() {
@@ -164,7 +168,6 @@ function AudioWorkspace({ name }: { name: string }) {
 
   return <Stack gap="lg">
     {confirmModal}
-    <SectionHeading title={t("audio.title")} description={t("audio.pageHint")} />
     {error && <Alert color="red">{error}</Alert>}
     {optionsLoaded && !options.models.length && <Alert>{t("audio.noModels")}</Alert>}
     <Paper withBorder p="lg"><Stack>

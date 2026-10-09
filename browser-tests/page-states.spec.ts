@@ -2,6 +2,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { build } from "esbuild";
 import { test, expect } from "@playwright/test";
+import { translator } from "../src/app/_i18n/translate";
 
 let server: Server;
 let base: string;
@@ -9,7 +10,12 @@ test.use({ viewport: { width: 390, height: 844 } });
 test.beforeAll(async () => {
   const bundle = await build({ entryPoints: ["browser-tests/fixtures/page-states.tsx"], bundle: true, write: false,
     outdir: "/tmp/agent-studio-page-states", platform: "browser", format: "iife", jsx: "automatic",
-    define: { "process.env.NODE_ENV": '"production"', "process.env": "{}" } });
+    define: { "process.env.NODE_ENV": '"production"', "process.env": "{}" },
+    plugins: [{ name: "navigation", setup(build) {
+      build.onResolve({ filter: /^next\/navigation$/ }, args => ({ path: args.path, namespace: "navigation" }));
+      build.onLoad({ filter: /.*/, namespace: "navigation" }, () => ({ contents: 'export const useParams = () => ({ name: "fixture" });', loader: "js" }));
+    } }],
+  });
   server = createServer((request, response) => {
     const path = new URL(request.url ?? "/", "http://localhost").pathname;
     const file = bundle.outputFiles.find(item => path === `/${item.path.split("/").at(-1)}`);
@@ -20,6 +26,20 @@ test.beforeAll(async () => {
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
 test.afterAll(async () => { if (server) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); });
+
+for (const [route, title] of [["audio", "audio.title"], ["workspace", "workspace.toolsTitle"]] as const) {
+  for (const state of ["loading", "disabled", "error"]) {
+    test(`${route} keeps its heading while ${state} without loading protected data`, async ({ page }) => {
+      const requests: string[] = [];
+      await page.route("**/api/**", request => { requests.push(request.request().url()); return request.abort(); });
+      await page.goto(`${base}?page=${route}&state=${state}`);
+      await expect(page.getByRole("heading", { level: 2, name: translator("en")(title), exact: true })).toBeVisible();
+      if (state === "loading") await expect(page.getByRole("status")).toContainText("Loading");
+      else await expect(page.getByRole("alert")).toBeVisible();
+      expect(requests).toEqual([]);
+    });
+  }
+}
 
 for (const [routeName, title, endpoint] of [["profile", "Profile", "me/profile"], ["members", "Members", "members"], ["audits", "Audits", "audits"]] as const) {
   test(`${title} keeps its header through loading and failed reads`, async ({ page }) => {
