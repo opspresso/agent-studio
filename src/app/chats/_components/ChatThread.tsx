@@ -393,9 +393,21 @@ export function ChatThread({ chatId }: { chatId: string }) {
     return true;
   }
 
+  const header = (
+        <Box mb="sm" className={classes.column}>
+          <PageHeader compact title={chat?.title ?? t("chat.kind")} Icon={IconMessageCircle} details={chat &&
+            <Group gap="xs">
+              <Badge variant="outline" color="gray">{t("chat.kind")}</Badge>
+              {chat.agentName && <Badge color={BADGE.owned} radius="xl">{chat.agentName}</Badge>}
+            </Group>
+          } />
+        </Box>
+  );
+
   if (status === "not-found") {
     return (
-      <Flex h="100%" align="center" justify="center">
+      <Flex h="100%" align="center" justify="center" direction="column" gap="md">
+        {header}
         <Text fz="sm" c="dimmed">
           {t("chat.notFound")}
         </Text>
@@ -420,16 +432,7 @@ export function ChatThread({ chatId }: { chatId: string }) {
 
   return (
     <Flex direction="column" h="100%">
-      {chat && (
-        <Box mb="sm" className={classes.column}>
-          <PageHeader compact title={chat.title} Icon={IconMessageCircle} details={
-            <Group gap="xs">
-              <Badge variant="outline" color="gray">{t("chat.kind")}</Badge>
-              {chat.agentName && <Badge color={BADGE.owned} radius="xl">{chat.agentName}</Badge>}
-            </Group>
-          } />
-        </Box>
-      )}
+      {header}
       <Box style={{ position: "relative", flex: 1, minHeight: 0 }}>
         <ScrollArea viewportRef={scrollRef} h="100%" pb="md">
           {/* The element the stick-to-bottom ResizeObserver watches. It has to be

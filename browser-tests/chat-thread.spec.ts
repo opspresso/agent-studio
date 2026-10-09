@@ -96,6 +96,7 @@ for (const [failure, fail] of Object.entries(failures)) {
     });
     await page.goto(base);
     await expect(page.getByRole("alert")).toContainText(LOAD_ERROR);
+    await expect(page.getByRole("heading", { name: "Chat", level: 1, exact: true })).toBeVisible();
     await expect(page.getByText("Loading…", { exact: true })).toHaveCount(0);
     const draft = page.getByRole("textbox", { name: "Message", exact: true });
     await draft.fill("Keep this draft");
@@ -128,6 +129,7 @@ test("blocks sending until the initial read determines the conversation state", 
   try {
     await page.goto(base);
     await draft.fill("Wait for history");
+    await expect(page.getByRole("heading", { name: "Chat", level: 1, exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
     await draft.press("Enter");
     await expect(draft).toHaveValue("Wait for history");
@@ -143,6 +145,7 @@ test("retains not-found behavior for an initial 404", async ({ page }) => {
   await page.route("**/api/chats/chat-1", route => route.fulfill({ status: 404, json: { error: "Not found" } }));
   await page.goto(base);
   await expect(page.getByText("Chat not found.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Chat", level: 1, exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Try again", exact: true })).toHaveCount(0);
 });
