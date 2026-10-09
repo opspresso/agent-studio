@@ -9,6 +9,7 @@ import { CopyButton } from "./CopyButton";
 import { SecretInput } from "./SecretInput";
 import { monoInput } from "./monoInput";
 import { useConfirm } from "./useConfirm";
+import { stateColor } from "./badgeColors";
 
 /** App-issued credentials share presentation and lifecycle controls; adapters retain authorization and storage. */
 export function SecretControl({ label, configured, masked, description, details, initialValue, disabled, generateDisabled, showHeading = true,
@@ -68,7 +69,7 @@ export function SecretControl({ label, configured, masked, description, details,
   }
   return <Stack gap="sm" role="group" aria-label={label}>
     {confirmModal}
-    {showHeading && <Group justify="space-between" gap="xs"><Text size="sm" fw={600}>{label}</Text><Badge color={configured ? "teal" : "gray"}>{t(configured ? "secrets.configured" : "secrets.notConfigured")}</Badge></Group>}
+    {showHeading && <Group justify="space-between" gap="xs"><Text size="sm" fw={600}>{label}</Text><Badge color={stateColor(configured)}>{t(configured ? "secrets.configured" : "secrets.notConfigured")}</Badge></Group>}
     {description && <Text size="sm" c="dimmed">{description}</Text>}
     <TextInput readOnly aria-label={label} value={raw ?? (configured ? compactSecretMask(masked || "••••••••") : "")} placeholder={t("secrets.notConfigured")} styles={monoInput} />
     {raw && <Text size="xs" c="dimmed">{t("secrets.visibleHint")}</Text>}

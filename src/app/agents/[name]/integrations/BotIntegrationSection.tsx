@@ -4,7 +4,7 @@ import { Alert, Anchor, Badge, Button, Stack, Text } from "@mantine/core";
 import { ConfigurationFields } from "@/app/_components/ConfigurationFields";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { LoadingText } from "@/app/_components/PageState";
-import { stateColor } from "@/app/_components/badgeColors";
+import { BADGE, stateColor } from "@/app/_components/badgeColors";
 import { useT } from "@/app/_i18n/provider";
 
 /** A bot keeps its named section visible while its settings load or fail. */
@@ -29,9 +29,9 @@ export function BotIntegrationSection({
 }) {
   const t = useT();
   const badge = error && !view
-    ? <Badge color="red" radius="xl">{t("integrations.unavailable")}</Badge>
+    ? <Badge color={BADGE.broken}>{t("integrations.unavailable")}</Badge>
     : view
-      ? <Badge color={stateColor(view.enabled)} radius="xl">
+      ? <Badge color={stateColor(view.enabled)}>
           {t(view.enabled ? "integrations.enabled" : view.configured ? "integrations.configuredOff" : "integrations.notConnected")}
         </Badge>
       : undefined;

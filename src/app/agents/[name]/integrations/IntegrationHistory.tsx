@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Alert, Badge, Button, Group, Stack, Text, Title } from "@mantine/core";
+import { Alert, Button, Group, Stack, Text, Title } from "@mantine/core";
+import { TraceStatusBadge } from "@/app/_components/TraceStatusBadge";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import type { MessageKey } from "@/app/_i18n/messages/en";
 import { formatDateTime } from "@/shared/date";
@@ -95,9 +96,7 @@ export function IntegrationHistory({ agentName, selected }: { agentName: string;
                 href={`/agents/${agentName}/traces/${trace.traceId}`} key={trace.traceId}>
                 <Group justify="space-between" gap="xs" wrap="nowrap">
                   <Text fz="sm" fw={600}>{formatDateTime(trace.createdAt, locale)}</Text>
-                  <Badge color={trace.status === "completed" ? "teal" : trace.status === "failed" ? "red" : "yellow"}>
-                    {trace.status}
-                  </Badge>
+                  <TraceStatusBadge status={trace.status} />
                 </Group>
                 <Text fz="xs" c="dimmed" mt={4}>{trace.durationMs} ms · {trace.traceId.slice(0, 8)}</Text>
                 {(trace.error || trace.warnings?.[0]) && <Text fz="xs" c="dimmed" mt={4} lineClamp={2}>

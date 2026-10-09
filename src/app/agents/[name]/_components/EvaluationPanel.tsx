@@ -8,9 +8,10 @@ import { useLocale, useT } from "@/app/_i18n/provider";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { JsonHighlight } from "@/app/_components/JsonHighlight";
 import { formatUsd } from "@/app/_lib/formatUsd";
+import { BADGE, stateColor } from "@/app/_components/badgeColors";
 import { evaluateAgent } from "../../lib/api";
 
-const COLORS: Record<EvaluationStatus, string> = { pass: "teal", "needs-improvement": "orange", unknown: "gray", "not-applicable": "gray" };
+const COLORS: Record<EvaluationStatus, string> = { pass: BADGE.on, "needs-improvement": BADGE.attention, unknown: BADGE.neutral, "not-applicable": BADGE.neutral };
 
 export function EvaluationPanel({ agentName, inputKey, receipt, canEvaluate, running, unsaved, ensureRun, onBusyChange }: {
   agentName: string;
@@ -86,7 +87,7 @@ export function EvaluationPanel({ agentName, inputKey, receipt, canEvaluate, run
           <Text size="sm">{t("evaluation.activity", { calls: result.report.evidence.capabilities.toolCalls, results: result.report.evidence.capabilities.toolResults })}</Text>
           {result.report.observations.map((item, index) => <Group key={index} gap="xs">
             <Text size="sm" ff="monospace">{item.name}</Text>
-            <Badge color={item.available === "offered" ? "teal" : "gray"}>{t(`evaluation.availability.${item.available}`)}</Badge>
+            <Badge color={stateColor(item.available === "offered")}>{t(`evaluation.availability.${item.available}`)}</Badge>
             <Text size="xs">{item.requests === null ? t("evaluation.requestsUnknown") : t("evaluation.requests", { count: item.requests })}</Text>
           </Group>)}
           <Text size="xs" c="dimmed">{t("evaluation.factsHint")}</Text>

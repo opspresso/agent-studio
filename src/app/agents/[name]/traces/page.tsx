@@ -1,6 +1,7 @@
 "use client";
 
 import { SectionHeading } from "@/app/_components/SectionHeading";
+import { TraceStatusBadge } from "@/app/_components/TraceStatusBadge";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { DateRangePicker } from "@/app/_components/DateRangePicker";
@@ -76,18 +77,7 @@ export default function TracesPage() {
                     </Text>
                   </div>
                   <Group gap="md">
-                    <Text
-                      fz="sm"
-                      c={
-                        trace.status === "completed"
-                          ? "teal"
-                          : trace.status === "awaiting-approval" || trace.status === "turn-limit" || trace.status === "output-limit"
-                            ? "yellow"
-                            : "red"
-                      }
-                    >
-                      {trace.status}
-                    </Text>
+                    <TraceStatusBadge status={trace.status} />
                     <Text fz="sm" c="dimmed">
                       {trace.durationMs} ms
                     </Text>

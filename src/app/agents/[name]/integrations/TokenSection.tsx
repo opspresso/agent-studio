@@ -8,6 +8,7 @@ import type { AgentCredentialPurpose } from "@/domain/auth/agentCredential";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { SecretControl } from "@/app/_components/SecretControl";
 import { LoadingText } from "@/app/_components/PageState";
+import { stateColor } from "@/app/_components/badgeColors";
 import { generateAgentToken, getAgentToken, revealAgentToken, revokeAgentToken, type AgentCredentialStatus } from "../../lib/api";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import { formatDate } from "@/shared/date";
@@ -29,7 +30,7 @@ export function TokenSection({ agentName, purpose, onSelect, selected, onChange,
     return () => { current = false; };
   }, [agentName, purpose]);
   const badge = status &&
-    <Badge color={status.configured ? "teal" : "gray"} radius="xl">
+    <Badge color={stateColor(status.configured)}>
       {t(status.configured ? "secrets.configured" : "secrets.notConfigured")}
     </Badge>;
   const content = error ? <Alert color="red">{error}</Alert> : !status ? <LoadingText /> : <Stack><SecretControl key={`${agentName}:${purpose}`}

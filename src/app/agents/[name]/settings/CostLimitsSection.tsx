@@ -221,7 +221,7 @@ export function CostLimitsSection({
   return (
     <CollapsibleSection
       title={t("pset.costLimits")}
-      badge={<Badge color={stateColor(configured)} radius="xl">{configured ? summary : t("common.none")}</Badge>}
+      badge={<Badge color={stateColor(configured)}>{configured ? summary : t("common.none")}</Badge>}
     >
       <ConfigurationFields disabled={saving}>
         {slackChannelsTruncated && <Alert color="yellow">{t("slack.channelsTruncated")}</Alert>}
