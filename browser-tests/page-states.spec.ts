@@ -13,7 +13,11 @@ test.beforeAll(async () => {
     define: { "process.env.NODE_ENV": '"production"', "process.env": "{}" },
     plugins: [{ name: "navigation", setup(build) {
       build.onResolve({ filter: /^next\/navigation$/ }, args => ({ path: args.path, namespace: "navigation" }));
-      build.onLoad({ filter: /.*/, namespace: "navigation" }, () => ({ contents: 'export const useParams = () => ({ name: "fixture" });', loader: "js" }));
+      build.onLoad({ filter: /.*/, namespace: "navigation" }, () => ({ contents: `
+        import { useSyncExternalStore } from "react";
+        const subscribe = callback => { addEventListener("popstate", callback); return () => removeEventListener("popstate", callback); };
+        export const useParams = () => ({ name: useSyncExternalStore(subscribe, () => new URLSearchParams(location.search).get("agent") || "fixture") });
+        export const useRouter = () => ({ push() {} });`, loader: "js", resolveDir: process.cwd() }));
     } }],
   });
   server = createServer((request, response) => {
@@ -26,6 +30,46 @@ test.beforeAll(async () => {
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
 test.afterAll(async () => { if (server) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); });
+
+for (const route of ["settings", "integrations"]) {
+  test(`${route} keeps its heading during read failure`, async ({ page }) => {
+    let release: (() => void) | undefined;
+    await page.route("**/api/agents/fixture", async route => {
+      await new Promise<void>(resolve => { release = resolve; });
+      await route.fulfill({ status: 503, json: { error: "Agent unavailable" } });
+    });
+    try {
+      await page.goto(`${base}?page=${route}`);
+      const heading = page.getByRole("heading", { level: 2 });
+      await expect(heading).toHaveText(route === "settings" ? "Settings" : "Integrations");
+      await expect(page.getByRole("status")).toContainText("Loading");
+      await expect.poll(() => Boolean(release)).toBe(true);
+      release!();
+      await expect(page.getByRole("alert")).toHaveText("Agent unavailable");
+      await expect(heading).toBeVisible();
+    } finally { release?.(); }
+  });
+}
+
+test("changing Agent clears the previous integration controls before the next read", async ({ page }) => {
+  let release: (() => void) | undefined;
+  await page.route("**/api/**", route => route.fulfill({ status: 503, json: { error: "Fixture optional service unavailable" } }));
+  await page.route("**/api/agents/fixture", route => route.fulfill({ json: { name: "fixture", ownerEmail: "viewer@example.test" } }));
+  await page.route("**/api/agents/next", async route => {
+    await new Promise<void>(resolve => { release = resolve; });
+    await route.fulfill({ status: 503, json: { error: "Next Agent unavailable" } });
+  });
+  try {
+    await page.goto(`${base}?page=integrations`);
+    await expect(page.getByRole("button", { name: /Slack bot/ })).toBeVisible();
+    await page.evaluate(() => { history.replaceState(null, "", "?page=integrations&agent=next"); dispatchEvent(new PopStateEvent("popstate")); });
+    await expect(page.getByRole("button", { name: /Slack bot/ })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Integrations", exact: true })).toBeVisible();
+    await expect.poll(() => Boolean(release)).toBe(true);
+    release!();
+    await expect(page.getByRole("alert")).toHaveText("Next Agent unavailable");
+  } finally { release?.(); }
+});
 
 for (const [route, title] of [["audio", "audio.title"], ["workspace", "workspace.toolsTitle"]] as const) {
   for (const state of ["loading", "disabled", "error"]) {

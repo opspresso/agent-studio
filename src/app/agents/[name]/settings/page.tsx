@@ -102,29 +102,31 @@ export default function SettingsPage() {
     }
   }
 
+  const heading = <SectionHeading title={t("agent.tab.settings")} />;
+
   if (agent?.name !== name && loadError?.name !== name) {
-    return <LoadingText />;
+    return <Stack gap="lg">{heading}<LoadingText /></Stack>;
   }
 
   if (loadError?.name === name) {
     return (
       <div className={columns.split}>
-        <Alert color="red" variant="light" className={columns.primary}>{loadError.message}</Alert>
+        <Stack gap="lg" className={columns.primary}>{heading}<Alert color="red" variant="light">{loadError.message}</Alert></Stack>
       </div>
     );
   }
-  if (!agent) return <LoadingText />;
+  if (!agent) return <Stack gap="lg">{heading}<LoadingText /></Stack>;
 
   if (viewer === null) {
-    return <LoadingText />;
+    return <Stack gap="lg">{heading}<LoadingText /></Stack>;
   }
 
   if (!canEditAgent(viewer, agent.ownerEmail)) {
     return (
       <div className={columns.split}>
-        <Alert variant="light" color="gray" className={columns.primary}>
+        <Stack gap="lg" className={columns.primary}>{heading}<Alert variant="light" color="gray">
           {t("pset.ownerOnly", { owner: agent.ownerEmail ?? "—" })}
-        </Alert>
+        </Alert></Stack>
       </div>
     );
   }
@@ -132,7 +134,7 @@ export default function SettingsPage() {
   return (
     <div className={columns.split}>
       <Stack gap="lg" className={columns.primary}>
-        <SectionHeading title={t("agent.tab.settings")} />
+        {heading}
       <form onSubmit={save}>
         <ConfigurationFields disabled={saving}>
           {error && (
