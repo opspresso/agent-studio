@@ -228,6 +228,7 @@ export function ArtifactGallery({
 
       <Group justify="space-between" wrap="wrap" gap="sm">
         <SegmentedControl
+          aria-label={t("artifacts.kindFilter")}
           value={kind}
           onChange={(value) => setKind(value as KindFilter)}
           data={[

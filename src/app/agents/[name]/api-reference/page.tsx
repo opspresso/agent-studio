@@ -85,6 +85,7 @@ function FieldTable({ label, fields }: { label: string; fields: FieldSpec[] }) {
 }
 
 function CodeExamples({ examples }: { examples: CodeExample[] }) {
+  const t = useT();
   const [active, setActive] = useState(0);
   const current = examples[active] ?? examples[0];
   if (!current) {
@@ -94,6 +95,7 @@ function CodeExamples({ examples }: { examples: CodeExample[] }) {
     <Stack gap={4}>
       <Group justify="space-between" gap="xs" wrap="nowrap">
         <SegmentedControl
+          aria-label={t("apiRef.codeExample")}
           size="xs"
           value={String(active)}
           onChange={(value) => setActive(Number(value))}
