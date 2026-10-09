@@ -4,6 +4,8 @@ import type { MemberUsageRow, UsageRow } from "@/domain/usage/types";
 import { assertAgentOwner } from "@/application/agent/agentUseCases";
 import { memberMonthToDate } from "./memberCostGuard";
 import { listAgentActors, type ListActorsDeps, type AgentActorUsage } from "./listActors";
+import type { MemberRepository } from "@/domain/member/repository";
+import { summarizeMemberUsage, type MemberUsageSummary } from "./memberSummary";
 
 /**
  * Usage rows over a date range — the dashboard read. One agent's rows when a
@@ -73,14 +75,16 @@ export interface UsageUseCases {
   memberUsage(userId: string, from: string, to: string): Promise<MemberUsageRow[]>;
   /** This member's spend since the first of the UTC month — what the cap bounds. */
   memberMonthToDate(userId: string, now?: Date): Promise<number>;
+  members(from: string, to: string): Promise<MemberUsageSummary>;
 }
 
-export function createUsageUseCases(deps: UsageReadDeps): UsageUseCases {
+export function createUsageUseCases(deps: UsageReadDeps & { members: MemberRepository }): UsageUseCases {
   return {
     summary: (from, to, agentName) => listUsageSummary(deps.usage, from, to, agentName),
     actors: (agentName, userEmail, from, to) =>
       listAgentActorsFor(deps, agentName, userEmail, from, to),
     memberUsage: (userId, from, to) => listMemberUsage(deps.usage, userId, from, to),
     memberMonthToDate: (userId, now) => memberMonthToDate(deps, userId, now),
+    members: (from, to) => summarizeMemberUsage(deps.usage, deps.members, from, to),
   };
 }

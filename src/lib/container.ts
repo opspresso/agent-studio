@@ -827,6 +827,7 @@ const slackUserProfile = async (botToken: string, userId: string) =>
 export const usageUseCases = createUsageUseCases({
   usage: usageRepository,
   agents: agentRepository,
+  members: memberRepository,
   // Token resolution closes over the Slack slice's knowledge; the usage slice
   // receives a bound reader rather than cipher and resolver internals.
   profileReaderFor: (agent) => {
