@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Tabs } from "@mantine/core";
+import { Group, UnstyledButton } from "@mantine/core";
 import type { TablerIcon } from "@tabler/icons-react";
 import classes from "./PageTabs.module.css";
 
@@ -11,7 +11,7 @@ export function activeTabHref(pathname: string, items: readonly { href: string }
     (pathname === href || pathname.startsWith(`${href}/`)) && href.length > (active?.length ?? 0) ? href : active, null);
 }
 
-/** Route-backed tabs share active, keyboard and overflow behavior across settings and agents. */
+/** Page navigation uses native links; ARIA tabs are reserved for panels within one page. */
 export function PageTabs({ value, items, label, variant = "default" }: {
   value: string;
   items: readonly { href: string; label: string; Icon?: TablerIcon }[];
@@ -20,11 +20,11 @@ export function PageTabs({ value, items, label, variant = "default" }: {
 }) {
   const active = activeTabHref(value, items);
   return <div className={classes.viewport}>
-    <Tabs value={active} variant={variant} activateTabWithKeyboard={false} classNames={{ list: classes.list, tab: classes.tab }}>
-      <Tabs.List aria-label={label}>{items.map(({ href, label, Icon }) => <Tabs.Tab key={href} value={href}
-        renderRoot={props => <Link {...props} href={href} aria-current={active === href ? "page" : undefined} />}>
-        {Icon && <Icon size={16} stroke={1.8} />}{label}
-      </Tabs.Tab>)}</Tabs.List>
-    </Tabs>
+    <Group component="nav" aria-label={label} className={classes.list} data-variant={variant}>
+      {items.map(({ href, label, Icon }) => <UnstyledButton component={Link} key={href} href={href}
+        className={classes.tab} data-active={active === href || undefined} aria-current={active === href ? "page" : undefined}>
+        {Icon && <Icon size={16} stroke={1.8} aria-hidden="true" />}{label}
+      </UnstyledButton>)}
+    </Group>
   </div>;
 }

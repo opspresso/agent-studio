@@ -118,16 +118,22 @@ test("renders Korean labels and searches capabilities on a narrow screen", async
 
 test("places Plugin usage and sync settings below the shared Settings tabs", async ({ page }) => {
   await page.goto(`${base}/settings/plugins`);
-  const main = page.getByRole("tablist", { name: "Settings", exact: true });
-  const section = page.getByRole("tablist", { name: "Plugins", exact: true });
-  await expect(main.getByRole("tab", { name: "Plugins", exact: true })).toHaveAttribute("aria-current", "page");
-  await expect(section.getByRole("tab", { name: "Usage settings", exact: true })).toHaveAttribute("aria-current", "page");
-  await expect(section.getByRole("tab", { name: "Sync settings", exact: true })).toHaveAttribute("href", "/settings/plugins/sync");
-  await expect(section.getByRole("tab")).toHaveCount(2);
+  const main = page.getByRole("navigation", { name: "Settings", exact: true });
+  const section = page.getByRole("navigation", { name: "Plugins", exact: true });
+  await expect(main.getByRole("link", { name: "Plugins", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(section.getByRole("link", { name: "Usage settings", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(section.getByRole("link", { name: "Sync settings", exact: true })).toHaveAttribute("href", "/settings/plugins/sync");
+  await expect(section.getByRole("link")).toHaveCount(2);
+  const usageLink = section.getByRole("link", { name: "Usage settings", exact: true });
+  const syncLink = section.getByRole("link", { name: "Sync settings", exact: true });
+  await usageLink.focus();
+  await page.keyboard.press("Tab");
+  await expect(syncLink).toBeFocused();
+  await expect(section.locator("[aria-controls]")).toHaveCount(0);
   await page.screenshot({ path: "/tmp/agent-studio-plugin-settings-tabs.png", fullPage: true });
-  await section.getByRole("tab", { name: "Sync settings", exact: true }).click();
+  await section.getByRole("link", { name: "Sync settings", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Sync settings", exact: true })).toBeVisible();
-  await expect(section.getByRole("tab", { name: "Sync settings", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(section.getByRole("link", { name: "Sync settings", exact: true })).toHaveAttribute("aria-current", "page");
 });
 
 test("checks all Plugin, Skill and Tool usage controls by default", async ({ page }) => {

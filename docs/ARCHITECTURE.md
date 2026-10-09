@@ -374,7 +374,9 @@ HTTP 응답 전에 발생한 유스케이스 오류는 `AppError` 하위 타입�
 로그아웃 상태에서는 내비게이션 내용을 렌더하지 않는다.
 
 Mantine 테마의 소유자는 `app/theme.ts`다. 페이지 제목·설명·액션은 `PageHeader`, 하위 섹션은
-`SectionHeading`, 경로 기반 탭은 `PageTabs`를 사용한다. `PageHeader`의 아이콘은 필수이며
+`SectionHeading`, 경로 기반 탭은 `PageTabs`를 사용한다. `PageTabs`는 이름이 있는 `nav`와 실제
+링크로 페이지를 이동하고 현재 링크에 `aria-current="page"`를 표시한다. ARIA `tab`은 같은 페이지
+안에서 대응하는 `tabpanel`을 전환할 때만 사용한다. `PageHeader`의 아이콘은 필수이며
 목록과 상세는 같은 리소스 아이콘을 사용한다. Chat·Workspace 작업창은 같은 헤더의 `compact`
 표현으로 출력 공간을 확보하면서 h1·아이콘·메타데이터·액션 구조를 유지한다.
 제목을 미리 알 수 있는 페이지는 로딩·오류·권한 부족 상태에도 제목을 유지한다.

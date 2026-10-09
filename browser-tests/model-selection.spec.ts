@@ -422,10 +422,10 @@ test("manages saved models without discovery and shows the unified Settings navi
   await modelRows(page).filter({ hasText: "Zeta" }).getByRole("button", { name: "Add model" }).click();
   await expect.poll(() => selected.length).toBe(1);
   await page.goto(`${base}/settings/models`);
-  const section = page.getByRole("tablist", { name: "Models", exact: true });
-  await expect(section.getByRole("tab")).toHaveCount(3);
-  await expect(section.getByRole("tab", { name: "Model management", exact: true })).toHaveAttribute("aria-current", "page");
-  await expect(section.getByRole("tab", { name: "Usage settings", exact: true })).toHaveAttribute("href", "/settings/model-usage");
+  const section = page.getByRole("navigation", { name: "Models", exact: true });
+  await expect(section.getByRole("link")).toHaveCount(3);
+  await expect(section.getByRole("link", { name: "Model management", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(section.getByRole("link", { name: "Usage settings", exact: true })).toHaveAttribute("href", "/settings/model-usage");
   const zeta = modelRows(page).filter({ hasText: "Zeta" });
   await zeta.getByRole("button", { name: "Check status", exact: true }).click();
   await expect(zeta.getByRole("status")).toHaveText("Listed");
