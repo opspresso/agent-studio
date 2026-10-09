@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDecisionClient } from "@/infrastructure/llm/decisionClient";
 import type { ResolvedTarget } from "@/infrastructure/llm/providers";
 
@@ -6,7 +6,8 @@ const target: ResolvedTarget = {
   providerName: "openrouter", baseUrl: "https://router.test/api/v1", apiKey: "secret", auth: "bearer", model: "~typesafe/jev-latest",
 };
 const input = { model: "router/~typesafe/jev-latest", state: "Fix code", instructions: "Pick an Agent", criteria: { agent_0: "Coder", none: "No match" } };
-afterEach(() => vi.unstubAllGlobals());
+beforeEach(() => { vi.spyOn(performance, "now").mockReturnValue(0); });
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe("decision provider adapter", () => {
   it.each([
@@ -17,7 +18,7 @@ describe("decision provider adapter", () => {
       answers: { selection: { type: "choice", choice: "agent_0", confidence: 0.9, probabilities: { agent_0: 0.9, none: 0.1 } } }, usage,
     })));
     expect((await createDecisionClient(async () => target).choose(input)).usage)
-      .toEqual({ model: input.model, inputTokens: 20, outputTokens: 3, costUsd: 0.001 });
+      .toEqual({ model: input.model, inputTokens: 20, outputTokens: 3, costUsd: 0.001, modelDurationMs: 0 });
   });
   it("calls the OpenRouter Decisions endpoint with a native Choice request", async () => {
     const fetch = vi.fn().mockResolvedValue(Response.json({ answers: { selection: { type: "choice", choice: "agent_0", confidence: 0.9, probabilities: { agent_0: 0.9, none: 0.1 } } } }));

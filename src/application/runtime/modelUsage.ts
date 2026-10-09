@@ -1,6 +1,7 @@
 import { calculateCost } from "@/domain/llm/models";
 import type { UsageInfo } from "@/domain/llm/types";
 import type { ModelResponse } from "@openai/agents";
+import { MODEL_DURATION_MS } from "@/domain/usage/performance";
 
 /** Reasoning alone is not a final answer or an executable tool request. */
 export function modelResponseHasOutput(response: Pick<ModelResponse, "output">): boolean {
@@ -22,6 +23,7 @@ export function modelResponseIsTruncated(response: Pick<ModelResponse, "output" 
 export interface ResponseUsage {
   usage: { inputTokens: number; outputTokens: number; inputTokensDetails?: Record<string, number> | Record<string, number>[]; outputTokensDetails?: Record<string, number> | Record<string, number>[] };
   rawUsage?: Record<string, unknown>;
+  providerData?: Record<string, unknown>;
 }
 
 /** Preserve provider billing and token detail for every native model call. */
@@ -32,7 +34,9 @@ export function modelResponseUsage(model: string, response: ResponseUsage): Usag
   const cachedTokens = sum(response.usage.inputTokensDetails, "cached_tokens");
   const reasoningTokens = sum(response.usage.outputTokensDetails, "reasoning_tokens");
   const billed = response.rawUsage?.cost ?? response.rawUsage?.cost_usd;
+  const duration = response.providerData?.[MODEL_DURATION_MS];
   return { model, inputTokens, outputTokens,
+    ...(typeof duration === "number" && Number.isFinite(duration) && duration > 0 ? { modelDurationMs: duration } : {}),
     costUsd: typeof billed === "number" && Number.isFinite(billed) && billed >= 0
       ? billed : calculateCost(model, { inputTokens, outputTokens, cachedTokens }),
     ...(cachedTokens > 0 ? { cachedTokens } : {}), ...(reasoningTokens > 0 ? { reasoningTokens } : {}),

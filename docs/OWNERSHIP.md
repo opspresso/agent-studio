@@ -314,6 +314,7 @@ Agent 설정은 binding을 소유하며 개인 연결은 Agent 수명과 독립�
 | 행의 `expiresAt`. 보존 창과 그것을 초로 바꾸는 헬퍼 | `src/infrastructure/db/ttl.ts` | 코드 |
 | usage 질의와 차트가 처리할 날짜 범위 | `src/shared/usageRange.ts`의 `MAX_USAGE_RANGE_DAYS`; API와 차트는 날짜 순회 전에 적용한다 | 코드 |
 | usage 행의 키가 되는 UTC 날짜 | `src/shared/date.ts` 의 `utcDay` | 코드 |
+| 모델 처리량의 표본·가중 집계·SDK 시간 metadata key | `src/domain/usage/performance.ts`; 실제 요청 대기 시간은 `src/shared/requestTimer.ts`가 측정한다 | 코드 |
 | repo sync 가 무엇을 했고, 무엇을 사람에게 남겼는가 | `src/domain/sync/types.ts` | 코드 |
 | 저장 중이거나 읽기 전용인 폼의 입력 잠금 | `src/app/_components/ConfigurationFields.tsx`; 저장 상태는 각 폼이 소유하고 공통 fieldset에 전달한다 | 코드 |
 | 브랜드 팔레트와 컴포넌트 기본값 | `src/app/theme.ts` | 코드 |

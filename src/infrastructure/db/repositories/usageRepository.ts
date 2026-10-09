@@ -36,7 +36,7 @@ const ALERT_MARKER: Record<CostAlertKind, string> = {
   block: "blockedAt",
 };
 
-const COUNTERS = ["calls", "inputTokens", "outputTokens", "cachedTokens", "costUsd"] as const;
+const COUNTERS = ["calls", "inputTokens", "outputTokens", "cachedTokens", "costUsd", "modelDurationMs", "timedOutputTokens", "timedCalls"] as const;
 
 /** Rows read at once while a usage view drains a bounded date range. */
 const USAGE_PAGE_SIZE = 100;
@@ -83,6 +83,9 @@ function toUsageRow(item: Item): UsageRow {
     // before the field existed reads as.
     cachedTokens: (item.cachedTokens as Record<string, number>) ?? {},
     costUsd: (item.costUsd as Record<string, number>) ?? {},
+    ...(item.modelDurationMs ? { modelDurationMs: item.modelDurationMs as Record<string, number> } : {}),
+    ...(item.timedOutputTokens ? { timedOutputTokens: item.timedOutputTokens as Record<string, number> } : {}),
+    ...(item.timedCalls ? { timedCalls: item.timedCalls as Record<string, number> } : {}),
   };
 }
 
@@ -118,6 +121,9 @@ function added(row: Item | null, delta: UsageDelta, extra: Item): Item {
     outputTokens: delta.outputTokens,
     cachedTokens: delta.cachedTokens ?? 0,
     costUsd: delta.costUsd,
+    modelDurationMs: delta.modelDurationMs ?? 0,
+    timedOutputTokens: delta.timedOutputTokens ?? 0,
+    timedCalls: delta.timedCalls ?? 0,
   };
   for (const counter of COUNTERS) {
     const map = { ...((row?.[counter] as Record<string, number> | undefined) ?? {}) };

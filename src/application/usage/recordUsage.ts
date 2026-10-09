@@ -9,6 +9,7 @@ import { actorKey } from "@/domain/execution/actor";
 import type { UsageRepository } from "@/domain/usage/repository";
 import { log } from "@/shared/logger";
 import { utcDay } from "@/shared/date";
+import { performanceSample, type PerformanceTotals } from "@/domain/usage/performance";
 
 export interface RecordUsageInput {
   agentName: string;
@@ -16,6 +17,7 @@ export interface RecordUsageInput {
   inputTokens: number;
   outputTokens: number;
   costUsd: number;
+  modelDurationMs?: number;
   /**
    * Of `inputTokens`, how many the provider served from its cache. Absent
    * where nothing reported any — the field is additive, so a channel that
@@ -50,6 +52,7 @@ export async function recordUsage(
     outputTokens: input.outputTokens,
     cachedTokens: input.cachedTokens ?? 0,
     costUsd: input.costUsd,
+    ...performanceSample(input.outputTokens, input.modelDurationMs),
     actor: input.actor,
     userId: input.userId,
   });
@@ -85,7 +88,7 @@ export function createUsageAggregator(
 ): UsageAggregator {
   const totals = new Map<
     string,
-    UsageCall & { date: string; calls: number; cachedTokens: number }
+    UsageCall & PerformanceTotals & { date: string; calls: number; cachedTokens: number }
   >();
   return {
     async record(input) {
@@ -97,16 +100,20 @@ export function createUsageAggregator(
       // the one character an agent name and a model id cannot contain.
       const key = `${input.agentName}\0${date}\0${input.model}`;
       const existing = totals.get(key);
+      const measured = performanceSample(input.outputTokens, input.modelDurationMs);
       if (existing) {
         existing.inputTokens += input.inputTokens;
         existing.outputTokens += input.outputTokens;
         existing.cachedTokens += input.cachedTokens ?? 0;
         existing.costUsd += input.costUsd;
         existing.calls += 1;
+        existing.modelDurationMs += measured.modelDurationMs;
+        existing.timedOutputTokens += measured.timedOutputTokens;
+        existing.timedCalls += measured.timedCalls;
       } else {
         // Normalised on the way in, so the sum above never has to ask whether
         // the first call of a (agent, date, model) happened to report one.
-        totals.set(key, { ...input, date, calls: 1, cachedTokens: input.cachedTokens ?? 0 });
+        totals.set(key, { ...input, ...measured, date, calls: 1, cachedTokens: input.cachedTokens ?? 0 });
       }
     },
     async flush() {
@@ -124,6 +131,9 @@ export function createUsageAggregator(
             outputTokens: total.outputTokens,
             cachedTokens: total.cachedTokens,
             costUsd: total.costUsd,
+            modelDurationMs: total.modelDurationMs,
+            timedOutputTokens: total.timedOutputTokens,
+            timedCalls: total.timedCalls,
             // The run's actor, not the buffered record's: a subagent transfer
             // spends on a different agent but is still the same person's run.
             actor: actorKey(identity.actor),

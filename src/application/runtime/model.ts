@@ -121,7 +121,7 @@ export function createRunModel(
       span.spanData.usage = { input_tokens: inputTokens, output_tokens: outputTokens, cached_tokens: cachedTokens, reasoning_tokens: reasoningTokens, cost_usd: usage.costUsd };
     }
     if (input.agentName && deps.recordUsage) {
-      try { await deps.recordUsage({ agentName: input.agentName, model, inputTokens, outputTokens, costUsd: usage.costUsd, ...(usage.cachedTokens ? { cachedTokens: usage.cachedTokens } : {}) }); }
+      try { await deps.recordUsage({ ...usage, agentName: input.agentName, model }); }
       catch (error) { log.error("engine", "usage recording failed", String(error)); }
     }
     emit({ usage });

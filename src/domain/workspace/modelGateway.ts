@@ -19,6 +19,7 @@ export interface NativeModelUsage {
   cachedTokens: number;
   reasoningTokens: number;
   costUsd?: number;
+  modelDurationMs?: number;
 }
 /** Unsettled calls survive a gateway/worker restart and are never sent upstream again. */
 export interface WorkspaceModelCall {

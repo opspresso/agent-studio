@@ -16,6 +16,10 @@ export interface UsageRow {
    */
   cachedTokens?: Record<string, number>;
   costUsd: Record<string, number>;
+  /** Matched performance samples only; absent on unmeasured history. */
+  modelDurationMs?: Record<string, number>;
+  timedOutputTokens?: Record<string, number>;
+  timedCalls?: Record<string, number>;
 }
 
 /**
@@ -50,6 +54,9 @@ export interface UsageDelta {
   /** Of `inputTokens`, how many the provider served from its cache. */
   cachedTokens?: number;
   costUsd: number;
+  modelDurationMs?: number;
+  timedOutputTokens?: number;
+  timedCalls?: number;
   /** Captured Studio account, independent of the invocation source. */
   userId: string;
   /** Original invocation source as kind:id, retained for audit. */

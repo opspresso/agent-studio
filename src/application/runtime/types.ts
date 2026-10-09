@@ -11,16 +11,9 @@ import type { PiiFilter } from "@/application/llm/pii";
 import type { ImageHandle } from "@/application/llm/agentAssembly";
 import type { TraceSpan } from "@/domain/trace/types";
 import type { ToolSchemaValidator } from "@/domain/llm/toolSchema";
+import type { UsageCall } from "@/application/usage/recordUsage";
 
-export type RecordUsageFn = (record: {
-  agentName: string;
-  model: string;
-  inputTokens: number;
-  outputTokens: number;
-  costUsd: number;
-  /** Cached prompt tokens, when the provider reported any (see `UsageInfo`). */
-  cachedTokens?: number;
-}) => Promise<void>;
+export type RecordUsageFn = (record: UsageCall) => Promise<void>;
 
 export interface EngineDeps {
   /** Current caller permissions, checked before every model attempt and tool effect. */

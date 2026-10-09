@@ -13,6 +13,8 @@ export interface UsageInfo {
   inputTokens: number;
   outputTokens: number;
   costUsd: number;
+  /** Active provider request/read time; excludes tools, routing and downstream backpressure. */
+  modelDurationMs?: number;
   /**
    * Prompt tokens the provider served from its cache — a **subset** of
    * {@link inputTokens}, already priced at the cached rate by `calculateCost`.

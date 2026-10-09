@@ -34,6 +34,17 @@ reasoning 수치는 UsageInfo·Trace에 쓰고 일일 Usage의 독립 과금 축
 채널이 보고하지 않은 값과 실제 0을 해석할 때는 해당 provider·저장 경로의 계약을 확인한다.
 첫 호출이라고 항상 cache miss이거나 토큰 수만 같으면 같은 비용인 것은 아니다.
 
+텍스트·결정 모델과 Workspace native 모델은 호출마다 `modelDurationMs`를 측정한다.
+공급자 요청 시작부터 응답 수신까지의 대기 시간을 합산하며 연결·첫 응답 지연을 포함한다.
+모델 선택·자격 증명 조회·도구 실행·저장 시간과 스트림 소비자가 멈춘 시간은 제외한다.
+이는 출력 토큰 처리량이며, 첫 토큰 뒤의 순수 디코딩 속도가 아니다.
+
+일일 행은 측정된 호출의 `modelDurationMs`, `timedOutputTokens`, `timedCalls`를 함께 합산한다.
+토큰/초는 `timedOutputTokens × 1000 / modelDurationMs`다. 호출별 속도의 단순 평균을 쓰지 않는다.
+출력 토큰에는 공급자가 보고한 reasoning token이 포함된다. 과거 행·시간 미측정 호출·불완전한
+native 응답은 성능 표본에 넣지 않으며 표본이 없으면 알 수 없음으로 표시한다. 이미지·ASR·rerank
+사용량은 비용·토큰 집계에 포함하지만 이 텍스트 처리량 측정 대상은 아니다.
+
 **누가 썼는지는 두 번째 행이지, 첫 행에 붙는 또 하나의 차원이 아니다.** Agent 는 공유
 카탈로그이고, 공개 agent 는 로그인한 누구나 실행하며 private agent 도 여러 멤버가 함께
 실행할 수 있다. 그래서 agent 이름은 지출한 주체를 식별하지 못한다. `RunIdentity.user.userId`가 비용과 동시성의 주체이고 `RunActor { kind, id }`는 호출 출처다.
