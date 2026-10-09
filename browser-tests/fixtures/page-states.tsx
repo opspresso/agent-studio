@@ -10,6 +10,7 @@ import Audits from "../../src/app/audits/page";
 import Audio from "../../src/app/agents/[name]/audio/page";
 import WorkspaceTools from "../../src/app/agents/[name]/workspace/page";
 import Settings from "../../src/app/agents/[name]/settings/page";
+import ApiReference from "../../src/app/agents/[name]/api-reference/page";
 import Integrations from "../../src/app/agents/[name]/integrations/page";
 import { NewChatEntry } from "../../src/app/chats/_components/NewChatEntry";
 import { ChatRouteProvider } from "../../src/app/chats/_components/ChatRouteSelection";
@@ -24,7 +25,7 @@ const guest = query.get("role") === "guest";
 const Page = query.get("page") === "profile" ? Profile : query.get("page") === "members" ? Members
   : query.get("page") === "audio" ? Audio : query.get("page") === "workspace" ? WorkspaceTools
   : query.get("page") === "settings" ? Settings : query.get("page") === "integrations" ? Integrations
-  : query.get("page") === "chat" ? NewChat : query.get("page") === "not-found" ? NotFound : Audits;
+  : query.get("page") === "api-reference" ? ApiReference : query.get("page") === "chat" ? NewChat : query.get("page") === "not-found" ? NotFound : Audits;
 const feature = { enabled: query.get("state") === "loading" ? undefined : query.get("state") === "enabled",
   error: query.get("state") === "error" ? "Feature unavailable" : undefined };
 createRoot(document.getElementById("root")!).render(

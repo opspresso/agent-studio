@@ -53,7 +53,7 @@ test("not-found recovery exposes a page heading and home link", async ({ page })
   await expect(page.getByRole("link", { name: "Back to overview" })).toHaveAttribute("href", "/");
 });
 
-for (const route of ["settings", "integrations"]) {
+for (const route of ["settings", "integrations", "api-reference"]) {
   test(`${route} keeps its heading during read failure`, async ({ page }) => {
     let release: (() => void) | undefined;
     await page.route("**/api/agents/fixture", async route => {
@@ -63,7 +63,7 @@ for (const route of ["settings", "integrations"]) {
     try {
       await page.goto(`${base}?page=${route}`);
       const heading = page.getByRole("heading", { level: 2 });
-      await expect(heading).toHaveText(route === "settings" ? "Settings" : "Integrations");
+      await expect(heading).toHaveText(route === "settings" ? "Settings" : route === "integrations" ? "Integrations" : "API Reference");
       await expect(page.getByRole("status")).toContainText("Loading");
       await expect.poll(() => Boolean(release)).toBe(true);
       release!();

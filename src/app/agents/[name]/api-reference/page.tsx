@@ -186,8 +186,12 @@ function EndpointCard({ endpoint }: { endpoint: ApiEndpoint }) {
 }
 
 export default function ApiReferencePage() {
-  const t = useT();
   const { name } = useParams<{ name: string }>();
+  return <ApiReferenceContent key={name} name={name} />;
+}
+
+function ApiReferenceContent({ name }: { name: string }) {
+  const t = useT();
   const viewer = useViewer();
   const [endpoints, setEndpoints] = useState<ApiEndpoint[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -233,20 +237,15 @@ export default function ApiReferencePage() {
     };
   }, [name, viewer]);
 
-  if (error) {
-    return (
-      <Text fz="sm" c="red">
-        {error}
-      </Text>
-    );
-  }
-  if (!endpoints) {
-    return <LoadingText />;
-  }
+  const heading = <SectionHeading title={t("agent.tab.apiReference")} description={t("apiReference.intro")} />;
+  if (error || !endpoints) return <Stack gap="md">
+    {heading}
+    {error ? <Text role="alert" fz="sm" c="red">{error}</Text> : <LoadingText />}
+  </Stack>;
 
   return (
     <Stack gap="md">
-      <SectionHeading title={t("agent.tab.apiReference")} description={t("apiReference.intro")} />
+      {heading}
       <Text fz="sm" c="dimmed">
         {t("apiReference.environmentHint")}
       </Text>
