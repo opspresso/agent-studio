@@ -11,6 +11,8 @@ import { USAGE_METRIC_LABELS, formatUsageMetric } from "@/app/_lib/usagePresenta
 import { defaultDateRange } from "@/app/_lib/dateRange";
 import { readJson } from "@/app/_lib/httpClient";
 import { useLocale, useT } from "@/app/_i18n/provider";
+import { useViewer } from "@/app/_lib/useViewer";
+import { LoadingText } from "./PageState";
 import { PageHeader } from "./PageHeader";
 import { DateRangePicker } from "./DateRangePicker";
 import { GroupByControl } from "./GroupByControl";
@@ -25,6 +27,8 @@ export function UsageExplorer({ admin = false, initialModel, initialUser }: {
 }) {
   const t = useT();
   const locale = useLocale();
+  const viewer = useViewer();
+  const mayRead = !admin || viewer?.isAdmin === true;
   const [range, setRange] = useState(defaultDateRange);
   const [model, setModel] = useState<string | null>(initialModel ?? null);
   const [user, setUser] = useState<string | null>(initialUser ?? null);
@@ -37,13 +41,14 @@ export function UsageExplorer({ admin = false, initialModel, initialUser }: {
   const loading = view?.key !== requestKey;
   const error = loading ? undefined : view?.error;
   useEffect(() => {
+    if (!mayRead) return;
     let current = true;
     const controller = new AbortController();
     void fetch(query, { signal: controller.signal }).then(readJson<UsageSummaryResponse | MembersUsageResponse>)
       .then(result => { if (current) setView({ key: requestKey, items: result.items, members: "members" in result ? result.members : [] }); })
       .catch(cause => { if (current) setView({ key: requestKey, items: [], members: [], error: cause instanceof Error ? cause.message : "Could not load usage" }); });
     return () => { current = false; controller.abort(); };
-  }, [query, requestKey]);
+  }, [query, requestKey, mayRead]);
 
   const rows = useMemo(() => loading || error ? [] : filterUsage(view?.items ?? [], model, user), [view, loading, error, model, user]);
   const total = useMemo(() => totalUsage(rows), [rows]);
@@ -62,8 +67,13 @@ export function UsageExplorer({ admin = false, initialModel, initialUser }: {
   const empty = t(loading ? "common.loading" : error ? "usage.loadFailed"
     : metric === "tokensPerSecond" ? "usage.noMeasurements" : "usage.noMetricValues");
 
+  const header = <PageHeader title={t(admin ? "usage.adminTitle" : "usage.modelsTitle")} description={t(admin ? "usage.adminHint" : "usage.modelsHint")} Icon={IconChartBar} />;
+  if (!mayRead) return <Stack gap="lg">{header}
+    {viewer === null ? <LoadingText /> : <Alert color="gray">{t("usage.adminOnly")}</Alert>}
+  </Stack>;
+
   return <Stack gap="lg">
-    <PageHeader title={t(admin ? "usage.adminTitle" : "usage.modelsTitle")} description={t(admin ? "usage.adminHint" : "usage.modelsHint")} Icon={IconChartBar} />
+    {header}
     <Group align="end" gap="md">
       <DateRangePicker value={range} onChange={setRange} />
       {admin && <Select label={t("usage.groupBy.user")} placeholder={t("usage.allUsers")} searchable clearable value={user}

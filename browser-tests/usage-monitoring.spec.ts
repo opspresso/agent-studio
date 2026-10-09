@@ -79,7 +79,17 @@ test("members cannot request the administrator ledger", async ({ page }) => {
   let reads = 0;
   await page.route("**/api/usages/members?**", route => { reads++; return route.fulfill({ json: { items: rows, members } }); });
   await page.goto(`${base}?admin&restricted`);
+  await expect(page.getByRole("heading", { level: 1, name: "Usage monitoring" })).toBeVisible();
   await expect(page.getByRole("alert")).toContainText("Only administrators");
+  expect(reads).toBe(0);
+});
+
+test("keeps the page heading while administrator access is being resolved", async ({ page }) => {
+  let reads = 0;
+  await page.route("**/api/usages/members?**", route => { reads++; return route.fulfill({ json: { items: [], members: [] } }); });
+  await page.goto(`${base}?admin&viewerLoading`);
+  await expect(page.getByRole("heading", { level: 1, name: "Usage monitoring" })).toBeVisible();
+  await expect(page.getByRole("status")).toContainText("Loading");
   expect(reads).toBe(0);
 });
 

@@ -68,6 +68,7 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
   if (!currentState) {
     return <Stack key={name} gap="lg">
       <BackLink href="/agents" label={t("nav.agents")} />
+      <PageHeader title={name} Icon={IconRobot} />
       <LoadingText />
     </Stack>;
   }
