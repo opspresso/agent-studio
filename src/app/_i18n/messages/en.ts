@@ -1327,6 +1327,7 @@ export const en = {
   "configuration.callerHint":
     "Controls display names in model context. User authentication and permissions are checked independently. PII filtering does not mask names.",
   "configuration.structuredOutput": "Structured output (JSON schema)",
+  "configuration.jsonSchema": "JSON schema",
   "configuration.aboutStructuredOutput": "About structured output",
   "configuration.structuredOutputTitle": "Structured output",
 

@@ -1284,6 +1284,7 @@ export const ko: Messages = {
   "configuration.callerHint":
     "모델에 전달하는 표시 이름을 제어합니다. 사용자 인증과 권한 검사는 별도로 적용됩니다. PII 필터링은 이름을 가리지 않습니다.",
   "configuration.structuredOutput": "구조화 출력 (JSON 스키마)",
+  "configuration.jsonSchema": "JSON 스키마",
   "configuration.aboutStructuredOutput": "구조화 출력 안내",
   "configuration.structuredOutputTitle": "구조화 출력",
 
