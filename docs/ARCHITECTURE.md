@@ -379,6 +379,9 @@ Mantine 테마의 소유자는 `app/theme.ts`다. 페이지 제목·설명·액�
 안에서 대응하는 `tabpanel`을 전환할 때만 사용한다. `PageHeader`의 아이콘은 필수이며
 목록과 상세는 같은 리소스 아이콘을 사용한다. Chat·Workspace 작업창은 같은 헤더의 `compact`
 표현으로 출력 공간을 확보하면서 h1·아이콘·메타데이터·액션 구조를 유지한다.
+`ConsoleThemeProvider`는 현재 locale의 닫기 버튼 이름을 공통 테마에 적용한다. 삭제·선택 해제처럼
+다른 동작에 닫기 아이콘을 쓰는 호출자는 해당 동작의 명시적 이름을 제공한다. 언어·테마 메뉴는
+선택된 항목을 체크 표시와 `menuitemradio`의 `aria-checked`로 알린다.
 제목을 미리 알 수 있는 페이지는 로딩·오류·권한 부족 상태에도 제목을 유지한다.
 저장·수정·삭제·연결 등 조작 문구와 결과 상태는 locale에 따라 표시한다. 목록·빈 상태·폼 모달은
 `DataTable`/`CatalogCollection`, `PageState`, `FormModal`이 공통 표현을 소유한다.

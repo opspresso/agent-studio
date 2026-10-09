@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { ColorSchemeScript, MantineProvider, mantineHtmlProps } from "@mantine/core";
+import { ColorSchemeScript, mantineHtmlProps } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
 import { Figtree, JetBrains_Mono } from "next/font/google";
 import { AppLayout } from "@/components/AppLayout";
@@ -11,7 +11,7 @@ import { resolveViewer } from "@/lib/viewer";
 import { I18nProvider } from "./_i18n/provider";
 import { ViewerProvider } from "./_lib/useViewer";
 import { resolveLocale } from "./_i18n/server";
-import { theme } from "./theme";
+import { ConsoleThemeProvider } from "./_components/ConsoleThemeProvider";
 import { version } from "../../package.json";
 
 // Order matters: core first, then the other @mantine packages, then ours.
@@ -90,8 +90,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <ColorSchemeScript defaultColorScheme="auto" />
       </head>
       <body>
-        <MantineProvider theme={theme} defaultColorScheme="auto">
-          <I18nProvider locale={locale} serviceName={branding.name}>
+        <I18nProvider locale={locale} serviceName={branding.name}>
+          <ConsoleThemeProvider>
             <Notifications position="top-right" />
             <ViewerProvider viewer={viewer}>
               <ImageViewerProvider>
@@ -107,8 +107,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 </AppLayout>
               </ImageViewerProvider>
             </ViewerProvider>
-          </I18nProvider>
-        </MantineProvider>
+          </ConsoleThemeProvider>
+        </I18nProvider>
       </body>
     </html>
   );

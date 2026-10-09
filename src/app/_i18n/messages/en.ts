@@ -660,6 +660,7 @@ export const en = {
   "tools.urlCredentialHint": "Changing the URL drops the stored headers and OAuth block — credentials belong to the address they were entered for.",
   "common.loading": "Loading…",
   "common.cancel": "Cancel",
+  "common.close": "Close",
   "common.copy": "Copy",
   "common.copied": "Copied",
   "common.backTo": "← Back to {label}",

@@ -34,6 +34,21 @@ test.beforeAll(async () => {
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
 test.afterAll(async () => { if (server) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); });
+
+for (const locale of ["en", "ko"] as const) {
+  test(`shared modal close control is named and keyboard-operable in ${locale}`, async ({ page }) => {
+    const translate = translator(locale);
+    await page.goto(`${base}?page=skills&locale=${locale}`);
+    const open = page.getByRole("button", { name: translate("skills.new"), exact: true });
+    await open.click();
+    const dialog = page.getByRole("dialog");
+    const close = dialog.getByRole("button", { name: translate("common.close"), exact: true });
+    await close.focus();
+    await page.keyboard.press("Space");
+    await expect(dialog).toHaveCount(0);
+    await expect(open).toBeFocused();
+  });
+}
 test.beforeEach(async ({ page }) => {
   page.on("pageerror", error => { throw error; });
   await page.route("**/api/**", route => {

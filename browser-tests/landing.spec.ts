@@ -57,7 +57,8 @@ test("uses the existing blue palette and follows the console color scheme", asyn
   expect(lightParticles.blue).toBeGreaterThan(lightParticles.red * 1.5);
   const logo = await page.locator("header img").getAttribute("src");
   await page.getByRole("button", { name: /^Theme:/ }).click();
-  await page.getByRole("menuitem", { name: "Dark", exact: true }).click();
+  await expect(page.getByRole("menuitemradio", { name: "System", exact: true })).toHaveAttribute("aria-checked", "true");
+  await page.getByRole("menuitemradio", { name: "Dark", exact: true }).click();
   await expect(page.locator("html")).toHaveAttribute("data-mantine-color-scheme", "dark");
   await expect.poll(() => landing.evaluate(element => getComputedStyle(element).backgroundColor)).not.toBe(light);
   await expect(page.locator("header img")).toHaveAttribute("src", logo!);
@@ -65,7 +66,7 @@ test("uses the existing blue palette and follows the console color scheme", asyn
   expect(darkParticles.blue).toBeGreaterThan(darkParticles.red * 1.5);
   await page.screenshot({ path: testInfo.outputPath("landing-dark.png") });
   await page.getByRole("button", { name: /^Theme:/ }).click();
-  await page.getByRole("menuitem", { name: "Light", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: "Light", exact: true }).click();
   await expect.poll(() => landing.evaluate(element => getComputedStyle(element).backgroundColor)).toBe(light);
 });
 
@@ -129,7 +130,8 @@ test("honors reduced motion while keeping particle controls and content usable",
 
 test("switches locale and supports narrow navigation without horizontal overflow", async ({ page }, testInfo) => {
   await page.getByRole("button", { name: "Change language" }).click();
-  await page.getByRole("menuitem", { name: "한국어" }).click();
+  await expect(page.getByRole("menuitemradio", { name: "English" })).toHaveAttribute("aria-checked", "true");
+  await page.getByRole("menuitemradio", { name: "한국어" }).click();
   await expect(page.getByRole("heading", { level: 1 })).toContainText("우리 회사의 AI");
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.screenshot({ path: testInfo.outputPath("landing-desktop.png") });

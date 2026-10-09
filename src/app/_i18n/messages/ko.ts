@@ -649,6 +649,7 @@ export const ko: Messages = {
   "tools.urlCredentialHint": "URL을 변경하면 저장된 헤더와 OAuth 설정을 제거합니다. 인증 정보는 등록한 주소에만 적용됩니다.",
   "common.loading": "불러오는 중…",
   "common.cancel": "취소",
+  "common.close": "닫기",
   "common.copy": "복사",
   "common.copied": "복사됨",
   "common.backTo": "← {label} 로 돌아가기",
