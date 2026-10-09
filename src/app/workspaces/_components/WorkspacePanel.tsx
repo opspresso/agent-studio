@@ -18,6 +18,7 @@ import { WorkspaceActions } from "./WorkspaceActions";
 import type { WorkspaceRunResponse } from "@/app/api/workspaces/[id]/runs/route";
 import type { WorkspaceOptionsResponse } from "@/app/api/workspaces/options/route";
 import type { MessageKey } from "@/app/_i18n/messages/en";
+import { BADGE } from "@/app/_components/badgeColors";
 
 export function WorkspacePanel({ id }: { id: string }) {
   const t = useT();
@@ -73,7 +74,10 @@ export function WorkspacePanel({ id }: { id: string }) {
     finally { setBusy(false); }
   }
 
-  if (!detail) return loadError ? <Alert color="red">{loadError}</Alert> : <LoadingText />;
+  if (!detail) return <Stack gap="sm">
+    <PageHeader compact title={t("workspace.kind")} Icon={IconTerminal2} />
+    {loadError ? <Alert color="red">{loadError}</Alert> : <LoadingText />}
+  </Stack>;
   const workspace = detail.workspace;
   const run = detail.runs.find(run => run.id === runId);
   const pending = detail.approvals.find(approval => approval.id === workspace.activeActionId && approval.status === "pending");
@@ -99,7 +103,7 @@ export function WorkspacePanel({ id }: { id: string }) {
     <Select label={t("workspace.runs")} size="xs" value={runId ?? null} allowDeselect={false} onChange={setSelected}
       data={detail.runs.map(run => ({ value: run.id, label: `${formatDateTime(run.createdAt, locale)} · ${status(run.status)}` }))} />
     <Tabs value={tab} onChange={setTab} style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-      <Tabs.List><Tabs.Tab value="output">{t("workspace.output")}</Tabs.Tab><Tabs.Tab value="diff">Diff</Tabs.Tab><Tabs.Tab value="checks">{t("workspace.checks")}</Tabs.Tab>{workspace.coding && <Tabs.Tab value="actions">{t("workspace.actions")}</Tabs.Tab>}</Tabs.List>
+      <Tabs.List aria-label={t("workspace.kind")}><Tabs.Tab value="output">{t("workspace.output")}</Tabs.Tab><Tabs.Tab value="diff">Diff</Tabs.Tab><Tabs.Tab value="checks">{t("workspace.checks")}</Tabs.Tab>{workspace.coding && <Tabs.Tab value="actions">{t("workspace.actions")}</Tabs.Tab>}</Tabs.List>
       <Box style={{ position: "relative", flex: 1, minHeight: 0 }}>
         <ScrollArea h="100%" viewportRef={scrollRef} data-testid="workspace-scroll-area">
           <div ref={contentRef}><Box p="sm">
@@ -113,7 +117,7 @@ export function WorkspacePanel({ id }: { id: string }) {
             </Stack></Tabs.Panel>
             <Tabs.Panel value="diff">{run?.diffTruncated && <Alert color="yellow">{t("workspace.diffTruncated")}</Alert>}<Code block style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", overflow: "visible" }}>{run?.diff || t("workspace.noDiff")}</Code></Tabs.Panel>
             <Tabs.Panel value="checks"><Stack>{run?.checks.length ? run.checks.map(check => <Box key={check.name} p="sm" style={{ border: "1px solid var(--mantine-color-default-border)", borderRadius: "var(--mantine-radius-md)" }}>
-              <Group justify="space-between"><Text fw={600}>{check.name}</Text><Badge color={check.status === "failed" ? "red" : check.status === "passed" ? "green" : "gray"}>{status(check.status)}</Badge></Group>
+              <Group justify="space-between"><Text fw={600}>{check.name}</Text><Badge color={check.status === "failed" ? BADGE.broken : check.status === "passed" ? BADGE.on : BADGE.neutral}>{status(check.status)}</Badge></Group>
               <Code>{check.command}</Code>{check.exitCode !== undefined && <Text size="xs">{t("workspace.exitCode")}: {check.exitCode}</Text>}
               <Code block mt="xs" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", overflow: "visible" }}>{check.output}</Code>
               {check.truncated && <Text size="xs" c="dimmed">{t("workspace.outputWindow")}</Text>}
