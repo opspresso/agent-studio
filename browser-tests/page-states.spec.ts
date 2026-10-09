@@ -17,7 +17,8 @@ test.beforeAll(async () => {
         import { useSyncExternalStore } from "react";
         const subscribe = callback => { addEventListener("popstate", callback); return () => removeEventListener("popstate", callback); };
         export const useParams = () => ({ name: useSyncExternalStore(subscribe, () => new URLSearchParams(location.search).get("agent") || "fixture") });
-        export const useRouter = () => ({ push() {} });`, loader: "js", resolveDir: process.cwd() }));
+        export const useRouter = () => ({ push() {} });
+        export const usePathname = () => location.pathname;`, loader: "js", resolveDir: process.cwd() }));
     } }],
   });
   server = createServer((request, response) => {
@@ -30,6 +31,27 @@ test.beforeAll(async () => {
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
 test.afterAll(async () => { if (server) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); });
+
+for (const role of ["guest", "loading"]) {
+  test(`new Chat retains its heading for ${role} access`, async ({ page }) => {
+    await page.goto(`${base}?page=chat&role=${role}`);
+    await expect(page.getByRole("heading", { level: 1, name: "New Chat", exact: true })).toBeVisible();
+    await expect(page.getByRole(role === "guest" ? "alert" : "status")).toBeVisible();
+  });
+}
+
+test("new Chat keeps page context when the Agent list fails", async ({ page }) => {
+  await page.route("**/api/agents", route => route.fulfill({ status: 503, json: { error: "Agent list unavailable" } }));
+  await page.goto(`${base}?page=chat`);
+  await expect(page.getByRole("alert")).toHaveText("Agent list unavailable");
+  await expect(page.getByRole("heading", { level: 1, name: "New Chat", exact: true })).toBeVisible();
+});
+
+test("not-found recovery exposes a page heading and home link", async ({ page }) => {
+  await page.goto(`${base}?page=not-found`);
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Back to overview" })).toHaveAttribute("href", "/");
+});
 
 for (const route of ["settings", "integrations"]) {
   test(`${route} keeps its heading during read failure`, async ({ page }) => {

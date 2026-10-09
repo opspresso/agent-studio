@@ -36,7 +36,7 @@ export function ErrorCard({
           color="red"
           variant="light"
           icon={<IconAlertTriangle size={18} />}
-          title={t("error.pageTitle")}
+          title={<Text component="h1" fz="sm" fw={600}>{t("error.pageTitle")}</Text>}
         >
           <Text fz="sm">{t("error.pageBody")}</Text>
         </Alert>

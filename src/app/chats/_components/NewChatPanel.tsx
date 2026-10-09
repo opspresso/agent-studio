@@ -139,8 +139,9 @@ export function NewChatPanel() {
 
   if (!agentsLoaded) {
     return (
-      <Flex h="100%" align="center" justify="center" role="status">
-        <Group gap="sm">
+      <Flex h="100%" align="center" justify="center" direction="column" gap="md">
+        <PageHeader compact Icon={IconMessageCircle} title={t("chat.new")} />
+        <Group gap="sm" role="status">
           <Loader size="sm" />
           <Text c="dimmed" fz="sm">{t("common.loading")}</Text>
         </Group>
@@ -152,11 +153,12 @@ export function NewChatPanel() {
     return (
       <Flex h="100%" align="center" justify="center">
         <Stack gap="xs" maw={420} ta="center">
-          {agentsError ? (
+          {agentsError ? <>
+            <PageHeader compact Icon={IconMessageCircle} title={t("chat.new")} />
             <Alert color="red" variant="light">
               {agentsError}
             </Alert>
-          ) : (
+          </> : (
             <>
               <ThemeIcon size={56} radius="xl" variant="light" mx="auto">
                 <IconMessageCircle size={28} />

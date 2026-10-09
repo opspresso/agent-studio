@@ -17,7 +17,7 @@ export default function NotFound() {
   return (
     <Card withBorder padding="lg" radius="lg">
       <Stack gap="sm" align="flex-start">
-        <Title order={3}>{t("error.notFoundTitle")}</Title>
+        <Title order={1} fz="h3">{t("error.notFoundTitle")}</Title>
         <Text fz="sm" c="dimmed">
           {t("error.notFoundBody")}
         </Text>

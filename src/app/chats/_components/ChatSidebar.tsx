@@ -202,7 +202,7 @@ export function ChatSidebar() {
   const list = (
     <Tabs value={tab} onChange={value => { if (value === "chats" || value === "workspaces") setTab(value); }}
       style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-      <Tabs.List grow>
+      <Tabs.List grow aria-label={t("chat.history")}>
         <Tabs.Tab value="chats" leftSection={<IconMessages size={15} />} className={classes.tab}
           data-current={activeTab === "chats" || undefined} title={activeTab === "chats" ? currentTitle : undefined}
           aria-description={activeTab === "chats" ? currentTitle : undefined}>{t("chat.list")}</Tabs.Tab>
