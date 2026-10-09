@@ -15,8 +15,10 @@ import Integrations from "../../src/app/agents/[name]/integrations/page";
 import { NewChatEntry } from "../../src/app/chats/_components/NewChatEntry";
 import { ChatRouteProvider } from "../../src/app/chats/_components/ChatRouteSelection";
 import NotFound from "../../src/app/not-found";
+import { ErrorCard } from "../../src/app/_components/ErrorCard";
 
 function NewChat() { return <ChatRouteProvider><NewChatEntry workspacesEnabled={false} /></ChatRouteProvider>; }
+function FailedPage() { return <ErrorCard error={Object.assign(new Error("Private fixture failure"), { digest: "fixture-digest" })} reset={() => location.assign("?page=not-found")} />; }
 import { AgentAudioContext } from "../../src/app/agents/[name]/_components/AgentAudioContext";
 import { AgentWorkspaceContext } from "../../src/app/agents/[name]/_components/AgentWorkspaceContext";
 
@@ -25,7 +27,8 @@ const guest = query.get("role") === "guest";
 const Page = query.get("page") === "profile" ? Profile : query.get("page") === "members" ? Members
   : query.get("page") === "audio" ? Audio : query.get("page") === "workspace" ? WorkspaceTools
   : query.get("page") === "settings" ? Settings : query.get("page") === "integrations" ? Integrations
-  : query.get("page") === "api-reference" ? ApiReference : query.get("page") === "chat" ? NewChat : query.get("page") === "not-found" ? NotFound : Audits;
+  : query.get("page") === "api-reference" ? ApiReference : query.get("page") === "chat" ? NewChat
+  : query.get("page") === "error" ? FailedPage : query.get("page") === "not-found" ? NotFound : Audits;
 const feature = { enabled: query.get("state") === "loading" ? undefined : query.get("state") === "enabled",
   error: query.get("state") === "error" ? "Feature unavailable" : undefined };
 createRoot(document.getElementById("root")!).render(

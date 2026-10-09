@@ -53,6 +53,15 @@ test("not-found recovery exposes a page heading and home link", async ({ page })
   await expect(page.getByRole("link", { name: "Back to overview" })).toHaveAttribute("href", "/");
 });
 
+test("render failure uses the shared heading and allows recovery without exposing the error", async ({ page }) => {
+  await page.goto(`${base}?page=error`);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(translator("en")("error.pageTitle"));
+  await expect(page.getByText("fixture-digest", { exact: true })).toBeVisible();
+  await expect(page.getByText("Private fixture failure", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Try again", exact: true }).press("Space");
+  await expect(page.getByRole("link", { name: "Back to overview" })).toBeVisible();
+});
+
 for (const route of ["settings", "integrations", "api-reference"]) {
   test(`${route} keeps its heading during read failure`, async ({ page }) => {
     let release: (() => void) | undefined;

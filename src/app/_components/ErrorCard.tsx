@@ -12,6 +12,7 @@ import { useEffect } from "react";
 import { Alert, Button, Card, Group, Stack, Text } from "@mantine/core";
 import { IconAlertTriangle, IconReload } from "@tabler/icons-react";
 import { useT } from "@/app/_i18n/provider";
+import { PageHeader } from "./PageHeader";
 
 export function ErrorCard({
   error,
@@ -32,11 +33,10 @@ export function ErrorCard({
   return (
     <Card withBorder padding="lg" radius="lg">
       <Stack gap="md">
+        <PageHeader compact title={t("error.pageTitle")} Icon={IconAlertTriangle} />
         <Alert
           color="red"
           variant="light"
-          icon={<IconAlertTriangle size={18} />}
-          title={<Text component="h1" fz="sm" fw={600}>{t("error.pageTitle")}</Text>}
         >
           <Text fz="sm">{t("error.pageBody")}</Text>
         </Alert>
