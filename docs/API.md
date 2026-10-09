@@ -1478,22 +1478,22 @@ cachedTokens, costUsd, modelDurationMs?, timedOutputTokens?, timedCalls? }] }`�
 ```
 GET /api/usages/summary?from=2026-01-01&to=2026-01-31[&agent=my-bot]
 → 200 { "items": [ { agentName, date, calls, inputTokens, outputTokens, cachedTokens,
-                     costUsd }, … ] }
+                     costUsd, modelDurationMs?, timedOutputTokens?, timedCalls? }, … ] }
       (every metric is a per-model map: { "provider/model": number })
 → 400 { "error": "…" }   (bad/oversized range: max 184 days, from ≤ to)
 ```
 
 `cachedTokens` 는 `inputTokens` 중 프로바이더가 자기 프롬프트 캐시에서 서빙한 부분이며, 이미
-캐시 단가로 값이 매겨져 있다. 이 필드가 존재하기 전에 기록된 날과 `prompt_tokens_details` 를
-보고하지 않는 채널에 대해서는 `{}` 다. 콘솔이 `0%` 가 아니라 빈칸을 렌더링하는 이유가 이것이다:
-아무도 보고하지 않는 캐시는 차가운 캐시가 아니다.
+캐시 단가로 값이 매겨져 있다. 필드가 없는 과거 행은 `{}`로 읽고 미보고 호출은 0으로 합산한다.
+저장된 0만으로 cache miss와 미보고를 구분할 수 없어 콘솔은 양수인 캐시 비율만 표시하며,
+그 외에는 `—`를 표시한다.
 
 ### 호출자별 지출
 
 ```
 GET /api/agents/{name}/usage/actors?from=2026-07-01&to=2026-07-31
 → 200 { "items": [ { agentName, userId, actor, calls, inputTokens, outputTokens, cachedTokens,
-                     costUsd, display?: { name, avatarUrl? } }, … ],
+                     costUsd, modelDurationMs?, timedOutputTokens?, timedCalls?, display?: { name, avatarUrl? } }, … ],
         "totalActors": 123, "truncated": true }
 ```
 

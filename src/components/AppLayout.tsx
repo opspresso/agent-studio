@@ -75,6 +75,7 @@ const NAV_GROUPS = [
     label: "nav.group.system",
     items: [
       { href: "/members", label: "nav.members", Icon: IconUsers },
+      { href: "/usage", label: "usage.adminTitle", Icon: IconChartBar },
       { href: "/audits", label: "nav.audits", Icon: IconShieldCheck },
       { href: "/settings", label: "nav.settings", Icon: IconSettings },
     ],

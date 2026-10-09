@@ -18,6 +18,7 @@ export const GROUP_BY_LABEL: Record<GroupBy, MessageKey> = {
   model: "usage.groupBy.model",
   provider: "usage.groupBy.provider",
   department: "usage.groupBy.department",
+  user: "usage.groupBy.user",
 };
 
 /**

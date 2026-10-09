@@ -6,7 +6,7 @@ import { useParams } from "next/navigation";
 import { DateRangePicker } from "@/app/_components/DateRangePicker";
 import { EmptyState, LoadingText } from "@/app/_components/PageState";
 import { CardHeading } from "@/app/_components/CardHeading";
-import { CostBarChart } from "@/app/_components/CostBarChart";
+import { UsageChart } from "@/app/_components/UsageChart";
 import { DataTable } from "@/app/_components/DataTable";
 import { GROUP_BY_LABEL, GroupByControl } from "@/app/_components/GroupByControl";
 import { StatCard } from "@/app/_components/StatCard";
@@ -244,7 +244,7 @@ function UsageDetail({ name }: { name: string }) {
               />
               <GroupByControl value={groupBy} onChange={setGroupBy} options={GROUP_OPTIONS} />
             </Group>
-            <CostBarChart data={daily.data} keys={daily.keys} />
+            <UsageChart data={daily.data} keys={daily.keys} />
           </Card>
 
           <UsageBreakdown groups={groups} label={groupBy} />

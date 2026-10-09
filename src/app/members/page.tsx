@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Alert, Avatar, Group, Select, Stack, Table, Text } from "@mantine/core";
+import Link from "next/link";
+import { Alert, Anchor, Avatar, Button, Group, Select, Stack, Table, Text } from "@mantine/core";
 import { IconUsers } from "@tabler/icons-react";
 import type { MemberTier } from "@/domain/member/tiers";
 import type { Member } from "@/domain/member/types";
@@ -63,7 +64,9 @@ export default function MembersPage() {
     return () => { cancelled = true; };
   }, [viewer?.isAdmin]);
 
-  const header = <PageHeader title={t("nav.members")} description={t("members.lede")} Icon={IconUsers} />;
+  const header = <PageHeader title={t("nav.members")} description={t("members.lede")} Icon={IconUsers}>
+    {viewer?.isAdmin && <Button component={Link} href="/usage" variant="default">{t("usage.adminTitle")}</Button>}
+  </PageHeader>;
   if (viewer === null || !viewer.isAdmin) return <Stack gap="lg">{header}
     {viewer === null ? <LoadingText /> : <Alert color="gray">{t("admin.adminOnlyMembers")}</Alert>}
   </Stack>;
@@ -97,7 +100,7 @@ export default function MembersPage() {
                     <Group gap="sm" wrap="nowrap">
                       <Avatar src={member.image} radius="xl">{member.name.slice(0, 1)}</Avatar>
                       <div>
-                        <Text fz="sm" fw={500}>{member.name}</Text>
+                        <Anchor component={Link} href={`/usage?user=${encodeURIComponent(member.id)}`} fz="sm" fw={500}>{member.name}</Anchor>
                         <Text fz="xs" c="dimmed">{member.email}</Text>
                       </div>
                     </Group>

@@ -1,10 +1,11 @@
 "use client";
 
 import { BarChart, type ChartSeries } from "@mantine/charts";
-import { formatUsd } from "@/app/_lib/formatUsd";
 import { Divider, Group, Paper, Text } from "@mantine/core";
 import { useLocale, useT } from "@/app/_i18n/provider";
-import { OTHERS_KEY, toChartColumns, toChartData, type CostSeriesPoint } from "@/app/_lib/usage";
+import { OTHERS_KEY, toChartColumns, toChartData, type UsageSeriesPoint } from "@/app/_lib/usage";
+import type { UsageMetric } from "@/app/_lib/usage";
+import { formatUsageMetric } from "@/app/_lib/usagePresentation";
 
 const SERIES_COLORS = [
   "var(--chart-1)",
@@ -39,16 +40,19 @@ interface TooltipEntry {
 function ChartTooltip({
   label,
   payload,
+  metric,
 }: {
   label?: React.ReactNode;
   payload?: readonly unknown[];
+  metric: UsageMetric;
 }) {
   const t = useT();
+  const locale = useLocale();
   if (!payload || payload.length === 0) {
     return null;
   }
   const entries = (payload as readonly TooltipEntry[]).filter(
-    (entry) => typeof entry.value === "number" && entry.value > 0,
+    (entry) => typeof entry.value === "number" && (entry.value > 0 || metric === "tokensPerSecond"),
   );
   if (entries.length === 0) {
     return null;
@@ -75,11 +79,11 @@ function ChartTooltip({
             {entry.name}
           </Text>
           <Text fz="xs" ml="auto" pl="md" ff="monospace">
-            {formatUsd(entry.value as number)}
+            {formatUsageMetric(entry.value as number, metric, locale)}
           </Text>
         </Group>
       ))}
-      {entries.length > 1 && (
+      {entries.length > 1 && metric !== "tokensPerSecond" && (
         <>
           <Divider my={4} />
           <Group gap={6} wrap="nowrap">
@@ -88,7 +92,7 @@ function ChartTooltip({
               {t("common.total")}
             </Text>
             <Text fz="xs" fw={500} ml="auto" pl="md" ff="monospace">
-              {formatUsd(total)}
+              {formatUsageMetric(total, metric, locale)}
             </Text>
           </Group>
         </>
@@ -102,24 +106,19 @@ function dayTick(date: string): string {
   return date.slice(5);
 }
 
-/**
- * Stacked daily spend — the one cost chart, on all three surfaces that draw
- * one: the overview, an agent's usage tab, and a member's own profile.
- *
- * The shared empty state can be overridden by a caller-specific message.
- *
- * Reached through `CostBarChart.tsx`, never imported directly: this module is
- * what pulls recharts in, and that is the split the lazy boundary needs. The
- * default export is what `next/dynamic` resolves.
- */
-export default function CostBarChartView({
+/** Additive daily metrics stack; weighted throughput uses separate bars with missing samples left blank. */
+export default function UsageChartView({
   data,
   keys,
   empty,
+  metric = "cost",
+  labels,
 }: {
-  data: CostSeriesPoint[];
+  data: UsageSeriesPoint[];
   keys: string[];
   empty?: string;
+  metric?: UsageMetric;
+  labels?: ReadonlyMap<string, string>;
 }) {
   const t = useT();
   const locale = useLocale();
@@ -134,7 +133,7 @@ export default function CostBarChartView({
   const columns = toChartColumns(keys);
   const series: ChartSeries[] = columns.map((column, index) => ({
     name: column.dataKey,
-    label: column.label,
+    label: labels?.get(column.label) ?? column.label,
     color:
       column.label === OTHERS_KEY
         ? "var(--chart-others)"
@@ -146,7 +145,7 @@ export default function CostBarChartView({
       h={288}
       data={toChartData(data, columns)}
       dataKey="date"
-      type="stacked"
+      type={metric === "tokensPerSecond" ? "default" : "stacked"}
       series={series}
       withLegend={keys.length > 1}
       legendProps={{ verticalAlign: "bottom" }}
@@ -154,9 +153,9 @@ export default function CostBarChartView({
       withXAxis
       withYAxis
       xAxisProps={{ tickFormatter: dayTick, minTickGap: 24 }}
-      yAxisProps={{ tickFormatter: (value: number) => formatAxisUsd(value, locale), width: 64 }}
-      valueFormatter={formatUsd}
-      tooltipProps={{ content: ChartTooltip }}
+      yAxisProps={{ tickFormatter: (value: number) => metric === "cost" ? formatAxisUsd(value, locale) : formatUsageMetric(value, metric, locale), width: 72 }}
+      valueFormatter={value => formatUsageMetric(value, metric, locale)}
+      tooltipProps={{ content: props => <ChartTooltip {...props} metric={metric} /> }}
       tooltipAnimationDuration={0}
       barProps={(item) => ({ isAnimationActive: false, name: item.label ?? item.name })}
     />
