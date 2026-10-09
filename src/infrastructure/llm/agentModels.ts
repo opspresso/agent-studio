@@ -15,6 +15,12 @@ import type { ResolvedTarget, TargetResolver } from "./providers";
 import { MODEL_DURATION_MS } from "@/domain/usage/performance";
 import { createRequestTimer } from "@/shared/requestTimer";
 
+/** Native Usage defaults missing counts to zero; only explicit provider counts are timing samples. */
+function reportedDuration(rawUsage: Record<string, unknown> | undefined, durationMs: number): number | undefined {
+  const output = rawUsage?.completion_tokens;
+  return typeof output === "number" && Number.isSafeInteger(output) && output >= 0 ? durationMs : undefined;
+}
+
 /** Studio owns routing and credentials; the Agents SDK owns the model protocol. */
 export function createAgentModelProvider(
   resolveTarget: TargetResolver,
@@ -53,7 +59,7 @@ class StudioChatModel implements Model {
       const choice = result.providerData?.choices?.[0];
       const reasoning = choice?.message?.reasoning_content;
       return { ...result,
-        providerData: { ...result.providerData, [MODEL_DURATION_MS]: timer.durationMs },
+        providerData: { ...result.providerData, [MODEL_DURATION_MS]: reportedDuration(result.rawUsage, timer.durationMs) },
         ...(typeof reasoning === "string" ? { output: withReasoning(result.output, reasoning) } : {}),
       };
     } catch (error) {
@@ -76,7 +82,7 @@ class StudioChatModel implements Model {
         }
         yield event.type === "response_done"
           ? { ...event, response: { ...event.response,
-              providerData: { ...event.response.providerData, [MODEL_DURATION_MS]: timer.durationMs },
+              providerData: { ...event.response.providerData, [MODEL_DURATION_MS]: reportedDuration(event.response.rawUsage, timer.durationMs) },
               ...(reasoningContent ? { output: withReasoning(event.response.output, reasoningContent) } : {}),
             } }
           : event;
