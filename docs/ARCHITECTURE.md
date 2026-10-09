@@ -373,7 +373,9 @@ HTTP 응답 전에 발생한 유스케이스 오류는 `AppError` 하위 타입�
 서버의 `resolveViewer`가 shell의 권한을 해석하며, 클라이언트 조회도 같은 viewer 계약을 쓴다.
 로그아웃 상태에서는 내비게이션 내용을 렌더하지 않는다.
 
-Mantine 테마의 소유자는 `app/theme.ts`다. 페이지 제목·설명·액션은 `PageHeader`, 하위 섹션은
+Mantine 테마의 소유자는 `app/theme.ts`다. `consoleCssVariables`는 라이트 테마의 색상별 글자를
+배경·hover 배경 대비에 맞춰 보정하고, 채운 버튼은 배경 밝기에 따라 검정·흰색 글자를 선택한다.
+페이지 제목·설명·액션은 `PageHeader`, 하위 섹션은
 `SectionHeading`, 경로 기반 탭은 `PageTabs`를 사용한다. `PageTabs`는 이름이 있는 `nav`와 실제
 링크로 페이지를 이동하고 현재 링크에 `aria-current="page"`를 표시한다. ARIA `tab`은 같은 페이지
 안에서 대응하는 `tabpanel`을 전환할 때만 사용한다. `PageHeader`의 아이콘은 필수이며

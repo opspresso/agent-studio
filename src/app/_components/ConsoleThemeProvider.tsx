@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { MantineProvider, type PaginationProps } from "@mantine/core";
-import { theme } from "@/app/theme";
+import { consoleCssVariables, theme } from "@/app/theme";
 import { useT } from "@/app/_i18n/provider";
 
 /** Library-generated close and pagination controls inherit localized names; explicit labels still win. */
@@ -21,5 +21,5 @@ export function ConsoleThemeProvider({ children }: { children: React.ReactNode }
       Pagination: { defaultProps: pagination },
     } };
   }, [t]);
-  return <MantineProvider theme={localizedTheme} defaultColorScheme="auto">{children}</MantineProvider>;
+  return <MantineProvider theme={localizedTheme} cssVariablesResolver={consoleCssVariables} defaultColorScheme="auto">{children}</MantineProvider>;
 }
