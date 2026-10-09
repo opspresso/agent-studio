@@ -13,7 +13,7 @@ export interface UsageInfo {
   inputTokens: number;
   outputTokens: number;
   costUsd: number;
-  /** Active provider request/read time; excludes tools, routing and downstream backpressure. */
+  /** Request-to-response elapsed time; includes transport/backpressure, excludes tools and accounting. */
   modelDurationMs?: number;
   /**
    * Prompt tokens the provider served from its cache — a **subset** of

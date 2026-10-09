@@ -27,7 +27,7 @@ export interface TranscriptionResult {
   model: string;
   /** Missing usage remains unknown rather than becoming zero. */
   usage?: TranscriptionUsage;
-  /** Active provider request/read time, retained in the durable segment result. */
+  /** Provider request-to-response elapsed time, retained in the durable segment result. */
   modelDurationMs?: number;
   warnings: string[];
   /** Server-assigned accounting identity, preserved with a durable segment checkpoint. */

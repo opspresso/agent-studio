@@ -1,20 +1,20 @@
-/** Time only active request/read waits, excluding downstream backpressure and accounting. */
+/** Monotonic request-to-response time. A paused consumer must not make a model appear faster. */
 export function createRequestTimer(now: () => number = () => performance.now()) {
   let durationMs = 0;
+  let startedAt: number | undefined;
   async function measure<T>(read: () => Promise<T>): Promise<T> {
-    const start = now();
+    startedAt ??= now();
     try { return await read(); }
-    finally { durationMs += Math.max(0, now() - start); }
+    finally { durationMs = Math.max(0, now() - startedAt); }
   }
   return {
     get durationMs() { return durationMs; },
     measure,
     async *iterate<T>(source: AsyncIterable<T>): AsyncGenerator<T> {
-      let start = now();
+      startedAt ??= now();
       for await (const item of source) {
-        durationMs += Math.max(0, now() - start);
+        durationMs = Math.max(0, now() - startedAt);
         yield item;
-        start = now();
       }
     },
   };

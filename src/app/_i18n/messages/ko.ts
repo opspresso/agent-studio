@@ -683,7 +683,7 @@ export const ko: Messages = {
   "usage.tokensPerSecond": "출력 토큰/초",
   "usage.measuredCalls": "측정 호출",
   "usage.measuredCallsHint": "유효한 시간이 있는 호출 / 전체 호출. 미측정 호출의 출력은 처리량에서 제외합니다.",
-  "usage.throughputHint": "출력 토큰/초 = 측정된 출력 토큰 ÷ 모델 요청 대기 시간(초). 첫 응답 지연을 포함하며 도구 실행과 소비자의 처리 대기는 제외합니다. 시간 정보가 없으면 —로 표시합니다.",
+  "usage.throughputHint": "출력 토큰/초 = 측정된 출력 토큰 ÷ 요청부터 응답 수신까지의 시간(초). 네트워크·스트림 지연을 포함하며 도구 실행·저장 시간은 제외합니다. 시간 정보가 없으면 —로 표시합니다.",
   "usage.modelsTitle": "모델 사용량",
   "usage.modelsHint": "현재 Agent에서 사용한 모델별 비용·토큰·처리량을 비교합니다.",
   "usage.adminTitle": "사용량 모니터링",

@@ -4,7 +4,7 @@ import { MODEL_DURATION_MS, outputTokensPerSecond, performanceSample } from "@/d
 import { modelResponseUsage } from "@/application/runtime/modelUsage";
 
 describe("model request performance", () => {
-  it("excludes consumer pauses and closes the source on early exit", async () => {
+  it("retains elapsed time across consumer pauses and closes the source on early exit", async () => {
     let now = 0;
     const close = vi.fn();
     const timer = createRequestTimer(() => now);
@@ -20,7 +20,7 @@ describe("model request performance", () => {
       now += 10_000;
       if (item === "last") break;
     }
-    expect(timer.durationMs).toBe(300);
+    expect(timer.durationMs).toBe(10300);
     expect(close).toHaveBeenCalledOnce();
   });
 
@@ -29,6 +29,17 @@ describe("model request performance", () => {
     const timer = createRequestTimer(() => now);
     await expect(timer.measure(async () => { now = 60; throw new Error("unavailable"); })).rejects.toThrow("unavailable");
     expect(timer.durationMs).toBe(50);
+  });
+
+  it("includes unread response time between headers and the final body", async () => {
+    let now = 0;
+    const timer = createRequestTimer(() => now);
+    await timer.measure(async () => { now += 100; });
+    now += 9000;
+    await timer.measure(async () => { now += 200; });
+    expect(timer.durationMs).toBe(9300);
+    now += 5000;
+    expect(timer.durationMs).toBe(9300);
   });
 
   it("carries adapter timing alongside provider billing without changing the bill", () => {

@@ -78,7 +78,7 @@ afterEach(() => {
 });
 
 describe("Agents SDK model provider", () => {
-  it("measures completion and streaming calls without downstream pauses", async () => {
+  it("measures completion and includes stream pauses without inflating throughput", async () => {
     let now = 0;
     vi.mocked(performance.now).mockImplementation(() => now);
     installTransport(body => {
@@ -90,10 +90,12 @@ describe("Agents SDK model provider", () => {
     });
     const model = await createAgentModelProvider(async () => target).getModel("selfhosted/local-model");
     expect((await getResponse(model)).providerData?.[MODEL_DURATION_MS]).toBe(500);
+    let pauses = 0;
     await withTrace(new NoopTrace(), async () => {
       for await (const event of model.getStreamedResponse(request)) {
+        if (event.type === "response_done") expect(event.response.providerData?.[MODEL_DURATION_MS]).toBe(500 + pauses * 10_000);
         now += 10_000;
-        if (event.type === "response_done") expect(event.response.providerData?.[MODEL_DURATION_MS]).toBe(500);
+        pauses++;
       }
     });
   });

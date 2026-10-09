@@ -700,7 +700,7 @@ export const en = {
   "usage.tokensPerSecond": "Output tokens/s",
   "usage.measuredCalls": "Measured calls",
   "usage.measuredCallsHint": "Calls with valid timing / all calls. Untimed output is excluded from throughput.",
-  "usage.throughputHint": "Output tokens/s = measured output tokens ÷ active model request seconds, including initial latency. Tool time and consumer pauses are excluded. No timing data is shown as —.",
+  "usage.throughputHint": "Output tokens/s = measured output tokens ÷ request-to-response seconds, including network and stream delays. Tool and storage time are excluded. No timing data is shown as —.",
   "usage.modelsTitle": "Model usage",
   "usage.modelsHint": "Compare model cost, tokens and throughput across current Agents.",
   "usage.adminTitle": "Usage monitoring",
