@@ -1,5 +1,7 @@
 "use client";
 
+import { ConfigurationFields } from "@/app/_components/ConfigurationFields";
+
 import { useEffect, useState } from "react";
 import { ActionIcon, Alert, Badge, Button, Card, Group, NumberInput, Stack, Table, Text, TextInput } from "@mantine/core";
 import { IconGripVertical } from "@tabler/icons-react";
@@ -56,7 +58,7 @@ export function MemberTierSettings() {
     {error && <Alert color="red">{error}</Alert>}
     {!view && !error && <LoadingText />}
     {view && <Card>
-      <Stack renderRoot={props => <fieldset {...props} disabled={saving} />} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
+      <ConfigurationFields disabled={saving}>
         <Table.ScrollContainer minWidth={540}>
           <Table>
             <Table.Thead><Table.Tr>
@@ -121,7 +123,7 @@ export function MemberTierSettings() {
         </Group>
         <Group><Button disabled={!dirty || !valid} loading={saving} onClick={() => void save()}>{t("modelAdmin.save")}</Button>
           {saved && <Text size="sm" c="teal">{t("modelAdmin.saved")}</Text>}</Group>
-      </Stack>
+      </ConfigurationFields>
     </Card>}
     {error && <Group><Button variant="default" disabled={saving} onClick={() => setReload(value => value + 1)}>{t("error.retry")}</Button></Group>}
   </Stack>;

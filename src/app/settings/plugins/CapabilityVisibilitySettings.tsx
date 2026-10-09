@@ -1,5 +1,7 @@
 "use client";
 
+import { ConfigurationFields } from "@/app/_components/ConfigurationFields";
+
 import { useEffect, useState } from "react";
 import { Alert, Badge, Button, Card, Checkbox, Group, Stack, Table, Tabs, Text, TextInput } from "@mantine/core";
 import { IconSearch } from "@tabler/icons-react";
@@ -69,8 +71,7 @@ export function CapabilityVisibilitySettings() {
     <SectionHeading title={t("settings.visibility.title")} description={t("settings.visibility.hint")} />
     {error && <Alert color="red">{error}</Alert>}
     {loading ? <LoadingText /> : view ? <Card component="form" onSubmit={save}>
-      <Stack renderRoot={props => <fieldset {...props} disabled={saving} />} gap="md"
-        style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+      <ConfigurationFields disabled={saving}>
         <Tabs keepMounted={false} value={kind} onChange={value => {
           if (CAPABILITY_KINDS.some(key => key === value)) { setKind(value as keyof CapabilityVisibility); setFilter(""); }
         }}>
@@ -103,7 +104,7 @@ export function CapabilityVisibilitySettings() {
         </Tabs>
         <Group><Button type="submit" loading={saving} disabled={!dirty}>{t("modelAdmin.save")}</Button>
           {saved && <Text size="sm" c="teal">{t("modelAdmin.saved")}</Text>}</Group>
-      </Stack>
+      </ConfigurationFields>
     </Card> : <Group><Button variant="default" onClick={() => {
       setLoading(true); setError(null); setReloadKey(key => key + 1);
     }}>{t("error.retry")}</Button></Group>}
