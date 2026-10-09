@@ -1507,6 +1507,7 @@ export const ko: Messages = {
   "artifacts.kindAudio": "오디오 파일",
 
   "viewer.showInfo": "정보 보기",
+  "viewer.title": "이미지 미리보기",
   "viewer.actual": "원본 크기로 보기",
   "viewer.fit": "화면에 맞추기",
   "viewer.hideInfo": "정보 숨기기",

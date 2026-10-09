@@ -207,7 +207,7 @@ test("saves personal favorites from selected models and restores them after relo
   await expect(addFavorite).toHaveText("");
   await addFavorite.click();
   const removeFavorite = identity.getByRole("button", { name: "Remove from favorites" });
-  await expect(removeFavorite).toHaveAttribute("aria-pressed", "true");
+  await expect(removeFavorite).not.toHaveAttribute("aria-pressed");
   await expect(removeFavorite).toHaveText("");
   expect(favorites).toEqual(["fixture/jev-latest"]);
   await page.reload();

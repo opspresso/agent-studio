@@ -75,8 +75,15 @@ test("shows compact rows and preserves preview, download, provenance and unavail
   expect((await preview.boundingBox())!.height).toBe(64);
   await preview.focus();
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("dialog").getByRole("img", { name: "Quarterly report" })).toHaveAttribute("src", image);
-  await page.getByRole("button", { name: "Show details", exact: true }).click();
+  const viewer = page.getByRole("dialog", { name: "Image preview", exact: true });
+  await expect(viewer.getByRole("img", { name: "Quarterly report" })).toHaveAttribute("src", image);
+  const details = viewer.getByRole("button", { name: "Show details", exact: true });
+  await expect(details).toHaveAttribute("aria-expanded", "false");
+  await details.focus();
+  await page.keyboard.press("Enter");
+  const hide = viewer.getByRole("button", { name: "Hide details", exact: true });
+  await expect(hide).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator(`[id="${await hide.getAttribute("aria-controls")}"]`)).toBeVisible();
   await expect(page.getByRole("dialog")).toContainText("cover.png");
   await page.keyboard.press("Escape");
   const report = page.getByRole("article", { name: "report.html" });

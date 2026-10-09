@@ -74,7 +74,7 @@ export default function ModelsPage() {
         const saving = savingIds.includes(model.id);
         const label = t(favorite ? "models.unfavorite" : "models.favorite");
         return <ActionIcon size="lg" variant="transparent" color="gray"
-          aria-label={label} title={label} aria-pressed={favorite} disabled={!canEdit || saving} loading={saving}
+          aria-label={label} title={label} disabled={!canEdit || saving} loading={saving}
           onClick={() => void toggleFavorite(model.id)}>
           <IconStar size={19} fill={favorite ? "var(--mantine-color-yellow-2)" : "none"}
             color={favorite ? "var(--mantine-color-yellow-7)" : undefined} />

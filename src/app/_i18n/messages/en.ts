@@ -1572,6 +1572,7 @@ export const en = {
   // The full-screen image viewer every surface opens a picture in. Its own
   // namespace rather than `artifacts.`: the gallery is one of four callers.
   "viewer.showInfo": "Show details",
+  "viewer.title": "Image preview",
   "viewer.actual": "View at actual size",
   "viewer.fit": "Fit to screen",
   "viewer.hideInfo": "Hide details",
