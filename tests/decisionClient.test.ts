@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDecisionClient } from "@/infrastructure/llm/decisionClient";
 import type { ResolvedTarget } from "@/infrastructure/llm/providers";
 
@@ -6,10 +6,20 @@ const target: ResolvedTarget = {
   providerName: "openrouter", baseUrl: "https://router.test/api/v1", apiKey: "secret", auth: "bearer", model: "~typesafe/jev-latest",
 };
 const input = { model: "router/~typesafe/jev-latest", state: "Fix code", instructions: "Pick an Agent", criteria: { agent_0: "Coder", none: "No match" } };
-beforeEach(() => { vi.spyOn(performance, "now").mockReturnValue(0); });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe("decision provider adapter", () => {
+  it("measures a decision request without including target resolution", async () => {
+    let now = 0;
+    vi.mocked(performance.now).mockImplementation(() => now);
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      now += 250;
+      return Response.json({ answers: { selection: { type: "choice", choice: "agent_0", confidence: 1, probabilities: { agent_0: 1, none: 0 } } },
+        usage: { input_tokens: 20, output_tokens: 3 } });
+    }));
+    const result = await createDecisionClient(async () => { now += 1000; return target; }).choose(input);
+    expect(result.usage?.modelDurationMs).toBe(250);
+  });
   it.each([
     { input_tokens: 20, output_tokens: 3, cost: 0.001 },
     { prompt_tokens: 20, completion_tokens: 3, cost: 0.001 },

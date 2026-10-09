@@ -66,7 +66,6 @@ beforeEach(() => {
   target.baseUrl = `http://vllm-${++transportNumber}.internal/v1`;
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-09-12T00:00:00Z"));
-  vi.spyOn(performance, "now").mockReturnValue(0);
 });
 
 function getResponse(model: Model, input: ModelRequest = request) {

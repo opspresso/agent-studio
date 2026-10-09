@@ -39,4 +39,8 @@ vi.mock("@/infrastructure/db/store", () => createFakeStore());
 
 import { resetTestModels } from "./modelFixtures";
 resetTestModels();
-beforeEach(resetTestModels);
+beforeEach(() => {
+  resetTestModels();
+  // Provider timing tests advance this clock explicitly; all other unit calls remain untimed.
+  vi.spyOn(performance, "now").mockReturnValue(0);
+});

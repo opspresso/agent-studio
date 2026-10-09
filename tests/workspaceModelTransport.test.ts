@@ -1,11 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createWorkspaceModelTransport } from "@/infrastructure/workspace/modelTransport";
 import { createNativeUsageObserver } from "@/infrastructure/workspace/nativeModelUsage";
 import type { NativeModelProtocol, WorkspaceModelTransport } from "@/domain/workspace/modelGateway";
 import { activeWorkspaceModelRequests } from "@/lib/workspaceModelMetrics";
 import { GET as metrics } from "@/app/api/metrics/route";
 
-beforeEach(() => { vi.spyOn(performance, "now").mockReturnValue(0); });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 const target = { providerName: "selfhosted", baseUrl: "https://provider.example.test/v1", apiKey: "provider-key", auth: "bearer" as const, model: "native" };
 const transport = createWorkspaceModelTransport(async () => target);
@@ -22,6 +21,23 @@ function streaming(events: unknown[], crlf = false) {
     if (at >= bytes.length) controller.close(); else controller.enqueue(bytes.slice(at, ++at));
   } }), { headers: { "content-type": "text/event-stream" } });
 }
+
+it("captures one duration snapshot across native accounting retries", async () => {
+  let now = 0;
+  vi.mocked(performance.now).mockImplementation(() => now);
+  vi.stubGlobal("fetch", vi.fn(async () => {
+    now += 500;
+    return Response.json({ usage: { input_tokens: 10, output_tokens: 20 } });
+  }));
+  const args = input("responses");
+  vi.mocked(args.finish).mockImplementationOnce(async () => { now += 9000; throw new Error("accounting unavailable"); });
+  await transport.forward(args);
+  expect(args.finish).toHaveBeenCalledTimes(2);
+  for (const [usage, complete] of vi.mocked(args.finish).mock.calls) {
+    expect(usage).toMatchObject({ modelDurationMs: 500, outputTokens: 20 });
+    expect(complete).toBe(true);
+  }
+});
 describe("transparent native model transport", () => {
   it("exposes native Gateway load while the provider is pending and releases a JSON response", async () => {
     let respond!: (response: Response) => void;
