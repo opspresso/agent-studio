@@ -187,7 +187,7 @@ function AudioWorkspace({ name }: { name: string }) {
         {useSaved && savedConfig.destination && <Text size="sm">{t("audio.destination")}: {savedConfig.destination.serverName} · {savedConfig.destination.documents ? t("audio.saveDocuments") : ""} {savedConfig.destination.memories ? t("audio.saveMemories") : ""}</Text>}
         {!savedConfig.enabled && <Alert>{t("audio.configDisabled")}</Alert>}
       </>}
-        <FileInput label={t("audio.file")} placeholder={t("audio.chooseFile")} description="MP3, WAV, FLAC, Ogg" accept=".mp3,.wav,.flac,.ogg" value={file} onChange={(file) => { setFile(file); setUploaded(null); }} clearable disabled={busy} />
+        <FileInput label={t("audio.file")} placeholder={t("audio.chooseFile")} description="MP3, WAV, FLAC, Ogg" accept=".mp3,.wav,.flac,.ogg" value={file} onChange={(file) => { setFile(file); setUploaded(null); }} clearable={!busy} disabled={busy} />
       {uploaded && <Text component="a" size="sm" href={`${base}/source-files/${uploaded.file.id}`}>{t("audio.uploadedFile")}: {uploaded.file.filename}</Text>}
       {!useSaved && <>
         <ModelSelect label={t("audio.model")} searchable models={options.models} value={model} onChange={setModel} disabled={busy} />

@@ -56,6 +56,21 @@ test("mobile shell retains its brand name and hides closed navigation from keybo
   await expect(navigation).toHaveCount(0);
 });
 for (const locale of ["en", "ko"]) {
+  test(`clears selections and files with named keyboard controls in ${locale}`, async ({ page }) => {
+    await page.goto(`${base}?page=clearing&locale=${locale}`);
+    const selection = page.getByRole("combobox", { name: "Selection", exact: true });
+    await selection.focus();
+    await selection.press("Tab");
+    const clearSelection = page.getByRole("button", { name: locale === "ko" ? "선택 해제" : "Clear selection", exact: true });
+    await expect(clearSelection).toBeFocused();
+    await clearSelection.press("Space");
+    await expect(selection).toHaveValue("");
+    const clearFile = page.getByRole("button", { name: locale === "ko" ? "파일 선택 해제" : "Clear file", exact: true });
+    await clearFile.focus();
+    await clearFile.press("Space");
+    await expect(page.getByText("fixture.mp3", { exact: true })).toHaveCount(0);
+    await expect(clearFile).toHaveCount(0);
+  });
   test(`credential badges distinguish absent configuration in ${locale}`, async ({ page }) => {
     await page.goto(`${base}?page=credentials&locale=${locale}`);
     await expect(page.getByText(locale === "ko" ? "설정된 인증 정보 없음" : "No credentials configured", { exact: true })).toBeVisible();

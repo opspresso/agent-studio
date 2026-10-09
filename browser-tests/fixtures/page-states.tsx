@@ -1,7 +1,6 @@
 import { createRoot } from "react-dom/client";
-import { MantineProvider } from "@mantine/core";
+import { ConsoleThemeProvider } from "../../src/app/_components/ConsoleThemeProvider";
 import "@mantine/core/styles.css";
-import { theme } from "../../src/app/theme";
 import { I18nProvider } from "../../src/app/_i18n/provider";
 import { ViewerProvider } from "../../src/app/_lib/useViewer";
 import Profile from "../../src/app/profile/page";
@@ -32,11 +31,11 @@ const Page = query.get("page") === "profile" ? Profile : query.get("page") === "
 const feature = { enabled: query.get("state") === "loading" ? undefined : query.get("state") === "enabled",
   error: query.get("state") === "error" ? "Feature unavailable" : undefined };
 createRoot(document.getElementById("root")!).render(
-  <MantineProvider theme={theme}><I18nProvider locale="en">
+  <I18nProvider locale="en"><ConsoleThemeProvider>
     <ViewerProvider viewer={query.get("role") === "loading" ? null : { email: "viewer@example.test", isAdmin: !guest, tier: guest ? "guest" : "admin" }}>
       <AgentAudioContext.Provider value={feature}><AgentWorkspaceContext.Provider value={feature}>
         <main style={{ padding: 16 }}><Page /></main>
       </AgentWorkspaceContext.Provider></AgentAudioContext.Provider>
     </ViewerProvider>
-  </I18nProvider></MantineProvider>,
+  </ConsoleThemeProvider></I18nProvider>,
 );

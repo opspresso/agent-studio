@@ -659,6 +659,8 @@ export const ko: Messages = {
   "pagination.last": "마지막 페이지",
   "pagination.page": "{page}페이지",
   "common.close": "닫기",
+  "common.clearSelection": "선택 해제",
+  "common.clearFile": "파일 선택 해제",
   "common.copy": "복사",
   "common.copied": "복사됨",
   "common.backTo": "← {label} 로 돌아가기",

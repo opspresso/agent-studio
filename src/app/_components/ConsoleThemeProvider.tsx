@@ -18,6 +18,11 @@ export function ConsoleThemeProvider({ children }: { children: React.ReactNode }
     return { ...theme, components: {
       ...theme.components,
       CloseButton: { defaultProps: { "aria-label": t("common.close") } },
+      Select: { ...theme.components?.Select, defaultProps: {
+        ...theme.components?.Select?.defaultProps,
+        clearButtonProps: { "aria-label": t("common.clearSelection"), "aria-hidden": false, tabIndex: 0 },
+      } },
+      FileInput: { defaultProps: { clearButtonProps: { "aria-label": t("common.clearFile") } } },
       Pagination: { defaultProps: pagination },
     } };
   }, [t]);

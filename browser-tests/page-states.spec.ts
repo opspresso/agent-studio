@@ -32,6 +32,33 @@ test.beforeAll(async () => {
 });
 test.afterAll(async () => { if (server) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); });
 
+test("audio upload locks the file selection until the request returns", async ({ page }) => {
+  let release: (() => void) | undefined;
+  const t = translator("en");
+  await page.route("**/api/agents", route => route.fulfill({ json: [] }));
+  await page.route("**/api/agents/fixture/audio-options", route => route.fulfill({ json: { models: [], destinations: [] } }));
+  await page.route("**/api/agents/fixture/audio-config", route => route.fulfill({ json: { model: "fixture-model", enabled: true, revision: 1,
+    maxActive: 1, maxPerOccurrence: 1, retention: { unit: "months", value: 3, timezone: "UTC" } } }));
+  await page.route("**/api/agents/fixture/audio-jobs?**", route => route.fulfill({ json: { jobs: [], nextCursor: null } }));
+  await page.route("**/api/agents/fixture/source-files?**", async route => {
+    await new Promise<void>(resolve => { release = resolve; });
+    await route.fulfill({ status: 503, json: { error: "Upload unavailable" } });
+  });
+  try {
+    await page.goto(`${base}?page=audio&state=enabled`);
+    await page.locator('input[type="file"]').setInputFiles({ name: "fixture.wav", mimeType: "audio/wav", buffer: Buffer.from("fixture") });
+    const clearFile = page.getByRole("button", { name: "Clear file", exact: true });
+    await expect(clearFile).toBeVisible();
+    await page.getByRole("button", { name: t("audio.submit"), exact: true }).click();
+    await expect.poll(() => Boolean(release)).toBe(true);
+    await expect(clearFile).toHaveCount(0);
+    release!();
+    await expect(page.getByRole("alert").filter({ hasText: "Upload unavailable" })).toBeVisible();
+    await expect(clearFile).toBeEnabled();
+    await expect(page.getByText("fixture.wav", { exact: true })).toBeVisible();
+  } finally { release?.(); }
+});
+
 for (const role of ["guest", "loading"]) {
   test(`new Chat retains its heading for ${role} access`, async ({ page }) => {
     await page.goto(`${base}?page=chat&role=${role}`);

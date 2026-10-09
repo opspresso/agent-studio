@@ -670,6 +670,8 @@ export const en = {
   "pagination.last": "Last page",
   "pagination.page": "Page {page}",
   "common.close": "Close",
+  "common.clearSelection": "Clear selection",
+  "common.clearFile": "Clear file",
   "common.copy": "Copy",
   "common.copied": "Copied",
   "common.backTo": "← Back to {label}",
