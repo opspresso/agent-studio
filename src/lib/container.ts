@@ -1,5 +1,5 @@
 import { releaseRunSlot } from "@/application/run/concurrencyGuard";
-import { performanceSample } from "@/domain/usage/performance";
+import { recordTranscriptionUsage } from "@/application/audio/recordTranscriptionUsage";
 import { createEvaluationUseCases } from "@/application/evaluation/evaluationUseCases";
 import { createWorkspaceModelGateway } from "@/application/workspace/modelGateway";
 import { workspaceModelCalls } from "@/infrastructure/db/repositories/workspaceModelCalls";
@@ -260,7 +260,7 @@ import {
   startPublishedModelRefresh,
 } from "./runtime-settings";
 import { getMemberTier } from "./memberAccess";
-import { actorKey, type RunActor } from "@/domain/execution/actor";
+import type { RunActor } from "@/domain/execution/actor";
 import type { TierLimits } from "@/domain/member/tiers";
 import { offeredModels } from "@/domain/llm/models";
 import { composeCreateAgent } from "@/application/agent/createAgentFlow";
@@ -1203,15 +1203,7 @@ export function getAudioRuntime() {
       const bracket = await openModelCall(executionDeps, agent, { model: job.model }, job);
       return (failed) => bracket.close({ failed });
     },
-    recordUsage: async (job, _receiptId, result) => {
-      const accounting = result.accounting;
-      if (!accounting || accounting.costUsd === undefined) throw new AudioJobStepError("transcription_cost_unknown", false);
-      await usageRepository.record({ agentName: job.agentName, date: accounting.date, model: result.model,
-        calls: 1, inputTokens: result.usage?.inputTokens ?? 0, outputTokens: result.usage?.outputTokens ?? 0,
-        costUsd: accounting.costUsd, idempotencyKey: accounting.eventId,
-        ...performanceSample(result.usage?.outputTokens ?? 0, result.usage?.outputTokens === undefined ? undefined : result.modelDurationMs),
-        actor: actorKey(job.actor), userId: job.user.userId });
-    },
+    recordUsage: (job, _receiptId, result) => recordTranscriptionUsage(usageRepository, job, result),
   });
   const postprocess = createAudioPostprocessStep({ files, run: async (job, text, mode, maxOutputChars, signal) => {
     const snapshot = job.postprocess?.configuration;
