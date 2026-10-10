@@ -108,7 +108,7 @@ test("renders Korean labels and searches capabilities on a narrow screen", async
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${base}/ko`);
   await expect(page.getByRole("heading", { name: "사용 설정" })).toBeVisible();
-  await page.getByRole("tab", { name: "Skills", exact: true }).click();
+  await page.getByRole("tab", { name: "스킬", exact: true }).click();
   await page.getByRole("textbox", { name: "기능 검색", exact: true }).fill("Manual");
   await expect(page.getByRole("checkbox", { name: "manual 사용", exact: true })).toBeChecked();
   await expect(page.getByRole("checkbox", { name: "deploy 사용", exact: true })).toHaveCount(0);
