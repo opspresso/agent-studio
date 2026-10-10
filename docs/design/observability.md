@@ -56,9 +56,9 @@ native 응답은 성능 표본에 넣지 않으며 표본이 없으면 알 수 �
 | Overview, Agent → Usage | 현재 Agent의 총계. 모델·프로바이더별 비용·호출·토큰·처리량을 표에서 확인한다 |
 | Profile | 로그인한 사용자의 개인 원장 |
 | Models → Model usage | 현재 Agent에서 사용한 모델별 총계. 모델 목록의 Usage로 한 모델을 선택할 수 있다 |
-| Usage monitoring (admin) | 현재 사용자 전체의 개인 원장. Members의 사용자 이름을 누르면 그 사용자로 필터링한다 |
+| Usage (admin) | 현재 사용자 전체의 개인 원장. Members의 사용자 이름을 누르면 그 사용자로 필터링한다 |
 
-Model usage와 Usage monitoring에서 기간·모델을 선택하고 비용·호출·입력 토큰·출력 토큰·출력
+Model usage와 Usage에서 기간·모델을 선택하고 비용·호출·입력 토큰·출력 토큰·출력
 토큰/초의 일별 그래프를 전환한다. 관리자는 사용자 필터와 사용자·모델별 그룹도 선택한다.
 표의 측정 호출은 `timedCalls / calls`이며 처리량의 표본 범위를 보여준다. 무료 모델은 비용이
 0이어도 호출·토큰 그래프에서 확인할 수 있다. 처리량은 그룹끼리 더하지 않으며 Others도 토큰과

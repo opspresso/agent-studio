@@ -38,20 +38,22 @@ test.beforeAll(async () => {
 });
 test.afterAll(async()=>{if(server)await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));});
 
-test("mobile shell retains its brand name and hides closed navigation from keyboard access", async ({ page }) => {
+for (const locale of ["en", "ko"]) test(`mobile shell uses one navigation language and hides closed navigation in ${locale}`, async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`${base}?page=shell`);
+  await page.goto(`${base}?page=shell&locale=${locale}`);
   await expect(page.getByRole("link", { name: "Agent Studio", exact: true })).toBeVisible();
-  const navigation = page.getByRole("navigation", { name: "Main navigation", exact: true });
-  const open = page.getByRole("button", { name: "Open navigation", exact: true });
+  const navigation = page.getByRole("navigation", { name: locale === "ko" ? "기본 내비게이션" : "Main navigation", exact: true });
+  const open = page.getByRole("button", { name: locale === "ko" ? "내비게이션 열기" : "Open navigation", exact: true });
   await expect(open).toHaveAttribute("aria-expanded", "false");
   await expect(navigation).toHaveCount(0);
   await open.focus();
   await page.keyboard.press("Space");
-  const close = page.getByRole("button", { name: "Close navigation", exact: true });
+  const close = page.getByRole("button", { name: locale === "ko" ? "내비게이션 닫기" : "Close navigation", exact: true });
   await expect(close).toHaveAttribute("aria-expanded", "true");
   await expect(navigation).toBeVisible();
-  await expect(navigation.getByRole("link", { name: "Agents", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(navigation.getByRole("link", { name: locale === "ko" ? "에이전트" : "Agents", exact: true })).toHaveAttribute("aria-current", "page");
+  const labels = (await navigation.getByRole("link").allTextContents()).join(" ");
+  expect(labels).not.toMatch(locale === "ko" ? /[A-Za-z]/ : /[가-힣]/);
   await close.press("Space");
   await expect(navigation).toHaveCount(0);
 });

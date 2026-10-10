@@ -112,7 +112,7 @@ test("members cannot request the administrator ledger", async ({ page }) => {
   let reads = 0;
   await page.route("**/api/usages/members?**", route => { reads++; return route.fulfill({ json: { items: rows, members } }); });
   await page.goto(`${base}?admin&restricted`);
-  await expect(page.getByRole("heading", { level: 1, name: "Usage monitoring" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Usage" })).toBeVisible();
   await expect(page.getByRole("alert")).toContainText("Only administrators");
   expect(reads).toBe(0);
 });
@@ -121,7 +121,7 @@ test("keeps the page heading while administrator access is being resolved", asyn
   let reads = 0;
   await page.route("**/api/usages/members?**", route => { reads++; return route.fulfill({ json: { items: [], members: [] } }); });
   await page.goto(`${base}?admin&viewerLoading`);
-  await expect(page.getByRole("heading", { level: 1, name: "Usage monitoring" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Usage" })).toBeVisible();
   await expect(page.getByRole("status")).toContainText("Loading");
   expect(reads).toBe(0);
 });
@@ -167,7 +167,7 @@ test("Korean mobile view keeps the wide table inside its scroll container", asyn
   await fixtures(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${base}?admin&ko`);
-  await expect(page.getByRole("heading", { name: "사용량 모니터링" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "사용량", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "BOB (bob@example.test)" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: "/tmp/agent-studio-usage-mobile.png", fullPage: true });

@@ -722,7 +722,7 @@ export const en = {
   "usage.filter": "Filter",
   "usage.filterNamed": "Filter by {name}",
   "usage.modelsHint": "Compare model cost, tokens and throughput across current Agents.",
-  "usage.adminTitle": "Usage monitoring",
+  "usage.adminTitle": "Usage",
   "usage.adminHint": "Compare users and models across all invocation sources. Retained spend from deleted Agents is included.",
   "usage.adminOnly": "Only administrators can view other users' usage.",
   "usage.groupBy.user": "User",
