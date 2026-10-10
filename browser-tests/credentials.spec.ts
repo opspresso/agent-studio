@@ -10,7 +10,7 @@ test.beforeAll(async () => {
   const bundle = await build({
     entryPoints: ["browser-tests/fixtures/credentials.tsx"], bundle: true, write: false,
     outdir: "/tmp/agent-studio-credential-fixture", platform: "browser", format: "iife", jsx: "automatic",
-    define: { "process.env.NODE_ENV": '"production"' },
+    define: { "process.env.NODE_ENV": '"production"', "process.env": "{}" },
   });
   server = createServer((request, response) => {
     const file = bundle.outputFiles.find(file => request.url === `/${file.path.split("/").at(-1)}`);
@@ -22,6 +22,7 @@ test.beforeAll(async () => {
 });
 test.afterAll(async () => { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); });
 test.beforeEach(async ({ page }) => {
+  page.on("pageerror", error => { throw error; });
   await page.route("**/api/agents/fixture-agent/token", route => {
     if (route.request().method() === "GET") {
       return route.fulfill({ json: { configured: true, masked: "ast_••••abcd", createdAt: "2026-09-26T00:00:00Z", canIssue: true } });
@@ -103,7 +104,10 @@ test("history button selects the integration without opening its settings", asyn
   await section.click();
   await expect(section).toHaveAttribute("aria-expanded", "false");
   await expect(page.getByLabel("History selected")).toHaveText("false");
-  await page.getByRole("button", { name: "View history" }).click();
+  const history = page.getByRole("button", { name: "View history" });
+  await expect(history).toHaveAttribute("aria-pressed", "false");
+  await history.click();
+  await expect(history).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByLabel("History selected")).toHaveText("true");
   await expect(section).toHaveAttribute("aria-expanded", "false");
 });

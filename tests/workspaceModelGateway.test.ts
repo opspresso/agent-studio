@@ -44,6 +44,19 @@ async function fixture() {
     call: (path = "v1/responses", body = { model: "native" }) => gateway.forward(token, path, body, {}, new AbortController().signal) };
 }
 describe("run-scoped native model gateway", () => {
+  it("settles measured throughput once when accounting completion is repeated", async () => {
+    const f = await fixture();
+    vi.mocked(f.transport.forward).mockImplementationOnce(async input => {
+      const measured = { inputTokens: 10, outputTokens: 20, cachedTokens: 0, reasoningTokens: 0, costUsd: 0.1, modelDurationMs: 500 };
+      await input.finish(measured, true);
+      await input.finish(measured, true);
+      return Response.json({ result: "done" });
+    });
+    await f.call();
+    const rows = await usageRepository.listMemberDays("caller-id", "2026-10-02", "2026-10-02");
+    expect(rows[0]).toMatchObject({ calls: { "selfhosted/native": 1 }, modelDurationMs: { "selfhosted/native": 500 },
+      timedOutputTokens: { "selfhosted/native": 20 }, timedCalls: { "selfhosted/native": 1 } });
+  });
   it.each([
     { protocol: "responses" as const, item: { type: "function_call_output", call_id: "call", output: [{ type: "input_file", file_id: "foreign-file" }] } },
     { protocol: "responses" as const, item: { type: "function_call_output", call_id: "call", output: [{ type: "input_image", file_id: "foreign-image" }] } },

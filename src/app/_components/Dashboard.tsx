@@ -20,7 +20,7 @@ import {
 } from "../_lib/usage";
 import { presetRange } from "../_lib/dateRange";
 import { DateRangePicker } from "./DateRangePicker";
-import { CostBarChart } from "./CostBarChart";
+import { UsageChart } from "./UsageChart";
 import { readJson } from "@/app/_lib/httpClient";
 import classes from "./Dashboard.module.css";
 
@@ -139,7 +139,7 @@ export function Dashboard({ agents }: { agents: SanitizedAgent[] | null }) {
           />
           <GroupByControl value={groupBy} onChange={setGroupBy} options={GROUP_OPTIONS} />
         </Group>
-        <CostBarChart
+        <UsageChart
           data={daily.data}
           keys={daily.keys}
           empty={loading ? t("common.loading") : error ? t("usage.loadFailed") : t("usage.none")}

@@ -4,11 +4,11 @@ import { ConfigurationFields } from "@/app/_components/ConfigurationFields";
 import { SecretInput } from "@/app/_components/SecretInput";
 import { PageHeader } from "@/app/_components/PageHeader";
 import { IconTool } from "@tabler/icons-react";
-import Link from "next/link";
+import { PluginLink } from "@/app/_components/PluginLink";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { BackLink } from "@/app/_components/BackLink";
-import { LoadingText } from "@/app/_components/PageState";
+import { DetailPageState } from "@/app/_components/PageState";
 import { useConfirm } from "@/app/_components/useConfirm";
 import { createLatestOnly } from "@/app/_lib/latestOnly";
 import {
@@ -31,7 +31,6 @@ import {
 import { HeaderRowsEditor, recordToRows, rowsToRecord, type HeaderRow } from "@/app/_components/HeaderRows";
 import {
   Alert,
-  Anchor,
   Badge,
   Button,
   Card,
@@ -44,7 +43,7 @@ import {
   NumberInput,
 } from "@mantine/core";
 import { monoInput } from "@/app/_components/monoInput";
-import { MCP_RUNTIME_COLOR, PLUGIN_COLOR } from "@/app/_components/badgeColors";
+import { MCP_RUNTIME_COLOR } from "@/app/_components/badgeColors";
 import { CredentialBadges } from "../_components/CredentialBadges";
 import { McpAccountLookupEditor } from "../_components/McpAccountLookupEditor";
 import { parsePluginSource } from "@/domain/plugin/types";
@@ -230,23 +229,8 @@ function McpDetail({ name }: { name: string }) {
     }
   }
 
-  if (loading) {
-    return <LoadingText />;
-  }
-
-  if (error && !server) {
-    return (
-      <Stack gap="md">
-        <BackLink href="/tools" label={t("nav.tools")} />
-        <Alert color="red" variant="light">
-          {error}
-        </Alert>
-      </Stack>
-    );
-  }
-
-  if (!server) {
-    return null;
+  if (loading || !server) {
+    return <DetailPageState name={name} backHref="/tools" backLabel={t("nav.tools")} Icon={IconTool} loading={loading} error={error} />;
   }
 
   const headerEntries = Object.entries(server.headers);
@@ -259,16 +243,7 @@ function McpDetail({ name }: { name: string }) {
 
       <PageHeader title={server.name} Icon={IconTool}
         badges={<>
-            {plugin && (
-              <Badge
-                color={PLUGIN_COLOR}
-                component={Link}
-                href={`/plugins/${plugin.plugin}`}
-                style={{ cursor: "pointer" }}
-              >
-                {plugin.plugin}
-              </Badge>
-            )}
+            {plugin && <PluginLink name={plugin.plugin} />}
             {server.runtime === "managed" && (
               <Badge color={MCP_RUNTIME_COLOR.managed}>managed</Badge>
             )}
@@ -315,15 +290,9 @@ function McpDetail({ name }: { name: string }) {
                 </Text>
               )}
               {managedStatus && !managedStatus.reachable && viewer?.isAdmin && (
-                <Anchor
-                  component="button"
-                  type="button"
-                  fz="xs"
-                  onClick={onRestart}
-                  disabled={restarting}
-                >
+                <Button variant="default" size="xs" type="button" onClick={onRestart} disabled={restarting}>
                   {t(restarting ? "tools.restarting" : "tools.restart")}
-                </Anchor>
+                </Button>
               )}
             </Group>
           )}

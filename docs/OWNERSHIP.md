@@ -49,6 +49,7 @@
 | Agent 런의 프롬프트와 tool 집합을 어떻게 조립하는가 | `src/application/llm/agentAssembly.ts` 의 `assembleAgentRun` | 구조 |
 | Model 의 window 로부터 런의 컨텍스트 예산을 도출하기 | `src/application/llm/contextBudget.ts` | 구조 |
 | Agent 실행 Trace의 생성과 종료 | `src/application/run/traceLifecycle.ts` | 코드 |
+| Trace 상태의 표시 문구·색상 | `src/app/_components/TraceStatusBadge.tsx`; 목록·상세·연동 이력이 같은 컴포넌트를 사용한다 | 코드 |
 | 사람이 읽을 경과·소요 시간 | `src/app/_lib/duration.ts` 의 `formatSeconds`/`formatDuration`. 단위는 `common.duration*` 카탈로그가 가지므로 어느 페이지든 그대로 쓴다. 진행 중 시계와 끝난 뒤 배지가 같은 규칙(내림)으로 읽히는 것이 이 소유의 요점이다 | 구조 |
 | 실행 중 Agent 배지와 참여 경로 | `src/app/_lib/authorPaths.ts`의 `foldActiveAuthors`/`activeAuthorPaths`는 위임 호출별 완료를 추적하고 표시 경로를 합친다. `mergeVisitedPath`는 참여 기록을 별도로 유지한다. Chat과 Playground가 공유한다 | 코드 |
 | top-level 런을 감싸는 것 | `src/application/run/runBracket.ts` | 구조 |
@@ -314,10 +315,14 @@ Agent 설정은 binding을 소유하며 개인 연결은 Agent 수명과 독립�
 | 행의 `expiresAt`. 보존 창과 그것을 초로 바꾸는 헬퍼 | `src/infrastructure/db/ttl.ts` | 코드 |
 | usage 질의와 차트가 처리할 날짜 범위 | `src/shared/usageRange.ts`의 `MAX_USAGE_RANGE_DAYS`; API와 차트는 날짜 순회 전에 적용한다 | 코드 |
 | usage 행의 키가 되는 UTC 날짜 | `src/shared/date.ts` 의 `utcDay` | 코드 |
+| 모델 처리량의 표본·가중 집계·SDK 시간 metadata key | `src/domain/usage/performance.ts`; 요청부터 응답까지의 경과 시간은 `src/shared/requestTimer.ts`가 측정한다 | 코드 |
+| 사용량의 가산 지표와 행 병합 | `src/domain/usage/counters.ts`; 표·그래프 그룹은 `src/app/_lib/usage.ts`, 지표 이름·표시 형식은 `usagePresentation.ts` | 코드 |
+| 사용량 화면의 URL 필터와 복원 | `src/app/_lib/usageQuery.ts`; `UsageExplorer`가 history를 갱신하고 행 필터의 포커스를 관리한다 | 코드 |
 | repo sync 가 무엇을 했고, 무엇을 사람에게 남겼는가 | `src/domain/sync/types.ts` | 코드 |
 | 저장 중이거나 읽기 전용인 폼의 입력 잠금 | `src/app/_components/ConfigurationFields.tsx`; 저장 상태는 각 폼이 소유하고 공통 fieldset에 전달한다 | 코드 |
 | 브랜드 팔레트와 컴포넌트 기본값 | `src/app/theme.ts` | 코드 |
 | 페이지·섹션 제목과 경로 탭 | `src/app/_components/PageHeader.tsx`(페이지 아이콘 필수), `SectionHeading.tsx`, `PageTabs.tsx` | 코드 |
+| 본문의 리소스·관련 화면 이동과 새 탭·다운로드 표시 | `src/app/_components/NavigationLink.tsx`; `InteractiveSurface.module.css`는 행·카드의 확장 클릭 영역과 독립 조작 영역을 소유한다 | 코드 |
 | Agent 상세의 분할 페이지 가로 비율 | `src/app/agents/[name]/AgentPageColumns.module.css` | 코드 |
 | 카탈로그 행/그리드 보기와 브라우저 저장 키 | `src/app/_components/CatalogView.tsx`; 상태 표현은 `CatalogCollection.tsx`, 컨테이너 기준 열 배치는 `CatalogLayout.module.css`, 항목 스타일은 `CatalogRows.module.css` / `ModelCollection.module.css` | 코드 |
 | 연동 이력의 읽기 수명과 Schedule 이력의 병합·페이지 크기·동시 읽기 상한 | `src/app/agents/[name]/integrations/IntegrationHistory.tsx` / `scheduleRuns.ts` | 코드 |

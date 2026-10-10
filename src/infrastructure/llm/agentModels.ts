@@ -12,6 +12,14 @@ import { isInlineImageDataUrl } from "@/domain/llm/imageLimits";
 import { getOpenAIClient } from "./openaiClient";
 import type OpenAI from "openai";
 import type { ResolvedTarget, TargetResolver } from "./providers";
+import { MODEL_DURATION_MS } from "@/domain/usage/performance";
+import { createRequestTimer } from "@/shared/requestTimer";
+
+/** Native Usage defaults missing counts to zero; only explicit provider counts are timing samples. */
+function reportedDuration(rawUsage: Record<string, unknown> | undefined, durationMs: number): number | undefined {
+  const output = rawUsage?.completion_tokens;
+  return typeof output === "number" && Number.isSafeInteger(output) && output >= 0 ? durationMs : undefined;
+}
 
 /** Studio owns routing and credentials; the Agents SDK owns the model protocol. */
 export function createAgentModelProvider(
@@ -45,13 +53,15 @@ class StudioChatModel implements Model {
     const prepared = prepareRequest(request);
     try {
       const model = await this.resolve();
-      const result = await model.getResponse(prepared);
+      const timer = createRequestTimer();
+      const result = await timer.measure(() => model.getResponse(prepared));
       request.signal?.throwIfAborted();
       const choice = result.providerData?.choices?.[0];
       const reasoning = choice?.message?.reasoning_content;
-      return typeof reasoning === "string"
-        ? { ...result, output: withReasoning(result.output, reasoning) }
-        : result;
+      return { ...result,
+        providerData: { ...result.providerData, [MODEL_DURATION_MS]: reportedDuration(result.rawUsage, timer.durationMs) },
+        ...(typeof reasoning === "string" ? { output: withReasoning(result.output, reasoning) } : {}),
+      };
     } catch (error) {
       request.signal?.throwIfAborted();
       throw error;
@@ -63,14 +73,18 @@ class StudioChatModel implements Model {
     try {
       const model = await this.resolve();
       let reasoningContent = "";
-      for await (const event of model.getStreamedResponse(prepared)) {
+      const timer = createRequestTimer();
+      for await (const event of timer.iterate(model.getStreamedResponse(prepared))) {
         if (event.type === "model") {
           const data = event.event as { choices?: Array<{ delta?: { reasoning_content?: unknown } }> };
           const delta = data.choices?.[0]?.delta?.reasoning_content;
           if (typeof delta === "string") reasoningContent += delta;
         }
-        yield event.type === "response_done" && reasoningContent
-          ? { ...event, response: { ...event.response, output: withReasoning(event.response.output, reasoningContent) } }
+        yield event.type === "response_done"
+          ? { ...event, response: { ...event.response,
+              providerData: { ...event.response.providerData, [MODEL_DURATION_MS]: reportedDuration(event.response.rawUsage, timer.durationMs) },
+              ...(reasoningContent ? { output: withReasoning(event.response.output, reasoningContent) } : {}),
+            } }
           : event;
       }
       // The underlying OpenAI stream may end normally when its signal aborts.

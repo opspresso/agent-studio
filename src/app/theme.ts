@@ -1,6 +1,6 @@
 "use client";
 
-import { createTheme, type MantineColorsTuple } from "@mantine/core";
+import { createTheme, darken, luminance, type CSSVariablesResolver, type MantineColorsTuple } from "@mantine/core";
 
 /** Shared blue palette follows both public/brands icon sets. */
 const brand: MantineColorsTuple = [
@@ -19,6 +19,9 @@ const brand: MantineColorsTuple = [
 export const theme = createTheme({
   primaryColor: "brand",
   primaryShade: { light: 7, dark: 7 },
+  autoContrast: true,
+  // Switch between black and white at their equal-contrast luminance.
+  luminanceThreshold: 0.179,
   colors: {
     brand,
     gray: [
@@ -83,3 +86,22 @@ export const theme = createTheme({
     Tooltip: { defaultProps: { withArrow: true, fz: "xs" } },
   },
 });
+
+/** Light controls use palette shades 1/2 for rest/hover; named text must remain readable on both. */
+export const consoleCssVariables: CSSVariablesResolver = (theme) => {
+  const light: Record<string, string> = {};
+  for (const [name, palette] of Object.entries(theme.colors)) {
+    if (!Array.isArray(palette)) continue;
+    const backgrounds = [luminance(palette[1]), luminance(palette[2])];
+    let ink = palette[9];
+    for (let step = 0; step <= 20; step++) {
+      ink = darken(palette[9], step / 20);
+      const foreground = luminance(ink);
+      if (backgrounds.every(background => (Math.max(background, foreground) + 0.05) / (Math.min(background, foreground) + 0.05) >= 4.5)) break;
+    }
+    light[`--mantine-color-${name}-light-color`] = ink;
+    light[`--mantine-color-${name}-text`] = ink;
+    light[`--mantine-color-${name}-outline`] = ink;
+  }
+  return { variables: {}, light, dark: {} };
+};

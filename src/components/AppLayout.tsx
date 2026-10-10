@@ -75,6 +75,7 @@ const NAV_GROUPS = [
     label: "nav.group.system",
     items: [
       { href: "/members", label: "nav.members", Icon: IconUsers },
+      { href: "/usage", label: "usage.adminTitle", Icon: IconChartBar },
       { href: "/audits", label: "nav.audits", Icon: IconShieldCheck },
       { href: "/settings", label: "nav.settings", Icon: IconSettings },
     ],
@@ -242,9 +243,11 @@ export function AppLayout({
                 hiddenFrom="md"
                 size="sm"
                 aria-label={t(opened ? "chrome.closeNavigation" : "chrome.openNavigation")}
+                aria-expanded={opened}
+                aria-controls="console-navigation"
               />
             )}
-            <UnstyledButton component={Link} href="/" className={classes.brand}>
+            <UnstyledButton component={Link} href="/" className={classes.brand} aria-label={branding.name}>
               <span className={classes.logoWrap}>
                 <Image src={branding.logoUrl} alt="" width={28} height={28} priority />
               </span>
@@ -269,7 +272,7 @@ export function AppLayout({
       </AppShell.Header>
 
       {/* Omit signed-out navigation from the DOM; CSS collapse alone is insufficient. */}
-      <AppShell.Navbar className={classes.navbar} p="md">
+      <AppShell.Navbar id="console-navigation" aria-label={t("chrome.navigation")} data-mobile-opened={opened || undefined} className={classes.navbar} p="md">
         {showNav && (
         <>
         <ScrollArea viewportRef={navViewport} style={{ flex: 1 }} scrollbarSize={6} type="always">

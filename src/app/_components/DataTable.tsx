@@ -23,7 +23,7 @@ export function DataTable({
     <Paper withBorder style={{ overflow: "hidden", background: "var(--studio-surface)" }}>
       {header}
       <Table.ScrollContainer minWidth={minWidth}>
-        <Table fz="sm" verticalSpacing="sm" horizontalSpacing="md" highlightOnHover>
+        <Table fz="sm" verticalSpacing="sm" horizontalSpacing="md">
           {children}
         </Table>
       </Table.ScrollContainer>

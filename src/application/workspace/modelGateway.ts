@@ -11,6 +11,7 @@ import { assertWithinMemberCostLimit } from "@/application/usage/memberCostGuard
 import { assertModelsPriceable, type UnknownModelPolicy } from "@/application/run/modelPolicy";
 import { modelResponseUsage } from "@/application/runtime/modelUsage";
 import { ConflictError, ForbiddenError, RateLimitedError, ValidationError } from "@/application/errors";
+import { performanceSample } from "@/domain/usage/performance";
 
 export interface WorkspaceModelSelection { model: string; wireModel: string; protocol: NativeModelProtocol }
 interface GatewayDeps extends CostGuardDeps {
@@ -131,7 +132,8 @@ export function createWorkspaceModelGateway(deps: GatewayDeps) {
           captured ??= { ...call, ...(!complete ? { uncertain: true as const } : {}),
             ...(billed ? { usage: { idempotencyKey: "native:" + call.id, agentName: workspace.agentName, userId: run.user.userId,
               actor: actorKey(run.actor), date: call.startedAt.slice(0, 10), model: selected.model, calls: 1,
-              inputTokens: billed.inputTokens, outputTokens: billed.outputTokens, cachedTokens: billed.cachedTokens ?? 0, costUsd: billed.costUsd } } : {}) };
+              inputTokens: billed.inputTokens, outputTokens: billed.outputTokens, cachedTokens: billed.cachedTokens ?? 0, costUsd: billed.costUsd,
+              ...performanceSample(billed.outputTokens, complete ? usage?.modelDurationMs : undefined) } } : {}) };
           const pending = await deps.calls.get(call.workspaceId, call.runId);
           if (pending?.id === call.id) {
             await deps.calls.capture(captured);

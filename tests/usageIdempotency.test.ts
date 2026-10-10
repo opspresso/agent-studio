@@ -15,6 +15,16 @@ beforeEach(() => { fake.rows.clear(); fake.seed([{ ...keys.agent("audio"), entit
 afterEach(() => { vi.restoreAllMocks(); });
 
 describe("durable usage receipts", () => {
+  it("persists matched performance counters once in every projection", async () => {
+    const measured = { ...delta, modelDurationMs: 400, timedOutputTokens: 3, timedCalls: 1 };
+    await usage.record(measured);
+    await usage.record(measured);
+    const rows = [await usage.getDay("audio", delta.date),
+      ...(await usage.listMemberDays(delta.userId, delta.date, delta.date)),
+      ...(await usage.listActorsByAgent("audio", delta.date, delta.date, 10))];
+    expect(rows).toHaveLength(3);
+    for (const row of rows) expect(row).toMatchObject({ modelDurationMs: { asr: 400 }, timedOutputTokens: { asr: 3 }, timedCalls: { asr: 1 } });
+  });
   it("charges a replayed event once across agent, actor and member projections", async () => {
     await Promise.all([usage.record(delta), usage.record(delta)]);
     expect((await usage.getDay("audio", "2026-09-09"))?.calls).toEqual({ asr: 1 });

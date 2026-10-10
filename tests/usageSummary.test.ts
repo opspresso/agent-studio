@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { UsageRow } from "@/domain/usage/types";
 import {
   buildDailySeries,
+  filterUsage,
+  totalUsage,
+  usageMetricValue,
   MAX_CHART_SERIES,
   groupUsage,
   OTHERS_KEY,
@@ -51,30 +54,32 @@ describe("totals", () => {
   });
 });
 
+const unmeasured = { modelDurationMs: 0, timedOutputTokens: 0, timedCalls: 0 };
+
 describe("groupUsage", () => {
   it("groups by agent, sorted by cost desc", () => {
     expect(groupUsage(rows, "agent")).toEqual([
-      { key: "beta", cost: 1.2, calls: 6, inputTokens: 600, cachedTokens: 480 },
-      { key: "alpha", cost: 1, calls: 14, inputTokens: 1400, cachedTokens: 0 },
+      { key: "beta", cost: 1.2, calls: 6, inputTokens: 600, outputTokens: 300, cachedTokens: 480, ...unmeasured },
+      { key: "alpha", cost: 1, calls: 14, inputTokens: 1400, outputTokens: 700, cachedTokens: 0, ...unmeasured },
     ]);
   });
 
   it("groups by provider, folding model ids by prefix", () => {
     expect(groupUsage(rows, "provider")).toEqual([
-      { key: "openai", cost: 2, calls: 10, inputTokens: 1000, cachedTokens: 480 },
-      { key: "google", cost: 0.2, calls: 10, inputTokens: 1000, cachedTokens: 0 },
+      { key: "openai", cost: 2, calls: 10, inputTokens: 1000, outputTokens: 500, cachedTokens: 480, ...unmeasured },
+      { key: "google", cost: 0.2, calls: 10, inputTokens: 1000, outputTokens: 500, cachedTokens: 0, ...unmeasured },
     ]);
   });
 
   it("groups by model across rows", () => {
     expect(groupUsage(rows, "model")).toEqual([
-      { key: "openai/gpt-5-mini", cost: 2, calls: 10, inputTokens: 1000, cachedTokens: 480 },
+      { key: "openai/gpt-5-mini", cost: 2, calls: 10, inputTokens: 1000, outputTokens: 500, cachedTokens: 480, ...unmeasured },
       {
         key: "google/gemini-3.1-flash-lite",
         cost: 0.2,
         calls: 10,
         inputTokens: 1000,
-        cachedTokens: 0,
+        cachedTokens: 0, outputTokens: 500, ...unmeasured,
       },
     ]);
   });
@@ -86,7 +91,7 @@ describe("groupUsage", () => {
       { agentName: "alpha", date: "2026-01-01", calls: { m: 1 }, costUsd: { m: 1 } },
     ];
     expect(groupUsage(legacy, "agent")).toEqual([
-      { key: "alpha", cost: 1, calls: 1, inputTokens: 0, cachedTokens: 0 },
+      { key: "alpha", cost: 1, calls: 1, inputTokens: 0, outputTokens: 0, cachedTokens: 0, ...unmeasured },
     ]);
   });
 
@@ -97,8 +102,8 @@ describe("groupUsage", () => {
       { agentName: "beta", date: "2026-01-01", calls: { "google/gemini-3.1-flash-lite": 1 }, costUsd: { "google/gemini-3.1-flash-lite": 3 } },
     ];
     expect(groupUsage(mine, "agent")).toEqual([
-      { key: "beta", cost: 3, calls: 1, inputTokens: 0, cachedTokens: 0 },
-      { key: "alpha", cost: 1, calls: 2, inputTokens: 0, cachedTokens: 0 },
+      { key: "beta", cost: 3, calls: 1, inputTokens: 0, outputTokens: 0, cachedTokens: 0, ...unmeasured },
+      { key: "alpha", cost: 1, calls: 2, inputTokens: 0, outputTokens: 0, cachedTokens: 0, ...unmeasured },
     ]);
     expect(groupUsage(mine, "provider").map((g) => g.key)).toEqual(["google", "openai"]);
     expect(groupUsage(mine, "model").map((g) => g.key)).toEqual([
@@ -109,6 +114,44 @@ describe("groupUsage", () => {
 });
 
 describe("buildDailySeries", () => {
+  it("plots free model calls and output even when the cost chart is empty", () => {
+    const free = [{ date: "2026-01-01", calls: { free: 2 }, outputTokens: { free: 100 }, costUsd: { free: 0 } }];
+    expect(buildDailySeries(free, "model", "2026-01-01", "2026-01-02").keys).toEqual([]);
+    expect(buildDailySeries(free, "model", "2026-01-01", "2026-01-02", undefined, "outputTokens")).toEqual({
+      keys: ["free"], data: [{ date: "2026-01-01", values: [100] }, { date: "2026-01-02", values: [0] }],
+    });
+  });
+
+  it("weights measured output across calls and leaves missing dates null", () => {
+    const measured = [
+      { date: "2026-01-01", userId: "u", calls: { m: 2 }, outputTokens: { m: 1000 }, costUsd: { m: 0 },
+        timedOutputTokens: { m: 100 }, timedCalls: { m: 1 }, modelDurationMs: { m: 1000 } },
+      { date: "2026-01-01", userId: "u", calls: { m: 1 }, outputTokens: { m: 100 }, costUsd: { m: 0 },
+        timedOutputTokens: { m: 100 }, timedCalls: { m: 1 }, modelDurationMs: { m: 3000 } },
+    ];
+    expect(usageMetricValue(totalUsage(measured), "tokensPerSecond")).toBe(50);
+    const series = buildDailySeries(measured, "user", "2026-01-01", "2026-01-02", undefined, "tokensPerSecond");
+    expect(series).toEqual({ keys: ["u"], data: [{ date: "2026-01-01", values: [50] }, { date: "2026-01-02", values: [null] }] });
+    expect(toChartData(series.data, toChartColumns(series.keys))[1]?.s0).toBeNull();
+  });
+
+  it("weights the Others throughput instead of adding model speeds", () => {
+    const measured = Array.from({ length: 10 }, (_, i) => ({ date: "2026-01-01", calls: { [`m${i}`]: 1 }, costUsd: { [`m${i}`]: 0 },
+      timedOutputTokens: { [`m${i}`]: 100 }, timedCalls: { [`m${i}`]: 1 }, modelDurationMs: { [`m${i}`]: 1000 * (i + 1) } }));
+    const series = buildDailySeries(measured, "model", "2026-01-01", "2026-01-01", undefined, "tokensPerSecond");
+    expect(series.keys.at(-1)).toBe(OTHERS_KEY);
+    expect(series.data[0]?.values.at(-1)).toBeCloseTo(200 / 19);
+  });
+
+  it("filters every counter by user and model without mutating source rows", () => {
+    const source = [{ ...rows[0]!, userId: "u1", timedCalls: { "openai/gpt-5-mini": 2 },
+      timedOutputTokens: { "openai/gpt-5-mini": 100 }, modelDurationMs: { "openai/gpt-5-mini": 2000 } }, { ...rows[1]!, userId: "u2" }];
+    const filtered = filterUsage(source, "openai/gpt-5-mini", "u1");
+    expect(filtered).toHaveLength(1);
+    expect(totalUsage(filtered)).toMatchObject({ cost: 0.8, calls: 4, inputTokens: 400, outputTokens: 200, timedCalls: 2 });
+    expect(usageMetricValue(totalUsage(filtered), "tokensPerSecond")).toBe(50);
+    expect(Object.keys(source[0]!.calls)).toHaveLength(2);
+  });
   it.each([
     ["2026-01-01", "2026-07-04"],
     ["0001-01-01", "9999-12-31"],

@@ -15,6 +15,17 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe("OpenAI-compatible transcription adapter", () => {
+  it("preserves measured request time separately from unknown output tokens", async () => {
+    let now = 0;
+    vi.mocked(performance.now).mockImplementation(() => now);
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      now += 800;
+      return Response.json({ text: "hello", usage: { seconds: 10 } });
+    }));
+    const result = await createTranscriber(config).transcribe(input);
+    expect(result.modelDurationMs).toBe(800);
+    expect(result.usage).toEqual({ audioSeconds: 10 });
+  });
   it.each([{ start: -0.01, end: 1 }, { start: 0 }, { end: 1 }, { start: "unknown", end: 1 }])("keeps labelled segments and usage when optional word timestamps are invalid: %j", async (timing) => {
     const segments = [{ text: "Complete phrase.", start: 0, end: 2, speaker: "A" }];
     respond({ text: "Complete phrase.", segments, words: [{ word: "Complete", speaker: "A", ...timing }], usage: { seconds: 2 } });

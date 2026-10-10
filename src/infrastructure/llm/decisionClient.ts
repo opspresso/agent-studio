@@ -2,6 +2,7 @@ import type { ChoiceDecision, DecisionModel } from "@/domain/llm/decision";
 import type { TargetResolver } from "./providers";
 import { calculateCost } from "@/domain/llm/models";
 import { fetchProvider } from "./providerFetch";
+import { createRequestTimer } from "@/shared/requestTimer";
 
 function endpoint(baseUrl: string, provider: string | null): string {
   const url = new URL(baseUrl);
@@ -39,19 +40,20 @@ export function createDecisionClient(resolveTarget: TargetResolver): DecisionMod
       const target = await resolveTarget(model);
       if (target.auth !== "bearer") throw new Error("Decision provider requires bearer authentication");
       let response: Response;
+      const timer = createRequestTimer();
       try {
-        response = await fetchProvider(endpoint(target.baseUrl, target.providerName), {
+        response = await timer.measure(() => fetchProvider(endpoint(target.baseUrl, target.providerName), {
           method: "POST",
           headers: { Authorization: `Bearer ${target.apiKey}`, "Content-Type": "application/json" },
           body: JSON.stringify({ model: target.model, state, questions: { selection: { type: "choice", instructions, criteria } } }),
           signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10_000)]) : AbortSignal.timeout(10_000),
-        });
+        }));
       } catch {
         throw new Error("Decision provider could not be reached");
       }
       if (!response.ok) throw new Error(`Decision provider returned HTTP ${response.status}`);
       let body: unknown;
-      try { body = await response.json(); }
+      try { body = await timer.measure(() => response.json()); }
       catch { throw new Error("Decision provider returned invalid JSON"); }
       const answers = body && typeof body === "object" ? (body as Record<string, unknown>).answers : null;
       const answer = choiceAnswer(answers && typeof answers === "object" ? (answers as Record<string, unknown>).selection : null, criteria);
@@ -62,7 +64,7 @@ export function createDecisionClient(resolveTarget: TargetResolver): DecisionMod
         const outputTokens = usage.output_tokens ?? usage.completion_tokens;
         if (typeof inputTokens === "number" && Number.isSafeInteger(inputTokens) && inputTokens >= 0 &&
             typeof outputTokens === "number" && Number.isSafeInteger(outputTokens) && outputTokens >= 0) {
-          answer.usage = { model, inputTokens, outputTokens,
+          answer.usage = { model, inputTokens, outputTokens, modelDurationMs: timer.durationMs,
             costUsd: typeof usage.cost === "number" && Number.isFinite(usage.cost) && usage.cost >= 0
               ? usage.cost : calculateCost(model, { inputTokens, outputTokens }) };
         }

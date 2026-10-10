@@ -25,9 +25,12 @@ import type { IntegrationSummary } from "@/app/api/agents/_lib/http";
  * also control which delivery destinations the schedule editor can offer.
  */
 export default function IntegrationsPage() {
+  const { name } = useParams<{ name: string }>();
+  return <IntegrationsContent key={name} name={name} />;
+}
+
+function IntegrationsContent({ name }: { name: string }) {
   const t = useT();
-  const params = useParams<{ name: string }>();
-  const name = params.name;
   const viewer = useViewer();
   const [agent, setAgent] = useState<SanitizedAgent | null>(null);
   const [loading, setLoading] = useState(true);
@@ -61,24 +64,27 @@ export default function IntegrationsPage() {
     };
   }, [name]);
 
+  const heading = <SectionHeading title={t("agent.tab.integrations")} description={t("pint.lede")} />;
+
   if (loading) {
-    return <LoadingText />;
+    return <Stack gap="lg">{heading}<LoadingText /></Stack>;
   }
   if (error) {
     return (
       <div className={columns.split}>
-        <Alert color="red" variant="light" className={columns.primary}>{error}</Alert>
+        <Stack gap="lg" className={columns.primary}>{heading}<Alert color="red" variant="light">{error}</Alert></Stack>
       </div>
     );
   }
   if (viewer === null) {
-    return <LoadingText />;
+    return <Stack gap="lg">{heading}<LoadingText /></Stack>;
   }
-  if (!agent) return <LoadingText />;
+  if (!agent) return <Stack gap="lg">{heading}<LoadingText /></Stack>;
   if (!canEditAgent(viewer, agent.ownerEmail)) {
     return (
       <div className={columns.split}>
         <Stack className={columns.primary}>
+          {heading}
           <McpConnectionsSection key={`mcp:${name}`} agentName={name} />
           <TokenSection key={`api:${name}`} purpose="api" agentName={name} />
           <WebhookSection key={`webhook:${name}`} agentName={name} canManage={false} />
@@ -91,7 +97,7 @@ export default function IntegrationsPage() {
   return (
     <div className={columns.split}>
       <Stack gap="xl" className={columns.primary}>
-        <SectionHeading title={t("agent.tab.integrations")} description={t("pint.lede")} />
+        {heading}
         <McpConnectionsSection key={`mcp:${name}`} agentName={name} />
         <TokenSection key={`api:${name}`} purpose="api" agentName={name} selected={selected === "token"} onSelect={() => selectHistory("token")} />
         <SlackSection agentName={name} selected={selected === "slack"} onSelect={() => selectHistory("slack")}

@@ -5,7 +5,7 @@ import type { NativeModelProtocol, WorkspaceModelTransport } from "@/domain/work
 import { activeWorkspaceModelRequests } from "@/lib/workspaceModelMetrics";
 import { GET as metrics } from "@/app/api/metrics/route";
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 const target = { providerName: "selfhosted", baseUrl: "https://provider.example.test/v1", apiKey: "provider-key", auth: "bearer" as const, model: "native" };
 const transport = createWorkspaceModelTransport(async () => target);
 function input(protocol: NativeModelProtocol): Parameters<WorkspaceModelTransport["forward"]>[0] {
@@ -21,6 +21,23 @@ function streaming(events: unknown[], crlf = false) {
     if (at >= bytes.length) controller.close(); else controller.enqueue(bytes.slice(at, ++at));
   } }), { headers: { "content-type": "text/event-stream" } });
 }
+
+it("captures one duration snapshot across native accounting retries", async () => {
+  let now = 0;
+  vi.mocked(performance.now).mockImplementation(() => now);
+  vi.stubGlobal("fetch", vi.fn(async () => {
+    now += 500;
+    return Response.json({ usage: { input_tokens: 10, output_tokens: 20 } });
+  }));
+  const args = input("responses");
+  vi.mocked(args.finish).mockImplementationOnce(async () => { now += 9000; throw new Error("accounting unavailable"); });
+  await transport.forward(args);
+  expect(args.finish).toHaveBeenCalledTimes(2);
+  for (const [usage, complete] of vi.mocked(args.finish).mock.calls) {
+    expect(usage).toMatchObject({ modelDurationMs: 500, outputTokens: 20 });
+    expect(complete).toBe(true);
+  }
+});
 describe("transparent native model transport", () => {
   it("exposes native Gateway load while the provider is pending and releases a JSON response", async () => {
     let respond!: (response: Response) => void;
@@ -109,7 +126,7 @@ describe("transparent native model transport", () => {
     ], true)));
     const args = input("responses"); const response = await transport.forward(args);
     expect(await response.text()).toContain("확인");
-    expect(args.finish).toHaveBeenCalledExactlyOnceWith({ inputTokens: 10, outputTokens: 5, cachedTokens: 4, reasoningTokens: 2, costUsd: 0.25 }, true);
+    expect(args.finish).toHaveBeenCalledExactlyOnceWith({ modelDurationMs: 0, inputTokens: 10, outputTokens: 5, cachedTokens: 4, reasoningTokens: 2, costUsd: 0.25 }, true);
     const sent = vi.mocked(fetch).mock.calls[0]!;
     expect(sent[0]).toBe("https://provider.example.test/v1/responses");
     const headers = new Headers(sent[1]?.headers);
@@ -123,7 +140,7 @@ describe("transparent native model transport", () => {
       { type: "message_delta", usage: { output_tokens: 5 } }, { type: "message_stop" },
     ])));
     const args = input("messages"); await (await transport.forward(args)).text();
-    expect(args.finish).toHaveBeenCalledExactlyOnceWith({ inputTokens: 15, outputTokens: 5, cachedTokens: 3, reasoningTokens: 0 }, true);
+    expect(args.finish).toHaveBeenCalledExactlyOnceWith({ modelDurationMs: 0, inputTokens: 15, outputTokens: 5, cachedTokens: 3, reasoningTokens: 0 }, true);
     const headers = new Headers(vi.mocked(fetch).mock.calls[0]?.[1]?.headers);
     expect(headers.get("x-api-key")).toBe("provider-key"); expect(headers.has("authorization")).toBe(false);
   });
@@ -132,13 +149,13 @@ describe("transparent native model transport", () => {
       { choices: [], usage: { prompt_tokens: 5, completion_tokens: 3, prompt_tokens_details: { cached_tokens: 2 } } }, "[DONE]"])));
     const args = input("chat/completions"); await (await transport.forward(args)).text();
     expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body)).stream_options.include_usage).toBe(true);
-    expect(args.finish).toHaveBeenCalledExactlyOnceWith({ inputTokens: 5, outputTokens: 3, cachedTokens: 2, reasoningTokens: 0 }, true);
+    expect(args.finish).toHaveBeenCalledExactlyOnceWith({ modelDurationMs: 0, inputTokens: 5, outputTokens: 3, cachedTokens: 2, reasoningTokens: 0 }, true);
   });
   it("records JSON responses and distinguishes an explicit zero from missing usage", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ object: "response", status: "completed", error: null, usage: { input_tokens: 0, output_tokens: 0 } })));
     const args = input("responses"); args.body.stream = false;
     await (await transport.forward(args)).text();
-    expect(args.finish).toHaveBeenCalledExactlyOnceWith({ inputTokens: 0, outputTokens: 0, cachedTokens: 0, reasoningTokens: 0 }, true);
+    expect(args.finish).toHaveBeenCalledExactlyOnceWith({ modelDurationMs: 0, inputTokens: 0, outputTokens: 0, cachedTokens: 0, reasoningTokens: 0 }, true);
     vi.mocked(fetch).mockResolvedValueOnce(Response.json({ output: [] }));
     const missing = input("responses"); await (await transport.forward(missing)).text();
     expect(missing.finish).toHaveBeenCalledWith(undefined, false);

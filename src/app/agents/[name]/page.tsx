@@ -33,6 +33,8 @@ export default function PlaygroundPage() {
   const viewer = useViewer();
   const [agent, setAgent] = useState<SanitizedAgent | null>(null);
   const [models, setModels] = useState<SelectableModel[]>([]);
+  const textModels = useMemo(() => models.filter(model => modelType(model) === "text"), [models]);
+  const imageModels = useMemo(() => models.filter(model => modelType(model) === "image"), [models]);
   const [configuration, setConfiguration] = useState<AgentConfiguration | null>(null);
   const [updatedAt, setUpdatedAt] = useState("");
   const [draft, setDraft] = useState<AgentConfigurationInput>(emptyInput());
@@ -125,8 +127,8 @@ export default function PlaygroundPage() {
         {modelError && <Alert color="yellow">{t("playground.modelRegistryWarning", { error: modelError })}</Alert>}
         {saveError && <Alert color="red">{saveError}</Alert>}
         <AgentConfigurationEditor key={name} agentName={name} canEdit={canEdit}
-          models={models.filter(model => modelType(model) === "text")}
-          imageModels={models.filter(model => modelType(model) === "image")}
+          models={textModels}
+          imageModels={imageModels}
           value={draft} onChange={setDraft} schemaText={currentSchema} onSchemaChange={setSchemaText}
           schemaError={schemaError} save={saveState} />
       </Stack>

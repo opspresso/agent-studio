@@ -5,9 +5,10 @@
   --studio-surface: var(--mantine-color-white);
   --studio-surface-raised: var(--mantine-color-white);
   --studio-border: var(--mantine-color-gray-3);
+  --studio-hover: color-mix(in oklab, var(--studio-surface) 96%, var(--mantine-color-text));
+  --studio-border-hover: var(--mantine-color-gray-4);
   --surface-highlight: var(--mantine-color-brand-0);
   --surface-shadow: 0 1px 2px color-mix(in oklab, var(--mantine-color-gray-9) 3%, transparent);
-  --surface-shadow-lifted: 0 4px 14px color-mix(in oklab, var(--mantine-color-gray-9) 7%, transparent);
   --ai-gradient: linear-gradient(135deg, var(--mantine-color-brand-7), var(--mantine-color-cyan-5));
   /* Categorical chart palette — validated for CVD/contrast on the light surface. */
   --chart-1: #2a78d6;
@@ -30,9 +31,10 @@
   --studio-surface: var(--mantine-color-dark-7);
   --studio-surface-raised: var(--mantine-color-dark-6);
   --studio-border: var(--mantine-color-dark-4);
+  --studio-hover: color-mix(in oklab, var(--studio-surface) 94%, var(--mantine-color-text));
+  --studio-border-hover: var(--mantine-color-dark-3);
   --surface-highlight: color-mix(in oklab, var(--mantine-color-brand-9) 28%, var(--mantine-color-dark-7));
   --surface-shadow: 0 1px 2px color-mix(in oklab, var(--mantine-color-black) 12%, transparent);
-  --surface-shadow-lifted: 0 4px 14px color-mix(in oklab, var(--mantine-color-black) 20%, transparent);
   /* Same hues re-stepped for the dark surface. */
   --chart-1: #3987e5;
   --chart-2: #d95926;
@@ -86,8 +88,6 @@ button.mantine-Card-root {
   color: inherit;
   text-decoration: none;
   transition:
-    transform 160ms ease,
-    box-shadow 160ms ease,
     border-color 160ms ease,
     background-color 160ms ease;
 }
@@ -165,9 +165,8 @@ button.mantine-Card-root {
 
 .mantine-Card-root[href]:hover,
 button.mantine-Card-root:hover {
-  border-color: color-mix(in oklab, var(--mantine-primary-color-filled) 42%, transparent);
-  background-color: var(--surface-highlight);
-  box-shadow: var(--surface-shadow-lifted);
+  border-color: var(--studio-border-hover);
+  background-color: var(--studio-hover);
 }
 
 .mantine-Card-root[href]:focus-visible,
@@ -184,8 +183,4 @@ button.mantine-Card-root:focus-visible {
     transition: none;
   }
 
-  .mantine-Card-root[href]:hover,
-  button.mantine-Card-root:hover {
-    transform: none;
-  }
 }

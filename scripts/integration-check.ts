@@ -955,6 +955,9 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
       outputTokens: 50,
       cachedTokens: 80,
       costUsd: 0.001,
+      modelDurationMs: 2000,
+      timedOutputTokens: 50,
+      timedCalls: 1,
     };
     await usageRepository.record(usageDelta);
     await usageRepository.record(usageDelta);
@@ -962,6 +965,9 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
     assert.equal(rows.length, 1, "usage row exists");
     assert.equal(rows[0]?.calls["openai/gpt-5-mini"], 2, "usage calls accumulated");
     assert.equal(rows[0]?.inputTokens["openai/gpt-5-mini"], 200, "usage tokens accumulated");
+    assert.equal(rows[0]?.modelDurationMs?.["openai/gpt-5-mini"], 4000, "model request duration accumulates");
+    assert.equal(rows[0]?.timedOutputTokens?.["openai/gpt-5-mini"], 100, "measured tokens retain their matching duration");
+    assert.equal(rows[0]?.timedCalls?.["openai/gpt-5-mini"], 2, "measurement coverage accumulates");
     // A map added after the row shape existed: `if_not_exists` is per attribute,
     // so it materialises on the next write rather than needing a migration.
     assert.equal(
@@ -1026,6 +1032,13 @@ async function runChecks(cleanup: RegisterCheckCleanup) {
       today,
     );
     assert.equal(capWindow.length, 1, "the month-to-date window finds the day");
+    const { summarizeMemberUsage } = await import("@/application/usage/memberSummary");
+    const adminUsage = await summarizeMemberUsage(usageRepository, memberRepository, today, today);
+    assert.ok(adminUsage.members.some(member => member.id === integrationMemberId), "admin usage lists the actual account");
+    const adminDay = adminUsage.items.find(row => row.userId === integrationMemberId && row.date === today);
+    assert.equal(adminDay?.calls["openai/gpt-5-mini"], 2, "admin usage reads the member ledger");
+    assert.equal(adminDay?.timedOutputTokens?.["openai/gpt-5-mini"], 100, "admin usage preserves measured output");
+    assert.equal(adminDay?.modelDurationMs?.["openai/gpt-5-mini"], 4000, "admin usage preserves measured duration");
     pass("member day rows: per-agent split, cross-source accounting, range query");
 
     // ---------- monthly threshold claim (conditional, its own row) ----------

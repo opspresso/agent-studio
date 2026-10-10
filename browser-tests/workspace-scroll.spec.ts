@@ -37,6 +37,40 @@ test.beforeAll(async () => {
 });
 test.afterAll(async () => { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); });
 
+test("Workspace keeps a heading when its initial read fails", async ({ page }) => {
+  await page.route("**/api/workspaces/workspace-1**", route => route.fulfill({ status: 503, json: { error: "Workspace unavailable" } }));
+  await page.goto(base);
+  await expect(page.getByRole("alert")).toHaveText("Workspace unavailable");
+  await expect(page.getByRole("heading", { name: "Workspace", level: 1 })).toBeVisible();
+});
+
+test("keeps the Git action draft stable until preparation returns", async ({ page }) => {
+  let release: (() => void) | undefined;
+  const actions: unknown[] = [];
+  const codingDetail: WorkspaceDetailResponse = { ...detail, workspace: { ...detail.workspace, activeRunId: undefined,
+    coding: { repository: "company/repo", baseBranch: "main", branch: "agent/workspace-1" } }, runs: [] };
+  await page.route("**/api/workspaces/options", route => route.fulfill({ json: { agents: [] } }));
+  await page.route("**/api/workspaces/workspace-1**", route => route.fulfill({ json: codingDetail }));
+  await page.route("**/api/workspaces/workspace-1/actions", async route => {
+    actions.push(route.request().postDataJSON());
+    await new Promise<void>(resolve => { release = resolve; });
+    await route.fulfill({ status: 503, json: { error: "Preparation unavailable" } });
+  });
+  try {
+    await page.goto(`${base}#actions`);
+    const message = page.getByLabel("Commit message", { exact: true });
+    await message.fill("Reviewed change");
+    await page.getByRole("button", { name: "Prepare review", exact: true }).click();
+    await expect.poll(() => actions.length).toBe(1);
+    await expect(message).toBeDisabled();
+    release!();
+    await expect(page.getByRole("alert")).toContainText("Preparation unavailable");
+    await expect(message).toBeEnabled();
+    await expect(message).toHaveValue("Reviewed change");
+    expect(actions).toEqual([{ kind: "commit", message: "Reviewed change" }]);
+  } finally { release?.(); }
+});
+
 test("opens at the latest output without animated history traversal and respects manual scrolling", async ({ page }) => {
   let append = false;
   let emptyFirstPoll = true;

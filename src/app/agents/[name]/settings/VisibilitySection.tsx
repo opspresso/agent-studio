@@ -59,6 +59,7 @@ export function VisibilitySection({
           </Alert>
         )}
         <Radio.Group
+          aria-label={t("pset.visibility")}
           value={visibility}
           onChange={(value) => { setVisibility(value as AgentVisibility); setSaved(false); }}
         >

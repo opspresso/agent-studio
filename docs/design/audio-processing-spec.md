@@ -350,6 +350,8 @@ Memory 추출이 필요 없는 실행과 통합 회차는 모델에서 Markdown 
 후처리는 기존 run bracket의 예산·trace를 사용한다. ASR도 같은 Agent 예산 승인·정산 메커니즘을
 확장하며 정책 소유자는 run bracket이다. 요청별 실제 audio seconds/token과 retry를 집계하고
 unknown usage를 0으로 표시하지 않는다. 각 구간 전에 잔여 예산을 확인한다.
+ASR 요청 시간은 구간 checkpoint에 보존한다. 공급자가 출력 토큰을 보고한 경우에만
+같은 receipt로 처리량 표본을 정산하므로 재개·재정산으로 시간이나 토큰을 중복 집계하지 않는다.
 
 수신 기록 서비스에는 출처와 업무에 무관한 다음 MCP 계약이 필요하다.
 

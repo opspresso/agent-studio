@@ -1,7 +1,22 @@
 "use client";
 
-import { Card, Group, Loader, Text } from "@mantine/core";
+import { Alert, Card, Group, Loader, Stack, Text } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
+import type { TablerIcon } from "@tabler/icons-react";
+import { BackLink } from "./BackLink";
+import { PageHeader } from "./PageHeader";
+
+/** Keep a registry item's identity and way back visible before its details are available. */
+export function DetailPageState({ name, backHref, backLabel, Icon, loading, error }: {
+  name: string; backHref: string; backLabel: string; Icon: TablerIcon; loading: boolean; error: string | null;
+}) {
+  const t = useT();
+  return <Stack gap="lg">
+    <BackLink href={backHref} label={backLabel} />
+    <PageHeader title={name} Icon={Icon} />
+    {loading ? <LoadingText /> : <Alert color="red">{error ?? t("registry.itemUnavailable")}</Alert>}
+  </Stack>;
+}
 
 /** Shared loading and empty states for client list pages. */
 

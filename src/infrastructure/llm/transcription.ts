@@ -9,6 +9,7 @@ import {
 import { readBodyText } from "@/shared/httpBody";
 import { AUDIO_DECODERS, normalizeAudioMimeType } from "@/domain/audio/formats";
 import { fetchProvider } from "./providerFetch";
+import { createRequestTimer } from "@/shared/requestTimer";
 
 export interface TranscriptionConfig {
   baseUrl: string;
@@ -150,10 +151,11 @@ export function createTranscriber(inputConfig: TranscriptionConfig): Transcripti
         body = form;
       }
       let response: Response;
+      const timer = createRequestTimer();
       try {
-        response = await fetchProvider(endpoint, {
+        response = await timer.measure(() => fetchProvider(endpoint, {
           method: "POST", headers, body, signal: operationSignal,
-        });
+        }));
       } catch {
         operationSignal.throwIfAborted();
         throw new TranscriptionError("unavailable", "Transcription request failed");
@@ -168,14 +170,14 @@ export function createTranscriber(inputConfig: TranscriptionConfig): Transcripti
       }
       let responseBody: unknown;
       try {
-        const text = await readBodyText(response, MAX_RESPONSE_BYTES);
+        const text = await timer.measure(() => readBodyText(response, MAX_RESPONSE_BYTES));
         operationSignal.throwIfAborted();
         responseBody = JSON.parse(text);
       } catch {
         operationSignal.throwIfAborted();
         throw new TranscriptionError("invalid_response", "Transcription response is unreadable or exceeds the size limit");
       }
-      return normalizeResponse(responseBody, config);
+      return { ...normalizeResponse(responseBody, config), ...(timer.durationMs > 0 ? { modelDurationMs: timer.durationMs } : {}) };
     },
   };
 }

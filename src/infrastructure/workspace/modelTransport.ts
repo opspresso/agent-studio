@@ -4,6 +4,7 @@ import { readBodyText } from "@/shared/httpBody";
 import { createNativeUsageObserver } from "./nativeModelUsage";
 import { fetchProvider } from "@/infrastructure/llm/providerFetch";
 import { beginWorkspaceModelRequest } from "@/lib/workspaceModelMetrics";
+import { createRequestTimer } from "@/shared/requestTimer";
 
 /** Memory and wire bounds for the transparent native protocol, independent of tool output bounds. */
 const MAX_NATIVE_FRAME_BYTES = 8 * 1024 * 1024;
@@ -14,10 +15,12 @@ export function createWorkspaceModelTransport(resolve: TargetResolver): Workspac
     const releaseMetric = beginWorkspaceModelRequest();
     const controller = new AbortController();
     const observer = createNativeUsageObserver(input.protocol);
+    const timer = createRequestTimer();
     let finishing: Promise<void> | undefined;
     let captured: ReturnType<typeof observer.result> | undefined;
     const finish = (result = observer.result()) => {
-      captured ??= result;
+      captured ??= { ...result, ...(result.complete && result.usage
+        ? { usage: { ...result.usage, modelDurationMs: timer.durationMs } } : {}) };
       // Retry only the same accounting snapshot. Never repeat the provider request.
       return finishing ??= (async () => {
         try { await input.finish(captured.usage, captured.complete); }
@@ -53,7 +56,7 @@ export function createWorkspaceModelTransport(resolve: TargetResolver): Workspac
       throw new Error("Native model provider configuration is unavailable");
     }
     let upstream: Response;
-    try { upstream = await fetchProvider(endpoint, request); }
+    try { upstream = await timer.measure(() => fetchProvider(endpoint, request)); }
     catch { await close(); throw new Error("Native model transport failed; request was not replayed"); }
     if (!upstream.ok) {
       await upstream.body?.cancel().catch(() => {});
@@ -65,7 +68,7 @@ export function createWorkspaceModelTransport(resolve: TargetResolver): Workspac
     }
     if (!upstream.headers.get("content-type")?.includes("text/event-stream")) {
       try {
-        const text = await readBodyText(upstream, MAX_NATIVE_FRAME_BYTES);
+        const text = await timer.measure(() => readBodyText(upstream, MAX_NATIVE_FRAME_BYTES));
         const parsed: unknown = JSON.parse(text);
         if (parsed && typeof parsed === "object" && "error" in parsed && parsed.error != null) throw new Error("Native model response failed");
         if (input.countTokens) { await close({ complete: true }); }
@@ -88,7 +91,7 @@ export function createWorkspaceModelTransport(resolve: TargetResolver): Workspac
     const stream = new ReadableStream<Uint8Array>({
       async pull(output) {
         try {
-          const { done, value } = await reader.read();
+          const { done, value } = await timer.measure(() => reader.read());
           if (done) {
             pending += decoder.decode();
             if (pending.trim()) observeFrame(pending);

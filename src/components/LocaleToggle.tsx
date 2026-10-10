@@ -9,7 +9,7 @@
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Menu, ActionIcon } from "@mantine/core";
-import { IconWorld } from "@tabler/icons-react";
+import { IconCheck, IconWorld } from "@tabler/icons-react";
 import {
   LOCALES,
   LOCALE_COOKIE,
@@ -51,15 +51,12 @@ export function LocaleToggle() {
         </ActionIcon>
       </Menu.Target>
       <Menu.Dropdown>
-        {LOCALES.map((value) => (
-          <Menu.Item
-            key={value}
-            onClick={() => choose(value)}
-            data-active={value === locale || undefined}
-          >
+        <Menu.RadioGroup value={locale} onChange={value => choose(value as Locale)}>
+          {LOCALES.map(value => <Menu.RadioItem key={value} value={value} closeMenuOnClick
+            checkIcon={<IconCheck size={14} aria-hidden="true" />}>
             {LOCALE_LABELS[value]}
-          </Menu.Item>
-        ))}
+          </Menu.RadioItem>)}
+        </Menu.RadioGroup>
       </Menu.Dropdown>
     </Menu>
   );

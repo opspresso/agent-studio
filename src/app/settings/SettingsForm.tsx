@@ -1,5 +1,7 @@
 "use client";
 
+import { ConfigurationFields } from "@/app/_components/ConfigurationFields";
+
 import { SectionHeading } from "@/app/_components/SectionHeading";
 import { Fragment, useEffect, useState } from "react";
 import { Alert, Badge, Button, Card, Group, Select, Stack, TagsInput, Text, TextInput } from "@mantine/core";
@@ -83,21 +85,23 @@ export function SettingsForm({ section }: { section: SettingsSection }) {
     }
   }
 
+  const heading = <SectionHeading title={title} description={t(`settings.section.${section}`)} />;
+
   if (loading) {
-    return <LoadingText />;
+    return <Stack gap="lg" maw={860}>{heading}<LoadingText /></Stack>;
   }
 
   if (forbidden) {
     return (
-      <Alert variant="light" color="gray" maw={640}>
+      <Stack gap="lg" maw={860}>{heading}<Alert variant="light" color="gray">
         {t("settings.adminOnly")}
-      </Alert>
+      </Alert></Stack>
     );
   }
 
   if (view === null) {
     return <Stack gap="lg" maw={860}>
-      <SectionHeading title={title} description={t(`settings.section.${section}`)} />
+      {heading}
       <Alert color="red">{error ?? t("settings.loadFailed")}</Alert>
       <Group><Button variant="default" onClick={() => { setError(null); setLoading(true); setReloadKey(key => key + 1); }}>{t("error.retry")}</Button></Group>
     </Stack>;
@@ -106,10 +110,10 @@ export function SettingsForm({ section }: { section: SettingsSection }) {
   const dirty = Object.keys(settingsPatch(section, values, view)).length > 0;
   const change = (key: SettingKey, value: string) => { setValues(previous => ({ ...previous, [key]: value })); setSaved(false); };
   return <Stack gap="lg" maw={860}>
-    <SectionHeading title={title} description={t(`settings.section.${section}`)} />
+    {heading}
     {error && <Alert color="red">{error}</Alert>}
     <Card><form onSubmit={save}>
-      <Stack renderRoot={props => <fieldset {...props} disabled={saving} />} gap="lg" style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+      <ConfigurationFields disabled={saving} gap="lg">
         {SETTINGS_FIELDS[section].map(field => {
           const meta = view?.fields[field.key];
           const label = <Group component="span" gap="xs"><Text component="span" size="sm" fw={500}>{t(field.label)}</Text>
@@ -139,7 +143,7 @@ export function SettingsForm({ section }: { section: SettingsSection }) {
           </Fragment>;
         })}
         <Group><Button type="submit" loading={saving} disabled={!dirty}>{t("modelAdmin.save")}</Button>{saved && <Text size="sm" c="teal">{t("modelAdmin.saved")}</Text>}</Group>
-      </Stack>
+      </ConfigurationFields>
     </form>
     <Text size="xs" c="dimmed" mt="md">{t("settings.overrideHint")}</Text></Card>
   </Stack>;

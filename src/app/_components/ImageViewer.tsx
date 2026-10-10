@@ -11,7 +11,7 @@
  * viewport. The root provider retains the details preference across images.
  */
 
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useId, useState } from "react";
 import { usePathname } from "next/navigation";
 import { ActionIcon, Box, CopyButton, Group, Image, Modal, Stack, Text } from "@mantine/core";
 import { IconCheck, IconCopy, IconInfoCircle, IconX, IconZoomIn, IconZoomOut } from "@tabler/icons-react";
@@ -41,6 +41,7 @@ export function useImageViewer(): ViewImage {
 
 export function ImageViewerProvider({ children }: { children: React.ReactNode }) {
   const t = useT();
+  const detailsId = useId();
   // `opened` is separate from `image` so the picture stays drawn while the
   // dialog animates out; clearing it on close showed an empty frame fading.
   const [image, setImage] = useState<ViewedImage | null>(null);
@@ -84,6 +85,7 @@ export function ImageViewerProvider({ children }: { children: React.ReactNode })
         onClose={() => setOpened(false)}
         fullScreen
         withCloseButton={false}
+        attributes={{ content: { "aria-label": t("viewer.title") } }}
         padding={0}
         transitionProps={{ transition: "fade" }}
         // The dark ground is one layer, on the content: a full-screen dialog's
@@ -145,7 +147,8 @@ export function ImageViewerProvider({ children }: { children: React.ReactNode })
               <ActionIcon
                 variant={showInfo ? "filled" : "default"}
                 size="lg"
-                aria-pressed={showInfo}
+                aria-expanded={showInfo}
+                aria-controls={showInfo ? detailsId : undefined}
                 aria-label={t(showInfo ? "viewer.hideInfo" : "viewer.showInfo")}
                 title={t(showInfo ? "viewer.hideInfo" : "viewer.showInfo")}
                 onClick={(event) => {
@@ -192,6 +195,8 @@ export function ImageViewerProvider({ children }: { children: React.ReactNode })
 
             {showInfo && (
               <Box
+                id={detailsId}
+                tabIndex={0}
                 onClick={(event) => event.stopPropagation()}
                 style={{
                   position: "absolute",

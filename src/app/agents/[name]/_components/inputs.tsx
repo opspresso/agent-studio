@@ -7,7 +7,6 @@ import {
   Autocomplete,
   Badge,
   Button,
-  Anchor,
   Checkbox,
   Group,
   Input,
@@ -28,35 +27,12 @@ import { HeaderRowsEditor } from "@/app/_components/HeaderRows";
 import { canRunAgents, useViewer } from "@/app/_lib/useViewer";
 import { ConfigurationFields } from "@/app/_components/ConfigurationFields";
 
-/**
- * A named group of controls.
- *
- * Deliberately NOT a `<label>`. A label with no `for` binds to the first
- * labelable element inside it, and the spec then makes hovering the label hover
- * that control and clicking the label *activate* it. With several controls in
- * one field that is silently destructive: clicking the words "MCP servers"
- * opened the first server's settings, and clicking "Subagents" removed the first
- * subagent. `labelElement="div"` keeps `Input.Wrapper`'s caption from becoming
- * that binding label.
- *
- * Use {@link LabeledField} when the field really does wrap a single control and
- * click-to-focus is worth having.
+/** A control group is not a label: clicking its caption must not activate a child action.
+ * Single inputs use their own `label` prop.
  */
 export function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <Input.Wrapper label={label} labelElement="div">
-      <div style={{ marginTop: 4 }}>{children}</div>
-    </Input.Wrapper>
-  );
-}
-
-/**
- * A label bound to exactly one control. Only for fields whose content is a
- * single input — anything else belongs in {@link Field}.
- */
-export function LabeledField({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <Input.Wrapper label={label}>
+    <Input.Wrapper label={label} labelElement="div" role="group" aria-label={label}>
       <div style={{ marginTop: 4 }}>{children}</div>
     </Input.Wrapper>
   );
@@ -115,6 +91,7 @@ function PickedChip({
   action?: React.ReactNode;
   removeDisabled?: boolean;
 }) {
+  const t = useT();
   return (
     <Group
       justify="space-between"
@@ -133,7 +110,7 @@ function PickedChip({
       </Text>
       <Group gap="xs" wrap="nowrap">
         {action}
-        <ActionIcon size="xs" variant="subtle" onClick={onRemove} disabled={removeDisabled} aria-label={`Remove ${label}`}>
+        <ActionIcon size="md" variant="subtle" onClick={onRemove} disabled={removeDisabled} aria-label={t("common.removeNamed", { name: label })}>
           <IconX size={14} />
         </ActionIcon>
       </Group>
@@ -150,10 +127,12 @@ function PickedChip({
  * those as `MultiSelect` pills would drop everything but the name.
  */
 function OptionPicker<T extends PickerOption>({
+  label,
   options,
   placeholder,
   onPick,
 }: {
+  label: string;
   options: T[];
   placeholder?: string;
   onPick: (option: T) => void;
@@ -182,6 +161,7 @@ function OptionPicker<T extends PickerOption>({
 
   return (
     <Autocomplete
+      aria-label={label}
       mt={6}
       value={draft}
       onChange={(value) => {
@@ -258,27 +238,15 @@ export function SearchSelectInput({
     <Field label={label}>
       <Group gap={6}>
         {values.map((value) => (
-          <Badge
+          <PickedChip
             key={value}
-            variant="light"
-            color="gray"
-            rightSection={
-              <ActionIcon
-                size={14}
-                variant="transparent"
-                color="gray"
-                onClick={() => onChange(values.filter((v) => v !== value))}
-                aria-label={`Remove ${value}`}
-              >
-                <IconX size={12} />
-              </ActionIcon>
-            }
-          >
-            {value}
-          </Badge>
+            label={value}
+            onRemove={() => onChange(values.filter((v) => v !== value))}
+          />
         ))}
       </Group>
       <OptionPicker
+        label={label}
         options={available}
         placeholder={placeholder}
         onPick={(option) => {
@@ -446,7 +414,7 @@ function OverrideEditor({
       {inheritedNames.length > 0 && (
         <Stack gap={4}>
           <Text fz="xs" c="dimmed">
-            Inherited from the registry entry — select one to override it here.
+            {t("bindings.inheritedHeaders")}
           </Text>
           {inheritedNames.map((name) => {
             const taken = overridden.has(name.toLowerCase());
@@ -472,7 +440,7 @@ function OverrideEditor({
                   </Text>
                   {taken && (
                     <Text fz="xs" c="dimmed" ml="auto" style={{ flexShrink: 0 }}>
-                      overridden
+                      {t("bindings.overridden")}
                     </Text>
                   )}
                 </Group>
@@ -626,20 +594,18 @@ export function McpBindingInput({
               label={binding.name}
               suffix={
                 <Text component="span" c="dimmed" fz="xs">
-                  {count > 0 && ` (${count} header override${count === 1 ? "" : "s"})`}
-                  {` (${binding.tools?.length ? `${binding.tools.length} tools` : "all tools"})`}
+                  {count > 0 && ` (${t("bindings.headerCount", { count })})`}
+                  {` (${binding.tools?.length ? t("bindings.toolCount", { count: binding.tools.length }) : t("bindings.allTools")})`}
                 </Text>
               }
               action={
-                <Anchor
-                  component="button"
-                  type="button"
-                  fz="xs"
-                  c="dimmed"
+                <Button
+                  variant="subtle"
+                  size="xs"
                   onClick={() => setSettingsFor(binding.name)}
                 >
-                  Settings
-                </Anchor>
+                  {t("nav.settings")}
+                </Button>
               }
               onRemove={() => remove(binding.name)}
               removeDisabled={disabled}
@@ -690,6 +656,7 @@ export function McpBindingInput({
       </Stack>
       <ConfigurationFields disabled={disabled}>
         <OptionPicker
+          label={t("bindings.searchServers")}
           options={available}
           placeholder={t("bindings.searchServers")}
           onPick={(option) => {
@@ -730,6 +697,7 @@ export function SubagentInput({
         ))}
       </Stack>
       <OptionPicker
+        label={t("bindings.searchSubagents")}
         options={available}
         placeholder={t("bindings.searchSubagents")}
         onPick={(option) => {

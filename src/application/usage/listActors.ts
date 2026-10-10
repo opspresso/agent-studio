@@ -4,6 +4,7 @@ import type { UsageRepository } from "@/domain/usage/repository";
 import type { ActorUsageRow } from "@/domain/usage/types";
 import { log } from "@/shared/logger";
 import { ValidationError } from "@/application/errors";
+import { mergeUsageCounters } from "@/domain/usage/counters";
 
 /** The prefix an actor key carries when the caller came from Slack. */
 const SLACK_ACTOR_PREFIX = "slack:";
@@ -85,13 +86,7 @@ export async function listAgentActors(
       userId: row.userId,
       agentName: row.agentName,
       actor: row.actor,
-      calls: addCounters(existing?.calls, row.calls),
-      inputTokens: addCounters(existing?.inputTokens, row.inputTokens),
-      outputTokens: addCounters(existing?.outputTokens, row.outputTokens),
-      ...(existing?.cachedTokens || row.cachedTokens
-        ? { cachedTokens: addCounters(existing?.cachedTokens, row.cachedTokens ?? {}) }
-        : {}),
-      costUsd: addCounters(existing?.costUsd, row.costUsd),
+      ...mergeUsageCounters(existing, row),
     });
   }
   const ranked = [...byActor.values()].sort(
@@ -155,17 +150,6 @@ export async function listAgentActors(
     totalActors: ranked.length,
     truncated: ranked.length > visible.length,
   };
-}
-
-function addCounters(
-  current: Record<string, number> | undefined,
-  added: Record<string, number>,
-): Record<string, number> {
-  const result = { ...current };
-  for (const [key, value] of Object.entries(added)) {
-    result[key] = (result[key] ?? 0) + value;
-  }
-  return result;
 }
 
 function total(values: Record<string, number>): number {

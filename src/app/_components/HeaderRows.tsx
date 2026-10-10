@@ -1,6 +1,6 @@
 "use client";
 
-import { ActionIcon, Anchor, Badge, Checkbox, Group, Stack, Text, TextInput } from "@mantine/core";
+import { Button, ActionIcon, Badge, Checkbox, Group, Stack, Text, TextInput } from "@mantine/core";
 import { IconX } from "@tabler/icons-react";
 import { useT } from "@/app/_i18n/provider";
 import { SecretInput } from "./SecretInput";
@@ -134,9 +134,9 @@ export function HeaderRowsEditor({
           </ActionIcon>
         </Group>
       ))}
-      <Anchor component="button" type="button" fz="sm" onClick={add} style={{ alignSelf: "start" }}>
+      <Button variant="default" size="xs" type="button" onClick={add} style={{ alignSelf: "flex-start" }}>
         {addLabel ?? t("headers.add")}
-      </Anchor>
+      </Button>
     </Stack>
   );
 }

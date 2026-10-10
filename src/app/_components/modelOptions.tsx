@@ -7,6 +7,7 @@
  */
 
 import { CheckIcon, Group, Select, Text } from "@mantine/core";
+import { useMemo } from "react";
 import type { ComboboxData, ComboboxItem, SelectProps } from "@mantine/core";
 import { modelType, type ModelConfig, type ModelType } from "@/domain/llm/models";
 import { formatUsd } from "@/app/_lib/formatUsd";
@@ -110,12 +111,15 @@ export function modelSelectData(
   favoriteGroupLabel: string,
 ): ComboboxData {
   const groups = new Map<string, ComboboxItem[]>();
-  const favorites = models.filter((model) => model.favorite === true);
-  for (const model of models.filter((model) => model.favorite !== true)) {
-    groups.set(model.provider, [
-      ...(groups.get(model.provider) ?? []),
-      { value: model.id, label: modelOptionLabel(model) },
-    ]);
+  const favorites: ComboboxItem[] = [];
+  for (const model of models) {
+    const item = { value: model.id, label: modelOptionLabel(model) };
+    if (model.favorite === true) favorites.push(item);
+    else {
+      const group = groups.get(model.provider);
+      if (group) group.push(item);
+      else groups.set(model.provider, [item]);
+    }
   }
   return [
     ...leading,
@@ -123,7 +127,7 @@ export function modelSelectData(
       ? [
           {
             group: favoriteGroupLabel,
-            items: favorites.map((model) => ({ value: model.id, label: modelOptionLabel(model) })),
+            items: favorites,
           },
         ]
       : []),
@@ -178,14 +182,18 @@ export function renderModelOption(models: ModelOption[]) {
   };
 }
 
-export function ModelSelect({ models, leading = [], details, ...props }: Omit<SelectProps, "data" | "renderOption" | "description"> & {
+const EMPTY_LEADING: ComboboxItem[] = [];
+
+export function ModelSelect({ models, leading = EMPTY_LEADING, details, ...props }: Omit<SelectProps, "data" | "renderOption" | "description"> & {
   models: ModelOption[];
   leading?: ComboboxItem[];
   details?: string;
 }) {
   const t = useT();
-  const selected = models.find(model => model.id === props.value);
+  const stableLeading = leading.length ? leading : EMPTY_LEADING;
+  const data = useMemo(() => modelSelectData(models, stableLeading, t("models.favorites")), [models, stableLeading, t]);
+  const renderOption = useMemo(() => renderModelOption(models), [models]);
+  const selected = useMemo(() => models.find(model => model.id === props.value), [models, props.value]);
   const description = [selected ? modelSummary(selected) : undefined, details].filter(Boolean).join(" · ") || undefined;
-  return <Select {...props} data={modelSelectData(models, leading, t("models.favorites"))}
-    renderOption={renderModelOption(models)} description={description} {...selectOnFocus} />;
+  return <Select {...props} data={data} renderOption={renderOption} description={description} {...selectOnFocus} />;
 }

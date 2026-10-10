@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Menu, ActionIcon, useMantineColorScheme, type MantineColorScheme } from "@mantine/core";
-import { IconDeviceDesktop, IconMoon, IconSun } from "@tabler/icons-react";
+import { IconCheck, IconDeviceDesktop, IconMoon, IconSun } from "@tabler/icons-react";
 import type { MessageKey } from "@/app/_i18n/messages/en";
 import { useT } from "@/app/_i18n/provider";
 
@@ -50,16 +50,13 @@ export function ThemeToggle() {
         </ActionIcon>
       </Menu.Target>
       <Menu.Dropdown>
-        {OPTIONS.map(({ value, label, Icon }) => (
-          <Menu.Item
-            key={value}
-            leftSection={<Icon size={16} stroke={1.8} />}
-            onClick={() => setColorScheme(value)}
-            data-active={colorScheme === value || undefined}
-          >
+        <Menu.RadioGroup value={colorScheme} onChange={value => setColorScheme(value as MantineColorScheme)}>
+          {OPTIONS.map(({ value, label, Icon }) => <Menu.RadioItem key={value} value={value} closeMenuOnClick
+            checkIcon={<IconCheck size={14} aria-hidden="true" />}
+            rightSection={<Icon size={16} stroke={1.8} aria-hidden="true" />}>
             {t(label)}
-          </Menu.Item>
-        ))}
+          </Menu.RadioItem>)}
+        </Menu.RadioGroup>
       </Menu.Dropdown>
     </Menu>
   );

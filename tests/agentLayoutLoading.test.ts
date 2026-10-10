@@ -21,7 +21,8 @@ describe("Agent layout", () => {
     }));
 
     expect(html).toContain(translator("en")("common.loading"));
+    expect(html).toMatch(/<h1[^>]*>code-agent<\/h1>/);
     expect(html).not.toContain("Agent content");
-    expect(html).not.toContain('role="tablist"');
+    expect(html).not.toContain('aria-current="page"');
   });
 });

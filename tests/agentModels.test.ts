@@ -13,6 +13,8 @@ import {
   type ResponseStreamEvent,
 } from "@openai/agents";
 import { createAgentModelProvider } from "@/infrastructure/llm/agentModels";
+import { MODEL_DURATION_MS } from "@/domain/usage/performance";
+import { modelResponseUsage } from "@/application/runtime/modelUsage";
 import { createStudioRunner } from "@/application/runtime/runner";
 import { runAgent } from "@/application/runtime";
 import { resolveProviderTarget, type ResolvedTarget } from "@/infrastructure/llm/providers";
@@ -77,6 +79,48 @@ afterEach(() => {
 });
 
 describe("Agents SDK model provider", () => {
+  it.each([false, true])("distinguishes missing token usage from an explicit zero: reported=%s", async reported => {
+    let now = 0;
+    vi.mocked(performance.now).mockImplementation(() => now);
+    installTransport(body => {
+      now += 500;
+      const usage = { prompt_tokens: 12, completion_tokens: 0, total_tokens: 12 };
+      if (body.stream) return sse([
+        { choices: [{ index: 0, delta: { content: "hello" }, finish_reason: "stop" }] },
+        ...(reported ? [{ choices: [], usage }] : []),
+      ]);
+      const { usage: _usage, ...response } = completion();
+      return Response.json({ ...response, ...(reported ? { usage } : {}) });
+    });
+    const model = await createAgentModelProvider(async () => target).getModel("selfhosted/local-model");
+    const check = (response: Parameters<typeof modelResponseUsage>[1]) =>
+      expect(modelResponseUsage("openai/gpt-5-mini", response).modelDurationMs).toBe(reported ? 500 : undefined);
+    check(await getResponse(model));
+    await withTrace(new NoopTrace(), async () => {
+      for await (const event of model.getStreamedResponse(request)) if (event.type === "response_done") check(event.response);
+    });
+  });
+  it("measures completion and includes stream pauses without inflating throughput", async () => {
+    let now = 0;
+    vi.mocked(performance.now).mockImplementation(() => now);
+    installTransport(body => {
+      now += 500;
+      return body.stream ? sse([
+        { choices: [{ index: 0, delta: { content: "hello" }, finish_reason: "stop" }] },
+        { choices: [], usage: { prompt_tokens: 12, completion_tokens: 3, total_tokens: 15 } },
+      ]) : Response.json(completion());
+    });
+    const model = await createAgentModelProvider(async () => target).getModel("selfhosted/local-model");
+    expect((await getResponse(model)).providerData?.[MODEL_DURATION_MS]).toBe(500);
+    let pauses = 0;
+    await withTrace(new NoopTrace(), async () => {
+      for await (const event of model.getStreamedResponse(request)) {
+        if (event.type === "response_done") expect(event.response.providerData?.[MODEL_DURATION_MS]).toBe(500 + pauses * 10_000);
+        now += 10_000;
+        pauses++;
+      }
+    });
+  });
   it.each([undefined, 0, 1.5])("preserves presence penalty %s in streaming and completion calls", async (presencePenalty) => {
     const requests = installTransport((body) => body.stream ? sse([{ choices: [{ index: 0, delta: { content: "ok" }, finish_reason: "stop" }] }]) : Response.json(completion()));
     const model = await createAgentModelProvider(async () => target).getModel("selfhosted/local-model");

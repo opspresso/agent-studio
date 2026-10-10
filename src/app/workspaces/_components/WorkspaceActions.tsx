@@ -1,13 +1,16 @@
 "use client";
 
+import { NavigationLink } from "@/app/_components/NavigationLink";
+
 import { canRunAgents, useViewer } from "@/app/_lib/useViewer";
 import { useState } from "react";
-import { Alert, Anchor, Button, Checkbox, Code, Group, Select, Stack, Text, Textarea, TextInput } from "@mantine/core";
+import { Alert, Button, Checkbox, Code, Group, Select, Stack, Text, Textarea, TextInput } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
 import { jsonHeaders, readJson } from "@/app/_lib/httpClient";
 import type { CodingApprovalResponse } from "@/app/api/workspaces/[id]/actions/route";
 import type { WorkspaceDetailResponse } from "@/app/api/workspaces/[id]/route";
 import type { CodingAction } from "@/domain/coding/types";
+import { ConfigurationFields } from "@/app/_components/ConfigurationFields";
 
 export function WorkspaceActions({ detail, workflows, refresh }: { detail: WorkspaceDetailResponse; workflows: string[]; refresh(): Promise<void> }) {
   const t = useT();
@@ -72,7 +75,7 @@ export function WorkspaceActions({ detail, workflows, refresh }: { detail: Works
       <Text size="sm">{t("workspace.chatContinuationHint")}</Text>
       {detail.continuation?.status === "waiting-ci" && <Text size="sm">{t("workspace.waitingCi")}</Text>}
       {detail.continuation?.error && <Text size="sm">{detail.continuation.error}</Text>}
-      <Anchor href={`/chats/${pending?.sourceChatId ?? latest?.sourceChatId}`}>{t("workspace.returnToChat")}</Anchor>
+      <NavigationLink href={`/chats/${pending?.sourceChatId ?? latest?.sourceChatId}`}>{t("workspace.returnToChat")}</NavigationLink>
     </Alert>}
     {pending?.status === "pending" ? <>
       <Alert title={t("workspace.reviewAction")} color="yellow">{t("workspace.reviewHint")}</Alert>
@@ -88,7 +91,7 @@ export function WorkspaceActions({ detail, workflows, refresh }: { detail: Works
       {pending.review.diff && <Code block style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", overflow: "visible" }}>{pending.review.diff}</Code>}
       <Group><Button color={["merge", "push-main"].includes(pending.action.kind) ? "orange" : undefined} loading={busy} disabled={disabled} onClick={() => { void perform(true); }}>{t("workspace.approve")}</Button>
         <Button variant="default" disabled={busy || disabled} onClick={() => { void perform(false); }}>{t("workspace.reject")}</Button></Group>
-    </> : <>
+    </> : <ConfigurationFields disabled={busy || disabled || !!pending} gap="sm">
       {pending && <Alert color="yellow">{t("workspace.actionInProgress")}</Alert>}
       <Select label={t("workspace.action")} value={kind} allowDeselect={false} onChange={value => setKind(value ?? "commit")} data={[
         { value: "commit", label: "Commit" }, { value: "commit-and-push", label: "Commit & push" }, { value: "push", label: "Push" },
@@ -112,6 +115,6 @@ export function WorkspaceActions({ detail, workflows, refresh }: { detail: Works
       {kind === "deploy" && <><Select label={t("workspace.workflow")} value={workflow ?? workflows[0] ?? null} onChange={setWorkflow} data={workflows} /><Textarea label={t("workspace.workflowInputs")} value={inputs} onChange={event => setInputs(event.currentTarget.value)} minRows={3} /><Text size="sm" c="dimmed">{t("workspace.deployHint")}</Text></>}
       <Button loading={busy} disabled={disabled || !!pending || ((needsMessage || ["draft", "pr", "release"].includes(kind)) && !title.trim()) || (["tag", "release"].includes(kind) && !tag.trim())} onClick={() => { void perform(); }}>{t("workspace.prepareAction")}</Button>
       {latest && <Text size="sm" c="dimmed">{latest.action.kind}: {latest.status}{latest.result ? ` — ${latest.result}` : ""}</Text>}
-    </>}
+    </ConfigurationFields>}
   </Stack>;
 }

@@ -1,107 +1,71 @@
 "use client";
 
-import { Progress, Table, Text } from "@mantine/core";
+import { useState } from "react";
+import { Button, Pagination, Progress, Stack, Table, Text } from "@mantine/core";
 import type { GroupBy, UsageGroup } from "@/app/_lib/usage";
 import { formatUsd } from "@/app/_lib/formatUsd";
+import { formatUsageMetric } from "@/app/_lib/usagePresentation";
+import { outputTokensPerSecond } from "@/domain/usage/performance";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import { DataTable } from "./DataTable";
+import interaction from "./InteractiveSurface.module.css";
+import { IconArrowRight } from "@tabler/icons-react";
 import { GROUP_BY_LABEL } from "./GroupByControl";
 
-/**
- * How much of a group's prompt the provider had cached, for a reader.
- *
- * A share rather than a token count: what a cache is worth is the proportion,
- * and a row's absolute input tokens already scale with its calls. Blank — not
- * `0%` — where nothing reported one, because "no provider on this row reports
- * cached tokens" and "the cache is cold" are different facts, and printing the
- * second for the first is how a chart lies about a lever nobody pulled.
- */
-function cachedShare(group: UsageGroup): string {
-  if (group.cachedTokens <= 0 || group.inputTokens <= 0) {
-    return "";
-  }
-  return `${Math.round((group.cachedTokens / group.inputTokens) * 100)}%`;
-}
+const PAGE_SIZE = 25;
 
-/**
- * What the selected axis cost, largest first — the table under every cost
- * chart.
- *
- * The bar is share of the largest group, not of the total: the question it
- * answers is "what dominates this", and against a total a page with one busy
- * agent and a long tail draws every row but the first as a sliver.
- */
-export function UsageBreakdown({
-  groups,
-  label,
-  loading = false,
-  failed = false,
-}: {
+/** A single breakdown for every usage surface; unknown timing is never displayed as zero. */
+export function UsageBreakdown({ groups, label, loading = false, failed = false, labels, onSelect }: {
   groups: UsageGroup[];
-  /**
-   * The axis, as the column header. The `GroupBy` itself rather than a
-   * pre-rendered word, so the header is translated from the same map the
-   * control above it reads.
-   */
   label: GroupBy;
   loading?: boolean;
   failed?: boolean;
+  labels?: ReadonlyMap<string, string>;
+  onSelect?: (key: string) => void;
 }) {
   const t = useT();
-  const largest = groups[0]?.cost ?? 0;
   const locale = useLocale();
-
-  return (
-    <DataTable minWidth={520}>
-      <Table.Thead>
-        <Table.Tr>
-          <Table.Th tt="capitalize">{t(GROUP_BY_LABEL[label])}</Table.Th>
-          <Table.Th w={110} ta="right">
-            {t("usage.calls")}
-          </Table.Th>
-          <Table.Th w={110} ta="right">
-            {t("usage.cached")}
-          </Table.Th>
-          <Table.Th w={140} ta="right">
-            {t("usage.cost")}
-          </Table.Th>
-        </Table.Tr>
-      </Table.Thead>
+  const [page, setPage] = useState(1);
+  const pages = Math.max(1, Math.ceil(groups.length / PAGE_SIZE));
+  const current = Math.min(page, pages);
+  const largest = groups.reduce((max, group) => Math.max(max, group.cost), 0);
+  return <Stack gap="sm">
+    <DataTable minWidth={1020}>
+      <Table.Thead><Table.Tr>
+        <Table.Th>{t(GROUP_BY_LABEL[label])}</Table.Th>
+        <Table.Th ta="right">{t("usage.calls")}</Table.Th>
+        <Table.Th ta="right">{t("usage.inputTokens")}</Table.Th>
+        <Table.Th ta="right">{t("usage.outputTokens")}</Table.Th>
+        <Table.Th ta="right">{t("usage.cached")}</Table.Th>
+        <Table.Th ta="right">{t("usage.tokensPerSecond")}</Table.Th>
+        <Table.Th ta="right" title={t("usage.measuredCallsHint")}>{t("usage.measuredCalls")}</Table.Th>
+        <Table.Th ta="right">{t("usage.cost")}</Table.Th>
+        {onSelect && <Table.Th>{t("models.column.actions")}</Table.Th>}
+      </Table.Tr></Table.Thead>
       <Table.Tbody>
-        {groups.length === 0 && (
-          <Table.Tr>
-            <Table.Td colSpan={4}>
-              <Text fz="sm" c="dimmed">
-                {loading ? t("common.loading") : failed ? t("usage.loadFailed") : t("usage.none")}
-              </Text>
-            </Table.Td>
-          </Table.Tr>
-        )}
-        {groups.map((group) => (
-          <Table.Tr key={group.key}>
-            <Table.Td>
-              <Text fz="sm" fw={500} truncate>
-                {group.key}
-              </Text>
-              <Progress
-                mt={6}
-                size="sm"
-                value={largest > 0 ? (group.cost / largest) * 100 : 0}
-                color="brand"
-              />
-            </Table.Td>
-            <Table.Td ta="right" ff="monospace" c="dimmed">
-              {group.calls.toLocaleString(locale)}
-            </Table.Td>
-            <Table.Td ta="right" ff="monospace" c="dimmed">
-              {cachedShare(group)}
-            </Table.Td>
-            <Table.Td ta="right" ff="monospace" fw={500}>
-              {formatUsd(group.cost)}
-            </Table.Td>
-          </Table.Tr>
-        ))}
+        {!groups.length && <Table.Tr><Table.Td colSpan={onSelect ? 9 : 8}><Text fz="sm" c="dimmed">
+          {loading ? t("common.loading") : failed ? t("usage.loadFailed") : t("usage.none")}
+        </Text></Table.Td></Table.Tr>}
+        {groups.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE).map(group => <Table.Tr key={group.key} className={onSelect ? interaction.surface : undefined}>
+          <Table.Td>
+            <Text fz="sm" fw={500}>{labels?.get(group.key) ?? group.key}</Text>
+            <Progress mt={6} size="sm" value={largest > 0 ? group.cost / largest * 100 : 0} color="brand" />
+          </Table.Td>
+          <Table.Td ta="right" ff="monospace">{group.calls.toLocaleString(locale)}</Table.Td>
+          <Table.Td ta="right" ff="monospace">{group.inputTokens.toLocaleString(locale)}</Table.Td>
+          <Table.Td ta="right" ff="monospace">{group.outputTokens.toLocaleString(locale)}</Table.Td>
+          <Table.Td ta="right" ff="monospace">{group.cachedTokens > 0 && group.inputTokens > 0
+            ? `${Math.round(group.cachedTokens / group.inputTokens * 100)}%` : "—"}</Table.Td>
+          <Table.Td ta="right" ff="monospace">{formatUsageMetric(outputTokensPerSecond(group), "tokensPerSecond", locale)}</Table.Td>
+          <Table.Td ta="right" ff="monospace">{group.timedCalls.toLocaleString(locale)} / {group.calls.toLocaleString(locale)}</Table.Td>
+          <Table.Td ta="right" ff="monospace" fw={500}>{formatUsd(group.cost)}</Table.Td>
+          {onSelect && <Table.Td><Button variant="default" size="xs" className={interaction.trigger} data-surface-trigger
+            rightSection={<IconArrowRight size={14} aria-hidden="true" />}
+            aria-label={t("usage.filterNamed", { name: labels?.get(group.key) ?? group.key })}
+            onClick={() => onSelect(group.key)}>{t("usage.filter")}</Button></Table.Td>}
+        </Table.Tr>)}
       </Table.Tbody>
     </DataTable>
-  );
+    {pages > 1 && <Pagination value={current} onChange={setPage} total={pages} aria-label={t("usage.pages")} />}
+  </Stack>;
 }

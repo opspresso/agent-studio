@@ -3,7 +3,8 @@
 import { SectionHeading } from "@/app/_components/SectionHeading";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { Alert, Badge, Card, Group, Stack, Text } from "@mantine/core";
+import { Alert, Card, Group, Stack, Text } from "@mantine/core";
+import { TraceStatusBadge } from "@/app/_components/TraceStatusBadge";
 import { BackLink } from "@/app/_components/BackLink";
 import { LoadingText } from "@/app/_components/PageState";
 import { getTrace, type Trace } from "../../../lib/api";
@@ -33,18 +34,18 @@ function TraceDetail({ name, traceId }: { name: string; traceId: string }) {
   return (
     <Stack gap="md">
       <BackLink href={`/agents/${name}/traces`} label={t("agent.tab.traces")} />
+      <SectionHeading title={`Trace ${traceId}`} description={trace ? formatDateTime(trace.createdAt, locale) : undefined}>
+        {trace && <Group gap="md">
+          <TraceStatusBadge status={trace.status} />
+          <Text c="dimmed" fz="sm">{trace.durationMs} ms</Text>
+        </Group>}
+      </SectionHeading>
       {error ? (
         <Alert color="red" variant="light">{error}</Alert>
       ) : !trace ? (
         <LoadingText />
       ) : (
         <>
-          <SectionHeading title={`Trace ${trace.traceId}`} description={formatDateTime(trace.createdAt, locale)}>
-            <Group gap="md">
-              <Badge color={trace.status === "completed" ? "teal" : trace.status === "awaiting-approval" || trace.status === "turn-limit" || trace.status === "output-limit" ? "yellow" : "red"}>{trace.status}</Badge>
-              <Text c="dimmed" fz="sm">{trace.durationMs} ms</Text>
-            </Group>
-          </SectionHeading>
           {trace.ancestry && trace.ancestry.length > 1 && (
             <Text fz="sm" c="dimmed">called via <Text component="span" ff="monospace">{trace.ancestry.join(" → ")}</Text></Text>
           )}

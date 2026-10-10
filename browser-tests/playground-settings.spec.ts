@@ -138,6 +138,18 @@ for (const role of ["member", "admin"]) {
   });
 }
 
+test("structured output exposes a named schema editor and retains its draft across toggles", async ({ page }) => {
+  await page.goto(`${base}?role=owner`);
+  const enable = page.getByRole("checkbox", { name: "Structured output (JSON schema)", exact: true });
+  await enable.check();
+  const schema = page.getByRole("textbox", { name: "JSON schema", exact: true });
+  await schema.fill('{"type":"object"}');
+  await enable.uncheck();
+  await expect(schema).toHaveCount(0);
+  await enable.check();
+  await expect(schema).toHaveValue('{"type":"object"}');
+});
+
 test("guest can inspect MCP settings without personal connection reads or tool execution", async ({ page }) => {
   await page.goto(`${base}?role=guest`);
   await page.getByRole("button", { name: "Settings", exact: true }).click();

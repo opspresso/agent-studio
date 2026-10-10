@@ -155,6 +155,7 @@ admin 목록에 속함(목록이 비면 member 이상). `owner` = 해당 Agent�
 | `/api/artifacts/{artifactId}/view` | `GET` | 생성자 또는 Agent 소유자. 비공개 파일은 파일 소유자(member)의 현재 Agent 접근 권한 필요 |
 | `/api/artifacts/{artifactId}/download` | `GET` | 비공개 파일 소유자(member), 현재 Agent 접근 권한 필요 |
 | `/api/usages/summary` | `GET` | session |
+| `/api/usages/members` | `GET` | admin |
 | `/api/models` | `GET` | session |
 | `/api/models/favorites` | `GET` `PUT` `PATCH` | session / member |
 | `/api/models/catalog` | `GET` | session |
@@ -1463,25 +1464,36 @@ artifact id 대신 다운로드용 서명 `url`과 후속 `File` 도구 호출�
 
 ## 사용량
 
+`GET /api/usages/members?from=2026-01-01&to=2026-01-31`은 admin 전용이다.
+`{ members: [{ id, name, email }], items: [{ userId, date, calls, inputTokens, outputTokens,
+cachedTokens, costUsd, modelDurationMs?, timedOutputTokens?, timedCalls? }] }`을 반환한다.
+모든 현재 계정을 페이지 단위로 조회하고 사용자별 원장을 동시에 최대 8개 읽는다.
+같은 사용자의 여러 Agent·호출 출처를 UTC 일자별로 합산한다. Agent 삭제 뒤 남은 개인 사용량도
+포함하며, 사용량이 없는 계정은 `members`에만 있다. 일부 읽기가 실패하면 부분 합계를 반환하지 않는다.
+아래 summary와 같은 날짜 검증을 적용한다. `GET /api/me/usage`는 session 사용자의 원장만 반환한다.
+
+성능 필드 세 개는 모델별 맵이다. 측정된 표본의 출력 토큰과 시간을 함께 합산하며
+계산·미측정 값의 의미는 [사용량 설계](design/observability.md#사용량과-비용-귀속)를 따른다.
+
 ```
 GET /api/usages/summary?from=2026-01-01&to=2026-01-31[&agent=my-bot]
 → 200 { "items": [ { agentName, date, calls, inputTokens, outputTokens, cachedTokens,
-                     costUsd }, … ] }
+                     costUsd, modelDurationMs?, timedOutputTokens?, timedCalls? }, … ] }
       (every metric is a per-model map: { "provider/model": number })
 → 400 { "error": "…" }   (bad/oversized range: max 184 days, from ≤ to)
 ```
 
 `cachedTokens` 는 `inputTokens` 중 프로바이더가 자기 프롬프트 캐시에서 서빙한 부분이며, 이미
-캐시 단가로 값이 매겨져 있다. 이 필드가 존재하기 전에 기록된 날과 `prompt_tokens_details` 를
-보고하지 않는 채널에 대해서는 `{}` 다. 콘솔이 `0%` 가 아니라 빈칸을 렌더링하는 이유가 이것이다:
-아무도 보고하지 않는 캐시는 차가운 캐시가 아니다.
+캐시 단가로 값이 매겨져 있다. 필드가 없는 과거 행은 `{}`로 읽고 미보고 호출은 0으로 합산한다.
+저장된 0만으로 cache miss와 미보고를 구분할 수 없어 콘솔은 양수인 캐시 비율만 표시하며,
+그 외에는 `—`를 표시한다.
 
 ### 호출자별 지출
 
 ```
 GET /api/agents/{name}/usage/actors?from=2026-07-01&to=2026-07-31
 → 200 { "items": [ { agentName, userId, actor, calls, inputTokens, outputTokens, cachedTokens,
-                     costUsd, display?: { name, avatarUrl? } }, … ],
+                     costUsd, modelDurationMs?, timedOutputTokens?, timedCalls?, display?: { name, avatarUrl? } }, … ],
         "totalActors": 123, "truncated": true }
 ```
 

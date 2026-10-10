@@ -27,7 +27,7 @@ describe("Plugin deletion review", () => {
     }));
     expect(markup).toContain(`unknown — ${t("plugins.bindingsUnavailable")}`);
     expect(markup).not.toContain(`unbound — ${t("plugins.bindingsUnavailable")}`);
-    expect(markup).toContain("used — bound by assistant");
+    expect(markup).toContain(`used — ${t("sync.boundBy", { agents: "assistant" })}`);
     expect(markup.match(/type="checkbox"/g)).toHaveLength(3);
   });
 });

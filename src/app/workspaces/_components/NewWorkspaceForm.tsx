@@ -1,8 +1,10 @@
 "use client";
 
+import { NavigationLink } from "@/app/_components/NavigationLink";
+
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Alert, Anchor, Autocomplete, Button, Group, Select, Stack, Switch, Text, Textarea } from "@mantine/core";
+import { Alert, Autocomplete, Button, Group, Select, Stack, Switch, Text, Textarea } from "@mantine/core";
 import { useDebouncedValue } from "@mantine/hooks";
 import { IconTerminal2 } from "@tabler/icons-react";
 import { useT } from "@/app/_i18n/provider";
@@ -106,7 +108,7 @@ export function NewWorkspaceForm() {
       data={[...new Set([...(selected?.runtimes ?? []), runtime])].map(value => ({ value, disabled: !selected?.runtimes.includes(value), label: value === "command" ? t("workspace.command") : value === "codex" ? "Codex" : value === "claude" ? "Claude" : "OpenCode" }))} />
     <Switch label={t("workspace.useRepository")} checked={coding} onChange={event => setCoding(event.currentTarget.checked)} disabled={busy || !selected ||
       (!selected.repositories.length && selected.mode !== "all" && selected.mode !== "new" && !(selected.mode === "owners" && selected.repositoryOwners.length)) || !selected.gitEnabled} />
-    {agent && <Anchor size="sm" href={`/agents/${encodeURIComponent(agent)}/workspace`} target="_blank" rel="noreferrer">{t("workspace.policy.manage")}</Anchor>}
+    {agent && <NavigationLink href={`/agents/${encodeURIComponent(agent)}/workspace`} newTab>{t("workspace.policy.manage")}</NavigationLink>}
     {coding && <>
       {selected?.mode === "new" && <Text size="sm" c="dimmed">{t("workspace.policy.modeHint.new")}</Text>}
       {selected?.mode === "owners" && !!selected.repositoryOwners.length && <Text size="sm" c="dimmed">{t("workspace.allowedOwners", { owners: selected.repositoryOwners.join(", ") })}</Text>}

@@ -6,12 +6,19 @@ import { Alert, Box, Group, SegmentedControl, Stack, Text } from "@mantine/core"
 import { useT } from "@/app/_i18n/provider";
 import { NewChatPanel } from "./NewChatPanel";
 import { NewWorkspaceForm } from "@/app/workspaces/_components/NewWorkspaceForm";
+import { PageHeader } from "@/app/_components/PageHeader";
+import { LoadingText } from "@/app/_components/PageState";
+import { IconMessageCircle } from "@tabler/icons-react";
 
 export function NewChatEntry({ workspacesEnabled }: { workspacesEnabled: boolean }) {
   const t = useT();
-  const canRun = canRunAgents(useViewer());
+  const viewer = useViewer();
+  const canRun = canRunAgents(viewer);
   const [mode, setMode] = useState("chat");
-  if (!canRun) return <Alert>{t("common.memberExecutionRequired")}</Alert>;
+  if (!canRun) return <Stack gap="sm">
+    <PageHeader compact Icon={IconMessageCircle} title={t("chat.new")} />
+    {viewer === null ? <LoadingText /> : <Alert>{t("common.memberExecutionRequired")}</Alert>}
+  </Stack>;
   if (!workspacesEnabled) return <NewChatPanel />;
   return <Stack h="100%" gap="sm">
     <Group justify="space-between" gap="sm" wrap="wrap">

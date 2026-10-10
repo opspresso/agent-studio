@@ -51,6 +51,18 @@ function fixture() {
 }
 
 describe("resumable file transcription", () => {
+  it("reuses the same measured duration and token counts from segment checkpoints", async () => {
+    const f = fixture();
+    f.deps.resolve = async () => ({ ...f.config, transcriber: { transcribe: async () => ({ text: "hello", segments: [],
+      model: f.job.model, modelDurationMs: 800, usage: { outputTokens: 40 }, warnings: [] }) } });
+    const run = createAudioTranscriptionStep(f.deps);
+    await run(f.job, f.context);
+    await run(f.job, f.context);
+    const calls = vi.mocked(f.deps.recordUsage).mock.calls;
+    expect(calls).toHaveLength(4);
+    for (const [, , result] of calls) expect(result).toMatchObject({ modelDurationMs: 800, usage: { outputTokens: 40 } });
+    expect(calls.map(([, receipt]) => receipt)).toEqual(["job-1-asr-0", "job-1-asr-1", "job-1-asr-0", "job-1-asr-1"]);
+  });
   it("warns when a preferred whole-recording request must still be split", async () => {
     const f = fixture();
     f.deps.resolve = async () => ({ ...f.config, preferOriginal: true });

@@ -91,19 +91,19 @@ describe("the catalogues", () => {
 });
 
 describe("translator", () => {
-  it.each(["en", "ko"] as const)("uses plural collection names and singular item names in %s", locale => {
+  it.each(["en", "ko"] as const)("localizes navigation while retaining product item names in %s", locale => {
     const t = translator(locale);
-    expect(t("nav.chats")).toBe("Chats");
+    expect(t("nav.chats")).toBe(locale === "ko" ? "대화" : "Chats");
     expect(t("chat.list")).toBe("Chats");
     expect(t("chat.kind")).toBe("Chat");
     expect(t("workspace.list")).toBe("Workspaces");
     expect(t("workspace.kind")).toBe("Workspace");
     expect(t("chat.history")).toBe("Chats & Workspaces");
-    for (const [key, label] of [
-      ["nav.agents", "Agents"], ["nav.artifacts", "Artifacts"], ["nav.plugins", "Plugins"],
-      ["nav.skills", "Skills"], ["nav.tools", "Tools"], ["nav.models", "Models"],
-      ["nav.members", "Members"],
-    ] as const) expect(t(key)).toBe(label);
+    for (const [key, english, korean] of [
+      ["nav.agents", "Agents", "에이전트"], ["nav.artifacts", "Artifacts", "파일"], ["nav.plugins", "Plugins", "플러그인"],
+      ["nav.skills", "Skills", "스킬"], ["nav.tools", "Tools", "도구"], ["nav.models", "Models", "모델"],
+      ["nav.members", "Members", "구성원"], ["nav.audits", "Audits", "감사 로그"],
+    ] as const) expect(t(key)).toBe(locale === "ko" ? korean : english);
     for (const [key, noun] of [
       ["agents.new", "Agent"], ["skills.new", "Skill"],
       ["artifacts.deleteTitle", "Artifact"], ["modelAdmin.add", "Model"],

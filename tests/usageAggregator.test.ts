@@ -40,6 +40,18 @@ function fakeUsageRepo(onRecord?: (delta: UsageDelta) => void) {
 }
 
 describe("createUsageAggregator", () => {
+  it("keeps measured tokens paired with duration across calls and ignores untimed output", async () => {
+    const { repo, writes } = fakeUsageRepo();
+    const agg = createUsageAggregator(repo, usageIdentity());
+    const base = { agentName: "p", model: "m", inputTokens: 10, costUsd: 1 };
+    await agg.record({ ...base, outputTokens: 100, modelDurationMs: 1000 });
+    await agg.record({ ...base, outputTokens: 100, modelDurationMs: 3000 });
+    await agg.record({ ...base, outputTokens: 900 });
+    await agg.record({ ...base, outputTokens: 20, modelDurationMs: NaN });
+    await agg.flush();
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toMatchObject({ calls: 4, outputTokens: 1120, modelDurationMs: 4000, timedOutputTokens: 200, timedCalls: 2 });
+  });
   it("buffers records and writes nothing until flush", async () => {
     const { repo, writes } = fakeUsageRepo();
     const agg = createUsageAggregator(repo, usageIdentity());

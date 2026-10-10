@@ -1,7 +1,9 @@
 "use client";
 
+import { NavigationLink } from "@/app/_components/NavigationLink";
+
 import { useEffect, useState } from "react";
-import { Alert, Anchor, Button, Card, Group, Select, Stack, TagsInput, Text, NumberInput, Textarea } from "@mantine/core";
+import { Alert, Button, Card, Group, Select, Stack, TagsInput, Text, NumberInput, Textarea } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
 import { useViewer } from "@/app/_lib/useViewer";
 import { SectionHeading } from "@/app/_components/SectionHeading";
@@ -9,9 +11,13 @@ import { LoadingText } from "@/app/_components/PageState";
 import { jsonHeaders, readJson } from "@/app/_lib/httpClient";
 import type { WorkspacePolicyResponse } from "@/app/api/agents/[name]/workspace-policy/route";
 import type { WorkspaceRuntime, WorkspaceCheck } from "@/domain/workspace/types";
-import Link from "next/link";
 import { WORKSPACE_LIMITS } from "@/domain/workspace/limits";
 import { WORKSPACE_REPOSITORY_MODES, workspaceRepositoryMode, type WorkspaceRepositoryMode } from "@/domain/workspace/policy";
+
+export function WorkspaceToolsHeading() {
+  const t = useT();
+  return <SectionHeading title={t("workspace.toolsTitle")} description={t("workspace.policy.description")} />;
+}
 
 export function WorkspaceRepositoryPolicySection({ agentName }: { agentName: string }) {
   const t = useT();
@@ -59,7 +65,7 @@ export function WorkspaceRepositoryPolicySection({ agentName }: { agentName: str
 
   return <Card component="section" id="workspace-repositories" style={{ scrollMarginTop: 80 }}>
     <Stack gap="md">
-      <SectionHeading title={t("workspace.toolsTitle")} description={t("workspace.policy.description")} />
+      <WorkspaceToolsHeading />
       {error && <Alert color="red">{error}</Alert>}
       {!view && !error && <LoadingText />}
       {view && !view.backendReady && <Alert>{t("workspace.backendUnavailable")}</Alert>}
@@ -68,7 +74,7 @@ export function WorkspaceRepositoryPolicySection({ agentName }: { agentName: str
         <Select label={t("workspace.defaultRuntime")} value={runtime} allowDeselect={false} disabled={busy || !view.canManage}
           data={[...new Set([...view.runtimes, runtime])].map(value => ({ value, label: value === "command" ? t("workspace.command") : value, disabled: !view.runtimes.includes(value) }))}
           onChange={value => { if (value) setRuntime(value as WorkspaceRuntime); setSaved(false); }} />
-        {viewer?.isAdmin ? <Anchor size="sm" component={Link} href="/settings/model-usage">{t("workspace.runtimeModelsLink")}</Anchor>
+        {viewer?.isAdmin ? <NavigationLink href="/settings/model-usage">{t("workspace.runtimeModelsLink")}</NavigationLink>
           : <Text size="sm" c="dimmed">{t("workspace.runtimeModelsAskAdmin")}</Text>}
         <Select label={t("workspace.policy.mode")} value={mode} allowDeselect={false} disabled={busy || !view.canManage}
           data={WORKSPACE_REPOSITORY_MODES.map(value => ({ value, label: t(`workspace.policy.mode.${value}`) }))}

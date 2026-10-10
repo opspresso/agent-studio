@@ -1,9 +1,10 @@
 "use client";
 
+import { NavigationLink } from "@/app/_components/NavigationLink";
+
 import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
-  Anchor,
   Avatar,
   Badge,
   Card,
@@ -20,7 +21,7 @@ import type { MemberUsageRow } from "@/domain/usage/types";
 import { tierMayRunAgents } from "@/domain/member/tiers";
 import { memberTierColor } from "@/app/_components/badgeColors";
 import { CardHeading } from "@/app/_components/CardHeading";
-import { CostBarChart } from "@/app/_components/CostBarChart";
+import { UsageChart } from "@/app/_components/UsageChart";
 import { DateRangePicker } from "@/app/_components/DateRangePicker";
 import { GROUP_BY_LABEL, GroupByControl } from "@/app/_components/GroupByControl";
 import { PageHeader } from "@/app/_components/PageHeader";
@@ -115,7 +116,7 @@ export default function ProfilePage() {
     <Stack gap="lg">
       {header}
       {!mayRun && <Alert>{t("common.memberExecutionRequired")}</Alert>}
-      <Anchor href="/profile/messaging">{t("messaging.identity.title")}</Anchor>
+      <NavigationLink href="/profile/messaging">{t("messaging.identity.title")}</NavigationLink>
 
       <Card>
         <Group gap="md" wrap="nowrap" align="flex-start">
@@ -195,7 +196,7 @@ export default function ProfilePage() {
           />
           <GroupByControl value={groupBy} onChange={setGroupBy} options={GROUP_OPTIONS} />
         </Group>
-        <CostBarChart
+        <UsageChart
           data={daily.data}
           keys={daily.keys}
           empty={usageLoading ? t("common.loading") : usageError ? t("usage.loadFailed") : t("usage.none")}

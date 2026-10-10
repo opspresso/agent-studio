@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { NavigationLink } from "@/app/_components/NavigationLink";
 import { ActionIcon, Alert, Stack } from "@mantine/core";
 import { IconCpu, IconStar } from "@tabler/icons-react";
 import { PageHeader } from "@/app/_components/PageHeader";
@@ -58,17 +59,22 @@ export default function ModelsPage() {
     });
   }
   return <Stack gap="lg">
-    <PageHeader title={t("nav.models")} description={t("modelAdmin.onlySelected")} Icon={IconCpu} />
+    <PageHeader title={t("nav.models")} description={t("modelAdmin.onlySelected")} Icon={IconCpu}>
+      <NavigationLink href="/models/usage">{t("usage.modelsTitle")}</NavigationLink>
+    </PageHeader>
     {error && <Alert color="red">{error}</Alert>}
     {favoriteError && <Alert color="red">{favoriteError}</Alert>}
     {!models && !error && <LoadingText />}
     {models && <ModelCollection scope="browse" models={models} emptyText={t("models.empty")}
+      renderActions={model => <NavigationLink surface href={`/models/usage?model=${encodeURIComponent(model.id)}`}>
+        {t("usage.view")}
+      </NavigationLink>}
       renderTitleAction={favorites === undefined ? undefined : model => {
         const favorite = favorites.includes(model.id);
         const saving = savingIds.includes(model.id);
         const label = t(favorite ? "models.unfavorite" : "models.favorite");
         return <ActionIcon size="lg" variant="transparent" color="gray"
-          aria-label={label} title={label} aria-pressed={favorite} disabled={!canEdit || saving} loading={saving}
+          aria-label={label} title={label} disabled={!canEdit || saving} loading={saving}
           onClick={() => void toggleFavorite(model.id)}>
           <IconStar size={19} fill={favorite ? "var(--mantine-color-yellow-2)" : "none"}
             color={favorite ? "var(--mantine-color-yellow-7)" : undefined} />

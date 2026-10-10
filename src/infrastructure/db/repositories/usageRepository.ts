@@ -26,6 +26,7 @@ import type { CostAlertKind, UsageRepository } from "@/domain/usage/repository";
 import { daysBetween } from "@/shared/date";
 import type { ActorUsageRow, MemberUsageRow, UsageDelta, UsageRow } from "@/domain/usage/types";
 import { agentIsLive } from "@/infrastructure/db/agentLifecycle";
+import { USAGE_COUNTERS } from "@/domain/usage/counters";
 
 /**
  * Attribute the once-per-day notification claim is written to. One per kind, so
@@ -35,8 +36,6 @@ const ALERT_MARKER: Record<CostAlertKind, string> = {
   alert: "alertedAt",
   block: "blockedAt",
 };
-
-const COUNTERS = ["calls", "inputTokens", "outputTokens", "cachedTokens", "costUsd"] as const;
 
 /** Rows read at once while a usage view drains a bounded date range. */
 const USAGE_PAGE_SIZE = 100;
@@ -83,6 +82,9 @@ function toUsageRow(item: Item): UsageRow {
     // before the field existed reads as.
     cachedTokens: (item.cachedTokens as Record<string, number>) ?? {},
     costUsd: (item.costUsd as Record<string, number>) ?? {},
+    ...(item.modelDurationMs ? { modelDurationMs: item.modelDurationMs as Record<string, number> } : {}),
+    ...(item.timedOutputTokens ? { timedOutputTokens: item.timedOutputTokens as Record<string, number> } : {}),
+    ...(item.timedCalls ? { timedCalls: item.timedCalls as Record<string, number> } : {}),
   };
 }
 
@@ -112,14 +114,17 @@ function added(row: Item | null, delta: UsageDelta, extra: Item): Item {
   for (const [name, value] of Object.entries(extra)) {
     next[name] = row?.[name] ?? value;
   }
-  const amounts: Record<(typeof COUNTERS)[number], number> = {
+  const amounts: Record<(typeof USAGE_COUNTERS)[number], number> = {
     calls: delta.calls,
     inputTokens: delta.inputTokens,
     outputTokens: delta.outputTokens,
     cachedTokens: delta.cachedTokens ?? 0,
     costUsd: delta.costUsd,
+    modelDurationMs: delta.modelDurationMs ?? 0,
+    timedOutputTokens: delta.timedOutputTokens ?? 0,
+    timedCalls: delta.timedCalls ?? 0,
   };
-  for (const counter of COUNTERS) {
+  for (const counter of USAGE_COUNTERS) {
     const map = { ...((row?.[counter] as Record<string, number> | undefined) ?? {}) };
     map[delta.model] = (map[delta.model] ?? 0) + amounts[counter];
     next[counter] = map;

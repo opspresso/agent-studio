@@ -3,12 +3,12 @@
 import { ConfigurationFields } from "@/app/_components/ConfigurationFields";
 import { PageHeader } from "@/app/_components/PageHeader";
 import { IconBook2 } from "@tabler/icons-react";
-import Link from "next/link";
+import { PluginLink } from "@/app/_components/PluginLink";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { deleteSkill, getSkill, updateSkill, type Skill } from "../api";
 import { BackLink } from "@/app/_components/BackLink";
-import { LoadingText } from "@/app/_components/PageState";
+import { DetailPageState } from "@/app/_components/PageState";
 import { useConfirm } from "@/app/_components/useConfirm";
 import { createLatestOnly } from "@/app/_lib/latestOnly";
 import {
@@ -23,7 +23,6 @@ import {
   TextInput,
 } from "@mantine/core";
 import { monoInput } from "@/app/_components/monoInput";
-import { PLUGIN_COLOR } from "@/app/_components/badgeColors";
 import { parsePluginSource } from "@/domain/plugin/types";
 import { useViewer } from "@/app/_lib/useViewer";
 import { useT } from "@/app/_i18n/provider";
@@ -88,23 +87,8 @@ function SkillDetail({ name }: { name: string }) {
     }
   }
 
-  if (loading) {
-    return <LoadingText />;
-  }
-
-  if (error && !skill) {
-    return (
-      <Stack gap="md">
-        <BackLink href="/skills" label={t("nav.skills")} />
-        <Alert color="red" variant="light">
-          {error}
-        </Alert>
-      </Stack>
-    );
-  }
-
-  if (!skill) {
-    return null;
+  if (loading || !skill) {
+    return <DetailPageState name={name} backHref="/skills" backLabel={t("nav.skills")} Icon={IconBook2} loading={loading} error={error} />;
   }
 
   const plugin = skill.source ? parsePluginSource(skill.source) : null;
@@ -116,16 +100,7 @@ function SkillDetail({ name }: { name: string }) {
 
       <PageHeader title={skill.name} Icon={IconBook2}
         badges={<>
-            {plugin && (
-              <Badge
-                color={PLUGIN_COLOR}
-                component={Link}
-                href={`/plugins/${plugin.plugin}`}
-                style={{ cursor: "pointer" }}
-              >
-                {plugin.plugin}
-              </Badge>
-            )}
+            {plugin && <PluginLink name={plugin.plugin} />}
           </>}
         details={skill.source && (
             <Text fz="xs" c="dimmed" mt={4}>

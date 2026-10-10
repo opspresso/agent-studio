@@ -13,7 +13,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActionIcon,
   Alert,
-  Anchor,
   Badge,
   Button,
   Group,
@@ -24,11 +23,12 @@ import {
   UnstyledButton,
 } from "@mantine/core";
 import {
-  IconDownload,
   IconEye,
   IconFile,
   IconTrash,
 } from "@tabler/icons-react";
+import { NavigationLink } from "@/app/_components/NavigationLink";
+import interaction from "@/app/_components/InteractiveSurface.module.css";
 import { CatalogCollection } from "@/app/_components/CatalogCollection";
 import { CatalogViewToggle, useCatalogView } from "@/app/_components/CatalogView";
 import rows from "@/app/_components/CatalogRows.module.css";
@@ -228,6 +228,7 @@ export function ArtifactGallery({
 
       <Group justify="space-between" wrap="wrap" gap="sm">
         <SegmentedControl
+          aria-label={t("artifacts.kindFilter")}
           value={kind}
           onChange={(value) => setKind(value as KindFilter)}
           data={[
@@ -287,17 +288,18 @@ function ArtifactEntry({
   const t = useT();
   const locale = useLocale();
   const available = artifact.url !== undefined && artifact.url !== failedUrl;
+  const viewable = isInlineViewable(artifact.mimeType) && artifact.byteSize <= MAX_INLINE_VIEW_BYTES;
   const title = artifact.filename ?? artifact.prompt ?? t(KIND_NOUN[artifact.kind]);
 
   return (
-    <article className={classes.entry} aria-label={title}>
+    <article className={`${classes.entry} ${interaction.surface}`} aria-label={title}>
       <div className={classes.preview}>
         {artifact.kind === "image" && available ? (
           <UnstyledButton
             type="button"
             aria-label={t("artifacts.view")}
             onClick={onPreview}
-            className={classes.imageButton}
+            className={`${classes.imageButton} ${interaction.trigger}`} data-surface-trigger
           >
             <Image
               src={artifact.url}
@@ -343,46 +345,21 @@ function ArtifactEntry({
       </div>
 
       <Group gap="xs" className={classes.actions}>
-        {/* Images render in place; documents are offered as a separate link. */}
-        {!available ? (
-          <span />
-        ) : artifact.kind === "image" ? (
-          <Anchor component="button" type="button" onClick={onPreview} fz="sm">
-            <Group gap={4}>
-              <IconEye size={14} aria-hidden="true" />
+        {available && <>
+          {artifact.kind === "image" ? (
+            <Group gap={6} aria-hidden="true"><IconEye size={16} /><Text size="sm" fw={600}>{t("artifacts.view")}</Text></Group>
+          ) : viewable && (
+            <NavigationLink surface href={`/api/artifacts/${artifact.artifactId}/view`} newTab>
               {t("artifacts.view")}
-            </Group>
-          </Anchor>
-        ) : (
-          <Group gap="md">
-            {/* Opened, not saved — and never at the object's own address:
-                `/view` serves it under a sandbox policy, which an S3 URL
-                cannot carry. Gated on size as well as type, because the route
-                refuses a row past its read limit and only a `SaveFile` row is
-                guaranteed under it. Everything else has only a download. */}
-            {isInlineViewable(artifact.mimeType) &&
-              artifact.byteSize <= MAX_INLINE_VIEW_BYTES && (
-              <Anchor
-                href={`/api/artifacts/${artifact.artifactId}/view`}
-                target="_blank"
-                rel="noreferrer"
-                fz="sm"
-              >
-                <Group gap={4}>
-                  <IconEye size={14} aria-hidden="true" />
-                  {t("artifacts.view")}
-                </Group>
-              </Anchor>
-            )}
-            <Anchor href={artifact.url} target="_blank" rel="noreferrer" fz="sm">
-              <Group gap={4}>
-                <IconDownload size={14} aria-hidden="true" />
-                {t("artifacts.download")}
-              </Group>
-            </Anchor>
-          </Group>
-        )}
-        {onDelete && <ActionIcon variant="subtle" color="red" onClick={onDelete} aria-label={t("artifacts.delete")}>
+            </NavigationLink>
+          )}
+          <NavigationLink href={artifact.url!} download={artifact.filename || true}
+            surface={artifact.kind !== "image" && !viewable}
+            className={artifact.kind === "image" || viewable ? interaction.control : undefined}>
+            {t("artifacts.download")}
+          </NavigationLink>
+        </>}
+        {onDelete && <ActionIcon className={interaction.control} variant="subtle" color="red" onClick={onDelete} aria-label={t("artifacts.delete")}>
           <IconTrash size={16} aria-hidden="true" />
         </ActionIcon>}
       </Group>

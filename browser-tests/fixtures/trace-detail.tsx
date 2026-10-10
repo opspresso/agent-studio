@@ -20,5 +20,5 @@ function Fixture() {
 }
 
 createRoot(document.getElementById("root")!).render(
-  <MantineProvider theme={theme}><I18nProvider locale="en"><Fixture /></I18nProvider></MantineProvider>,
+  <MantineProvider theme={theme}><I18nProvider locale={new URLSearchParams(location.search).get("locale") === "ko" ? "ko" : "en"}><Fixture /></I18nProvider></MantineProvider>,
 );

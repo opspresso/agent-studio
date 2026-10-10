@@ -1,7 +1,9 @@
 "use client";
 
+import { NavigationLink } from "@/app/_components/NavigationLink";
+
 import { useEffect, useState } from "react";
-import { Alert, Anchor, Button, Card, Code, Group, Select, Stack, Text } from "@mantine/core";
+import { Alert, Button, Card, Code, Group, Select, Stack, Text } from "@mantine/core";
 import { IconLink } from "@tabler/icons-react";
 import { PageHeader } from "@/app/_components/PageHeader";
 import { LoadingText } from "@/app/_components/PageState";
@@ -85,7 +87,7 @@ export default function MessagingConnections() {
 
   return <Stack maw={720} mx="auto" gap="lg">
     <PageHeader title={t("messaging.identity.title")} description={t("messaging.identity.description")} Icon={IconLink} />
-    <Anchor href="/profile">{t("nav.profile")}</Anchor>
+    <NavigationLink href="/profile">{t("nav.profile")}</NavigationLink>
     {error && <Alert color="red">{error}</Alert>}
     {loading ? <LoadingText /> : <>
       <Select label="Agent" disabled={busy} data={agents.map(value => ({ value: value.name, label: value.displayName }))}

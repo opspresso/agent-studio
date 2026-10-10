@@ -169,7 +169,7 @@ export function SchedulesSection({
       // exist, before anyone opens the section.
       badge={
         loading ? undefined : (
-          <Badge color={stateColor(schedules.length > 0)} radius="xl">
+          <Badge color={stateColor(schedules.length > 0)}>
             {schedules.length > 0 ? schedules.length : "none"}
           </Badge>
         )
@@ -256,7 +256,7 @@ export function SchedulesSection({
             <Stack gap="sm">
               <Group gap="sm">
                 <Text fw={600}>{schedule.triggerId}</Text>
-                <Badge color={schedule.enabled ? "teal" : "gray"} variant="light">
+                <Badge color={stateColor(schedule.enabled === true)} variant="light">
                   {schedule.enabled ? "enabled" : "disabled"}
                 </Badge>
               </Group>

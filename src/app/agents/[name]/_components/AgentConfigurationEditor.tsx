@@ -292,7 +292,7 @@ export function AgentConfigurationEditor({
                 run records its final turn and nothing before it. */}
             {value.parameters.reasoningTrace === true &&
               selectedModel?.capabilities.reasoningWithTools === false && (
-                <Text fz="xs" c="yellow.7">
+                <Text fz="xs" c="yellow">
                   {t("models.reasoningNoTools")}
                 </Text>
               )}
@@ -347,6 +347,7 @@ export function AgentConfigurationEditor({
             />
             {value.parameters.structuredOutput && (
               <Textarea
+                label={t("configuration.jsonSchema")}
                 value={schemaText}
                 onChange={(e) => onSchemaChange(e.currentTarget.value)}
                 placeholder='{"type":"object","properties":{}}'

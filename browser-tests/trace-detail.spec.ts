@@ -40,8 +40,22 @@ test("clears a failed Trace read when navigating to another Trace", async ({ pag
         durationMs: 10, spans: [] } });
   });
   await page.goto(base);
+  await expect(page.getByRole("heading", { name: "Trace missing", exact: true })).toBeVisible();
   await expect(page.getByRole("alert")).toContainText("Trace unavailable");
   await page.getByRole("button", { name: "Switch trace" }).click();
   await expect(page.getByRole("heading", { name: "Trace present" })).toBeVisible();
   await expect(page.getByRole("alert")).toHaveCount(0);
 });
+
+for (const [locale, label] of [["en", "Cancelled"], ["ko", "취소됨"]]) {
+  test(`cancelled Trace uses a neutral localized badge in ${locale}`, async ({ page }) => {
+    await page.route("**/api/agents/agent/traces/**", route => route.fulfill({ json: {
+      traceId: "missing", agentName: "agent", status: "cancelled", durationMs: 10, spans: [],
+      createdAt: "2026-10-09T00:00:00Z", startedAt: "2026-10-09T00:00:00Z",
+    } }));
+    await page.goto(`${base}?locale=${locale}`);
+    const badge = page.locator('[title="cancelled"]');
+    await expect(badge).toHaveText(label!);
+    await expect(badge).toHaveCSS("background-color", "rgb(240, 242, 245)");
+  });
+}

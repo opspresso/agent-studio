@@ -1,7 +1,9 @@
 "use client";
 
-import { Anchor, Group, Paper, Stack, Text } from "@mantine/core";
-import { IconExternalLink, IconFileText } from "@tabler/icons-react";
+import { NavigationLink } from "./NavigationLink";
+import interaction from "./InteractiveSurface.module.css";
+import { Group, Paper, Stack, Text } from "@mantine/core";
+import { IconFileText } from "@tabler/icons-react";
 import { isInlineViewable, MAX_INLINE_VIEW_BYTES } from "@/domain/artifact/types";
 import { formatBytes } from "@/app/_lib/formatBytes";
 import { useT } from "@/app/_i18n/provider";
@@ -49,38 +51,27 @@ export function ProducedFile({
     isInlineViewable(mimeType) &&
     (byteSize === undefined || byteSize <= MAX_INLINE_VIEW_BYTES);
   return (
-    <Paper withBorder radius="md" px="md" py="xs" maw="80%">
-      <Group gap="xs" wrap="nowrap">
-        <IconFileText size={18} />
-        <Stack gap={0} style={{ minWidth: 0 }}>
-          {url ? (
-            <Anchor href={url} download={name} fz="sm" style={{ overflowWrap: "anywhere" }}>
-              {name}
-            </Anchor>
-          ) : (
-            <Text fz="sm" style={{ overflowWrap: "anywhere" }}>
-              {name}
+    <Paper withBorder radius="md" p="md" maw="100%" className={interaction.surface}>
+      <Group gap="sm" wrap="nowrap" align="flex-start">
+        <IconFileText size={20} aria-hidden="true" style={{ flexShrink: 0 }} />
+        <Stack gap="xs" style={{ minWidth: 0, flex: 1 }}>
+          <div>
+            <Text fz="sm" fw={600} style={{ overflowWrap: "anywhere" }}>{name}</Text>
+            <Text fz="xs" c="dimmed">
+              {size ? `${size}${url ? "" : " · "}` : ""}
+              {url ? "" : t("chat.fileWhenDone")}
             </Text>
-          )}
-          <Text fz={11} c="dimmed">
-            {size ? `${size}${url ? "" : " · "}` : ""}
-            {url ? "" : t("chat.fileWhenDone")}
-          </Text>
-        </Stack>
-        {viewable && (
-          <Anchor
-            href={`/api/artifacts/${artifactId}/view`}
-            target="_blank"
-            rel="noreferrer"
-            fz="sm"
-            ml="auto"
-          >
-            <Group gap={4} wrap="nowrap">
-              <IconExternalLink size={14} />
+          </div>
+          <Group gap="xs">
+            {viewable && <NavigationLink surface href={`/api/artifacts/${artifactId}/view`} newTab>
               {t("artifacts.view")}
-            </Group>
-          </Anchor>
-        )}
+            </NavigationLink>}
+            {url && <NavigationLink href={url} download={name} surface={!viewable}
+              className={viewable ? interaction.control : undefined} label={`${t("artifacts.download")}: ${name}`}>
+              {t("artifacts.download")}
+            </NavigationLink>}
+          </Group>
+        </Stack>
       </Group>
     </Paper>
   );
