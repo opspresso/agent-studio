@@ -495,13 +495,14 @@ describe("the client bundle", () => {
   // The exact count detects missing entry points. Update it deliberately when
   // adding or removing a client component.
   it("is scanned from every client entry point", () => {
-    expect(entries.length).toBe(137);
+    expect(entries.length).toBe(138);
     expect(entries.map((file) => file.path)).toEqual(expect.arrayContaining([
       "src/app/agents/[name]/_components/EvaluationPanel.tsx",
       "src/app/_components/UsageExplorer.tsx",
       "src/app/_components/ConsoleThemeProvider.tsx",
       "src/app/_components/TraceStatusBadge.tsx",
       "src/app/_components/PluginLink.tsx",
+      "src/app/_components/NavigationLink.tsx",
       "src/app/chats/_components/ChatRouteSelection.tsx",
       "src/app/profile/messaging/page.tsx",
       "src/app/agents/[name]/integrations/McpConnectionsSection.tsx",

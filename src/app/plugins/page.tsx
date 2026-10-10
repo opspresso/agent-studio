@@ -1,9 +1,9 @@
 "use client";
 
-import Link from "next/link";
+import { NavigationLink } from "@/app/_components/NavigationLink";
 import { useEffect, useRef, useState } from "react";
 import { Alert, Badge, Button, FileButton, Group, Stack, Text } from "@mantine/core";
-import { IconArrowRight, IconPackage } from "@tabler/icons-react";
+import { IconPackage } from "@tabler/icons-react";
 import { PluginSyncSummary } from "@/app/_components/PluginSyncSummary";
 import { CatalogCollection } from "@/app/_components/CatalogCollection";
 import { CatalogViewToggle, useCatalogView } from "@/app/_components/CatalogView";
@@ -177,10 +177,10 @@ export default function PluginsPage() {
       <CatalogCollection view={view} loading={loading} failed={!!error && plugins.length === 0}
         empty={visibleItems.length === 0} emptyText={t(plugins.length === 0 ? "plugins.empty" : "catalog.noResults")}>
           {visibleItems.map((plugin) => (
-            <Link key={plugin.name} href={`/plugins/${plugin.name}`} className={rows.row}>
+            <article key={plugin.name} className={rows.row}>
               <div className={rows.identity}>
                 <Group gap="xs" wrap="wrap">
-                  <Text className={rows.name}>{plugin.name}</Text>
+                  <NavigationLink resource href={`/plugins/${encodeURIComponent(plugin.name)}`}>{plugin.name}</NavigationLink>
                   {plugin.version && <Badge size="xs" color="gray">v{plugin.version}</Badge>}
                 </Group>
               </div>
@@ -189,8 +189,7 @@ export default function PluginsPage() {
                 <Text fz="xs">{t("plugins.componentCount", { skills: plugin.skills.length, servers: plugin.mcpServers.length })}</Text>
                 <Text fz="xs" c="dimmed">{t("plugins.revision", { date: formatDate(plugin.syncedAt, locale), sha: plugin.commitSha.slice(0, 7) })}</Text>
               </div>
-              <IconArrowRight className={rows.arrow} size={18} aria-hidden="true" />
-            </Link>
+            </article>
           ))}
       </CatalogCollection>
     </Stack>

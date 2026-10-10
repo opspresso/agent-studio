@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
-import { ActionIcon, Alert, Button, Stack } from "@mantine/core";
+import { NavigationLink } from "@/app/_components/NavigationLink";
+import { ActionIcon, Alert, Stack } from "@mantine/core";
 import { IconCpu, IconStar } from "@tabler/icons-react";
 import { PageHeader } from "@/app/_components/PageHeader";
 import { LoadingText } from "@/app/_components/PageState";
@@ -60,15 +60,15 @@ export default function ModelsPage() {
   }
   return <Stack gap="lg">
     <PageHeader title={t("nav.models")} description={t("modelAdmin.onlySelected")} Icon={IconCpu}>
-      <Button component={Link} href="/models/usage" variant="default">{t("usage.modelsTitle")}</Button>
+      <NavigationLink href="/models/usage">{t("usage.modelsTitle")}</NavigationLink>
     </PageHeader>
     {error && <Alert color="red">{error}</Alert>}
     {favoriteError && <Alert color="red">{favoriteError}</Alert>}
     {!models && !error && <LoadingText />}
     {models && <ModelCollection scope="browse" models={models} emptyText={t("models.empty")}
-      renderActions={model => <Button component={Link} href={`/models/usage?model=${encodeURIComponent(model.id)}`} variant="subtle" size="xs">
-        {t("agent.tab.usage")}
-      </Button>}
+      renderActions={model => <NavigationLink href={`/models/usage?model=${encodeURIComponent(model.id)}`}>
+        {t("usage.view")}
+      </NavigationLink>}
       renderTitleAction={favorites === undefined ? undefined : model => {
         const favorite = favorites.includes(model.id);
         const saving = savingIds.includes(model.id);

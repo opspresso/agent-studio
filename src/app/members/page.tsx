@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import { Alert, Anchor, Avatar, Button, Group, Select, Stack, Table, Text } from "@mantine/core";
+import { NavigationLink } from "@/app/_components/NavigationLink";
+import { Alert, Avatar, Group, Select, Stack, Table, Text } from "@mantine/core";
 import { IconUsers } from "@tabler/icons-react";
 import type { MemberTier } from "@/domain/member/tiers";
 import type { Member } from "@/domain/member/types";
@@ -65,7 +65,7 @@ export default function MembersPage() {
   }, [viewer?.isAdmin]);
 
   const header = <PageHeader title={t("nav.members")} description={t("members.lede")} Icon={IconUsers}>
-    {viewer?.isAdmin && <Button component={Link} href="/usage" variant="default">{t("usage.adminTitle")}</Button>}
+    {viewer?.isAdmin && <NavigationLink href="/usage">{t("usage.adminTitle")}</NavigationLink>}
   </PageHeader>;
   if (viewer === null || !viewer.isAdmin) return <Stack gap="lg">{header}
     {viewer === null ? <LoadingText /> : <Alert color="gray">{t("admin.adminOnlyMembers")}</Alert>}
@@ -91,6 +91,7 @@ export default function MembersPage() {
                 <Table.Th>{t("members.tier")}</Table.Th>
                 <Table.Th>{t("members.joined")}</Table.Th>
                 <Table.Th>{t("members.lastLogin")}</Table.Th>
+                <Table.Th>{t("models.column.actions")}</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -100,7 +101,7 @@ export default function MembersPage() {
                     <Group gap="sm" wrap="nowrap">
                       <Avatar src={member.image} radius="xl">{member.name.slice(0, 1)}</Avatar>
                       <div>
-                        <Anchor component={Link} href={`/usage?user=${encodeURIComponent(member.id)}`} fz="sm" fw={500}>{member.name}</Anchor>
+                        <Text fz="sm" fw={500}>{member.name}</Text>
                         <Text fz="xs" c="dimmed">{member.email}</Text>
                       </div>
                     </Group>
@@ -127,6 +128,7 @@ export default function MembersPage() {
                       {member.lastLoginAt ? formatDateTime(member.lastLoginAt, locale) : t("members.neverRecorded")}
                     </Text>
                   </Table.Td>
+                  <Table.Td><NavigationLink href={`/usage?user=${encodeURIComponent(member.id)}`}>{t("usage.view")}</NavigationLink></Table.Td>
                 </Table.Tr>
               ))}
             </Table.Tbody>

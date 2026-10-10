@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { NavigationLink } from "@/app/_components/NavigationLink";
 import { useEffect, useRef, useState } from "react";
 import { toSlug } from "@/domain/naming";
 import { parsePluginSource } from "@/domain/plugin/types";
@@ -15,7 +15,7 @@ import {
   Textarea,
   TextInput,
 } from "@mantine/core";
-import { IconArrowRight, IconBook2 } from "@tabler/icons-react";
+import { IconBook2 } from "@tabler/icons-react";
 import { FormModal } from "@/app/_components/FormModal";
 import { monoInput } from "@/app/_components/monoInput";
 import { useDisclosure } from "@mantine/hooks";
@@ -96,15 +96,14 @@ export default function SkillsPage() {
           {visibleItems.map((skill) => {
           const plugin = skill.source ? parsePluginSource(skill.source) : null;
           return (
-            <Link key={skill.name} href={`/skills/${skill.name}`} className={rows.row}>
+            <article key={skill.name} className={rows.row}>
               <div className={rows.identity}>
-                <Group gap="xs" wrap="wrap"><Text className={rows.name}>{skill.name}</Text>
+                <Group gap="xs" wrap="wrap"><NavigationLink resource href={`/skills/${encodeURIComponent(skill.name)}`}>{skill.name}</NavigationLink>
                   {plugin && <Badge color={PLUGIN_COLOR}>{plugin.plugin}</Badge>}</Group>
               </div>
               <Text className={rows.description} lineClamp={2}>{skill.description}</Text>
               <div className={rows.meta}><Text fz="xs">{t("skills.attachmentsCount", { count: skill.files })}</Text></div>
-              <IconArrowRight className={rows.arrow} size={18} aria-hidden="true" />
-            </Link>
+            </article>
           );
           })}
       </CatalogCollection>

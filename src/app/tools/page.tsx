@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { NavigationLink } from "@/app/_components/NavigationLink";
 import { useEffect, useRef, useState } from "react";
 import { toSlug } from "@/domain/naming";
 import { createMcp, listMcps, type McpServer } from "./api";
@@ -15,7 +15,7 @@ import {
   Textarea,
   TextInput,
 } from "@mantine/core";
-import { IconArrowRight, IconTool } from "@tabler/icons-react";
+import { IconTool } from "@tabler/icons-react";
 import { FormModal } from "@/app/_components/FormModal";
 import { monoInput } from "@/app/_components/monoInput";
 import { useDisclosure } from "@mantine/hooks";
@@ -105,9 +105,9 @@ export default function ToolsPage() {
           {visibleItems.map((server) => {
           const plugin = server.source ? parsePluginSource(server.source) : null;
           return (
-            <Link key={server.name} href={`/tools/${server.name}`} className={rows.row}>
+            <article key={server.name} className={rows.row}>
               <div className={rows.identity}>
-                <Text className={rows.name}>{server.name}</Text>
+                <NavigationLink resource href={`/tools/${encodeURIComponent(server.name)}`}>{server.name}</NavigationLink>
                 <Group gap={5} mt={7} wrap="wrap">
                   {plugin && <Badge color={PLUGIN_COLOR}>{plugin.plugin}</Badge>}
                   {server.runtime === "managed" && <Badge color={MCP_RUNTIME_COLOR.managed}>managed</Badge>}
@@ -116,8 +116,7 @@ export default function ToolsPage() {
               </div>
               <Text className={rows.description} lineClamp={2}>{server.description || t("tools.noDescription")}</Text>
               <div className={rows.meta}><Text className={rows.subtle} ff="monospace">{server.url}</Text></div>
-              <IconArrowRight className={rows.arrow} size={18} aria-hidden="true" />
-            </Link>
+            </article>
           );
           })}
       </CatalogCollection>

@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { NavigationLink } from "@/app/_components/NavigationLink";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -13,7 +13,7 @@ import {
   Textarea,
   TextInput,
 } from "@mantine/core";
-import { IconArrowRight, IconRobot } from "@tabler/icons-react";
+import { IconRobot } from "@tabler/icons-react";
 import { FormModal } from "@/app/_components/FormModal";
 import { useDisclosure } from "@mantine/hooks";
 import { tierMayCreateAgents } from "@/domain/member/tiers";
@@ -111,10 +111,10 @@ export default function AgentsPage() {
       <CatalogCollection view={view} loading={loading} failed={!!error && agents.length === 0}
         empty={visibleAgents.length === 0} emptyText={t(agents.length === 0 ? "agents.empty" : "catalog.noResults")}>
           {visibleAgents.map((agent) => (
-            <Link key={agent.name} href={`/agents/${agent.name}`} className={rows.row}>
+            <article key={agent.name} className={rows.row}>
               <div className={rows.identity}>
                 <Group gap="xs" wrap="wrap">
-                  <Text className={rows.name}>{agent.displayName || agent.name}</Text>
+                  <NavigationLink resource href={`/agents/${encodeURIComponent(agent.name)}`}>{agent.displayName || agent.name}</NavigationLink>
                   {agent.visibility === "private" && <Badge size="xs" color="gray">{t("agents.privateBadge")}</Badge>}
                 </Group>
                 <Text className={rows.subtle} ff="monospace">{agent.name}</Text>
@@ -127,8 +127,7 @@ export default function AgentsPage() {
                 <OwnerLine ownerEmail={agent.ownerEmail} isMine={viewer?.email === agent.ownerEmail} />
                 <Text fz="xs" c="dimmed">{formatDate(agent.updatedAt, locale)}</Text>
               </div>
-              <IconArrowRight className={rows.arrow} size={18} aria-hidden="true" />
-            </Link>
+            </article>
           ))}
       </CatalogCollection>
 

@@ -1,0 +1,27 @@
+.link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  max-width: 100%;
+  color: var(--mantine-primary-color-light-color);
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+  border-radius: 2px;
+}
+.link[data-resource] { font-weight: 650; }
+.link > span { min-width: 0; }
+.link > svg { flex-shrink: 0; }
+.link:hover { text-decoration-thickness: 2px; }
+.link:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
