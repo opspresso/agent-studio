@@ -46,4 +46,37 @@ describe("administrator member usage", () => {
     await expect(summarizeMemberUsage(usage, { ...members, list: async () => { throw new Error("unavailable"); } },
       "2026-10-08", "2026-10-09")).rejects.toThrow("unavailable");
   });
+
+  it("limits simultaneous ledger reads while including every member", async () => {
+    const started = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    let active = 0;
+    let peak = 0;
+    const read = vi.spyOn(usage, "listMemberDays").mockImplementation(async () => {
+      active++;
+      peak = Math.max(peak, active);
+      started.resolve();
+      await release.promise;
+      active--;
+      return [];
+    });
+    const summary = summarizeMemberUsage(usage, members, "2026-10-08", "2026-10-09");
+    await started.promise;
+    release.resolve();
+    const result = await summary;
+    expect(peak).toBeLessThanOrEqual(8);
+    expect(read).toHaveBeenCalledTimes(accounts.length);
+    expect(result.members).toHaveLength(accounts.length);
+  });
+
+  it("rejects the whole summary when one member ledger fails", async () => {
+    vi.spyOn(usage, "listMemberDays").mockImplementation(async userId => {
+      if (userId === "u1") throw new Error("Ledger unavailable");
+      return [{ userId, agentName: "agent", date: "2026-10-08", calls: { m: 1 },
+        inputTokens: { m: 10 }, outputTokens: { m: 20 }, costUsd: { m: 1 } }];
+    });
+    const threeMembers = { ...members, list: async () => accounts.slice(0, 3) };
+    await expect(summarizeMemberUsage(usage, threeMembers, "2026-10-08", "2026-10-09"))
+      .rejects.toThrow("Ledger unavailable");
+  });
 });

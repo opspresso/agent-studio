@@ -138,7 +138,7 @@ export function buildDailySeries(
     const bucket = map.get(key) ?? { value: 0, modelDurationMs: 0, timedOutputTokens: 0, timedCalls: 0 };
     bucket.value += value;
     bucket.modelDurationMs += duration;
-    bucket.timedOutputTokens += value;
+    if (performance) bucket.timedOutputTokens += value;
     bucket.timedCalls += calls;
     map.set(key, bucket);
   };
