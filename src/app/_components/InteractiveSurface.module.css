@@ -3,14 +3,14 @@
   position: relative;
   isolation: isolate;
   --surface-radius: var(--mantine-radius-lg);
-  transition: background-color 150ms ease, box-shadow 150ms ease;
+  transition: background-color 150ms ease, border-color 150ms ease;
 }
 .surface:is(a, button):hover:not(:disabled),
 .surface:is(a, button):focus-visible:not(:disabled),
 .surface:has([data-surface-trigger]:hover),
 .surface:has([data-surface-trigger]:focus-visible) {
-  background: var(--surface-highlight);
-  box-shadow: inset 3px 0 0 var(--mantine-primary-color-filled);
+  background: var(--studio-hover);
+  border-color: var(--studio-border-hover);
 }
 .trigger[data-surface-trigger] { position: static; }
 /* A pressed transform would move the pseudo-element's containing block to the button,

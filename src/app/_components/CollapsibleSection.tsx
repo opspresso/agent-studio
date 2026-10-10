@@ -68,6 +68,7 @@ export function CollapsibleSection({
           {onSelect && selectLabel && (
             <ActionIcon type="button" variant={selected ? "light" : "subtle"}
               size="md" className={classes.action} onClick={onSelect}
+              aria-pressed={!!selected}
               aria-label={selectLabel} title={selectLabel}>
               <IconHistory size={18} stroke={1.8} aria-hidden="true" />
             </ActionIcon>

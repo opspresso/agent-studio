@@ -12,19 +12,18 @@
   background: var(--studio-surface);
   color: var(--mantine-color-text);
   font-size: var(--mantine-font-size-sm);
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1.4;
   text-decoration: none;
   overflow-wrap: anywhere;
-  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+  transition: background-color 150ms ease, border-color 150ms ease;
 }
 .label { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 .link > svg { flex-shrink: 0; }
 .arrow { color: var(--mantine-color-dimmed); }
 .link:hover {
-  background: var(--surface-highlight);
-  border-color: var(--mantine-primary-color-filled);
-  color: var(--mantine-primary-color-light-color);
+  background: var(--studio-hover);
+  border-color: var(--studio-border-hover);
   text-decoration: none;
 }
 .link:focus-visible { outline: 2px solid var(--mantine-primary-color-filled); outline-offset: 3px; }

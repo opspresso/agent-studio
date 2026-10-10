@@ -104,7 +104,10 @@ test("history button selects the integration without opening its settings", asyn
   await section.click();
   await expect(section).toHaveAttribute("aria-expanded", "false");
   await expect(page.getByLabel("History selected")).toHaveText("false");
-  await page.getByRole("button", { name: "View history" }).click();
+  const history = page.getByRole("button", { name: "View history" });
+  await expect(history).toHaveAttribute("aria-pressed", "false");
+  await history.click();
+  await expect(history).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByLabel("History selected")).toHaveText("true");
   await expect(section).toHaveAttribute("aria-expanded", "false");
 });
