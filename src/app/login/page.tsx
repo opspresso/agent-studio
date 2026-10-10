@@ -1,6 +1,7 @@
+import { NavigationLink } from "@/app/_components/NavigationLink";
 import { redirect } from "next/navigation";
 import Image from "next/image";
-import { Alert, Anchor, Card, Center, Stack, Text, ThemeIcon, Title } from "@mantine/core";
+import { Alert, Card, Center, Stack, Text, ThemeIcon, Title } from "@mantine/core";
 import { SignInButton } from "@/components/SignInButton";
 import { config } from "@/lib/config";
 import { getServiceBranding } from "@/lib/runtime-settings";
@@ -63,7 +64,7 @@ export default async function LoginPage({
             {t("login.domains")}
           </Text>
           <SignInButton providers={config.authProviders} callbackURL={next} />
-          <Anchor href="/guide" fz="sm">{t("nav.guide")}</Anchor>
+          <NavigationLink href="/guide">{t("nav.guide")}</NavigationLink>
         </Stack>
       </Card>
     </Center>

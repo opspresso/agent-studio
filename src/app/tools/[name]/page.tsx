@@ -31,7 +31,6 @@ import {
 import { HeaderRowsEditor, recordToRows, rowsToRecord, type HeaderRow } from "@/app/_components/HeaderRows";
 import {
   Alert,
-  Anchor,
   Badge,
   Button,
   Card,
@@ -291,15 +290,9 @@ function McpDetail({ name }: { name: string }) {
                 </Text>
               )}
               {managedStatus && !managedStatus.reachable && viewer?.isAdmin && (
-                <Anchor
-                  component="button"
-                  type="button"
-                  fz="xs"
-                  onClick={onRestart}
-                  disabled={restarting}
-                >
+                <Button variant="default" size="xs" type="button" onClick={onRestart} disabled={restarting}>
                   {t(restarting ? "tools.restarting" : "tools.restart")}
-                </Anchor>
+                </Button>
               )}
             </Group>
           )}

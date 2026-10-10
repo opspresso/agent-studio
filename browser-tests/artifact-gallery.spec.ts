@@ -86,10 +86,14 @@ test("shows compact rows and preserves preview, download, provenance and unavail
   await expect(page.locator(`[id="${await hide.getAttribute("aria-controls")}"]`)).toBeVisible();
   await expect(page.getByRole("dialog")).toContainText("cover.png");
   await page.keyboard.press("Escape");
+  const title = await cover.getByText("cover.png", { exact: true }).boundingBox();
+  await page.mouse.click(title!.x + 10, title!.y + 10);
+  await expect(viewer).toBeVisible();
+  await page.keyboard.press("Escape");
   const report = page.getByRole("article", { name: "report.html" });
   await expect(report).toContainText("helper");
   await expect(report).toContainText("office/model");
-  await expect(report.getByRole("link", { name: "View", exact: true })).toHaveAttribute("href", "/api/artifacts/file-1/view");
+  await expect(report.getByRole("link", { name: "View (opens in a new tab)", exact: true })).toHaveAttribute("href", "/api/artifacts/file-1/view");
   await expect(report.getByRole("link", { name: "Download", exact: true })).toHaveAttribute("href", "/download/file-1");
   const unavailable = page.getByRole("article", { name: "notes-5.pdf" });
   await expect(unavailable).toContainText("No longer available");

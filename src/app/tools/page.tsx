@@ -21,6 +21,7 @@ import { monoInput } from "@/app/_components/monoInput";
 import { useDisclosure } from "@mantine/hooks";
 import { CatalogCollection } from "@/app/_components/CatalogCollection";
 import { CatalogViewToggle, useCatalogView } from "@/app/_components/CatalogView";
+import interaction from "@/app/_components/InteractiveSurface.module.css";
 import rows from "@/app/_components/CatalogRows.module.css";
 import { CatalogHelp } from "@/app/_components/CatalogHelp";
 import { ManagedMcpModal } from "./_components/ManagedMcpModal";
@@ -105,7 +106,7 @@ export default function ToolsPage() {
           {visibleItems.map((server) => {
           const plugin = server.source ? parsePluginSource(server.source) : null;
           return (
-            <article key={server.name} className={rows.row}>
+            <article key={server.name} className={`${rows.row} ${interaction.surface}`}>
               <div className={rows.identity}>
                 <NavigationLink resource href={`/tools/${encodeURIComponent(server.name)}`}>{server.name}</NavigationLink>
                 <Group gap={5} mt={7} wrap="wrap">

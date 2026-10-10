@@ -7,6 +7,7 @@ import { IconPackage } from "@tabler/icons-react";
 import { PluginSyncSummary } from "@/app/_components/PluginSyncSummary";
 import { CatalogCollection } from "@/app/_components/CatalogCollection";
 import { CatalogViewToggle, useCatalogView } from "@/app/_components/CatalogView";
+import interaction from "@/app/_components/InteractiveSurface.module.css";
 import rows from "@/app/_components/CatalogRows.module.css";
 import { CatalogHelp } from "@/app/_components/CatalogHelp";
 import { PageHeader } from "@/app/_components/PageHeader";
@@ -177,7 +178,7 @@ export default function PluginsPage() {
       <CatalogCollection view={view} loading={loading} failed={!!error && plugins.length === 0}
         empty={visibleItems.length === 0} emptyText={t(plugins.length === 0 ? "plugins.empty" : "catalog.noResults")}>
           {visibleItems.map((plugin) => (
-            <article key={plugin.name} className={rows.row}>
+            <article key={plugin.name} className={`${rows.row} ${interaction.surface}`}>
               <div className={rows.identity}>
                 <Group gap="xs" wrap="wrap">
                   <NavigationLink resource href={`/plugins/${encodeURIComponent(plugin.name)}`}>{plugin.name}</NavigationLink>

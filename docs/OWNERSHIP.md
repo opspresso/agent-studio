@@ -317,11 +317,12 @@ Agent 설정은 binding을 소유하며 개인 연결은 Agent 수명과 독립�
 | usage 행의 키가 되는 UTC 날짜 | `src/shared/date.ts` 의 `utcDay` | 코드 |
 | 모델 처리량의 표본·가중 집계·SDK 시간 metadata key | `src/domain/usage/performance.ts`; 요청부터 응답까지의 경과 시간은 `src/shared/requestTimer.ts`가 측정한다 | 코드 |
 | 사용량의 가산 지표와 행 병합 | `src/domain/usage/counters.ts`; 표·그래프 그룹은 `src/app/_lib/usage.ts`, 지표 이름·표시 형식은 `usagePresentation.ts` | 코드 |
+| 사용량 화면의 URL 필터와 복원 | `src/app/_lib/usageQuery.ts`; `UsageExplorer`가 history를 갱신하고 행 필터의 포커스를 관리한다 | 코드 |
 | repo sync 가 무엇을 했고, 무엇을 사람에게 남겼는가 | `src/domain/sync/types.ts` | 코드 |
 | 저장 중이거나 읽기 전용인 폼의 입력 잠금 | `src/app/_components/ConfigurationFields.tsx`; 저장 상태는 각 폼이 소유하고 공통 fieldset에 전달한다 | 코드 |
 | 브랜드 팔레트와 컴포넌트 기본값 | `src/app/theme.ts` | 코드 |
 | 페이지·섹션 제목과 경로 탭 | `src/app/_components/PageHeader.tsx`(페이지 아이콘 필수), `SectionHeading.tsx`, `PageTabs.tsx` | 코드 |
-| 본문의 리소스·관련 화면 이동과 새 탭·다운로드 표시 | `src/app/_components/NavigationLink.tsx`; 행·카드는 비클릭이며 이름 링크와 조작 버튼을 분리한다 | 코드 |
+| 본문의 리소스·관련 화면 이동과 새 탭·다운로드 표시 | `src/app/_components/NavigationLink.tsx`; `InteractiveSurface.module.css`는 행·카드의 확장 클릭 영역과 독립 조작 영역을 소유한다 | 코드 |
 | Agent 상세의 분할 페이지 가로 비율 | `src/app/agents/[name]/AgentPageColumns.module.css` | 코드 |
 | 카탈로그 행/그리드 보기와 브라우저 저장 키 | `src/app/_components/CatalogView.tsx`; 상태 표현은 `CatalogCollection.tsx`, 컨테이너 기준 열 배치는 `CatalogLayout.module.css`, 항목 스타일은 `CatalogRows.module.css` / `ModelCollection.module.css` | 코드 |
 | 연동 이력의 읽기 수명과 Schedule 이력의 병합·페이지 크기·동시 읽기 상한 | `src/app/agents/[name]/integrations/IntegrationHistory.tsx` / `scheduleRuns.ts` | 코드 |

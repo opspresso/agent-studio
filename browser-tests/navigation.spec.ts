@@ -37,7 +37,7 @@ test.beforeEach(async ({ page }) => {
       "/api/mcps": [{ ...common, headers: {}, url: "https://mcp.example.test", runtime: "remote" }],
       "/api/plugins": [{ ...common, skills: [], mcpServers: [], syncedAt: at, commitSha: "fixture" }],
       "/api/plugins/sync": { configured: false },
-      "/api/members": { members: [{ id: "viewer", name: "Fixture member", email: "viewer@example.test", tier: "admin", joinedAt: at, tierLocked: true }], tiers: ["admin", "member"] },
+      "/api/members": { members: [{ id: "viewer", name: "Fixture member", email: "viewer@example.test", tier: "admin", joinedAt: at, tierLocked: false }], tiers: ["admin", "member"] },
       "/api/models/registry": { models: [{ id: "fixture/model", provider: "fixture", wireId: "model", displayName: "Fixture model", type: "text", capabilities: {}, contextWindow: 1000, maxTokens: 100 }] },
       "/api/models/favorites": { models: [] },
     };
@@ -45,23 +45,30 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-for (const width of [390, 1440]) for (const path of ["agents", "skills", "tools", "plugins"]) {
-  test(`${path} uses a title link and passive card content at ${width}px`, async ({ page }) => {
+for (const view of ["Rows", "Grid"]) for (const width of [390, 1440]) for (const path of ["agents", "skills", "tools", "plugins"]) {
+  test(`${path} opens the whole card with a native link in ${view} at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await page.goto(`${base}/${path}`);
+    await page.getByRole("radio", { name: view, exact: true }).locator("..").click();
     const card = page.locator("main article").first();
     const link = card.getByRole("link", { name: path === "agents" ? "Fixture Agent" : "fixture", exact: true });
     await expect(link).toHaveAttribute("href", `/${path}/fixture`);
-    await expect(link).toHaveCSS("text-decoration-line", "underline");
-    await card.getByText("Resource description", { exact: true }).click();
-    await expect(page).toHaveURL(`${base}/${path}`);
+    await expect(link).toHaveCSS("text-decoration-line", "none");
     await link.focus();
     await expect(link).toBeFocused();
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Shift+Tab");
+    await expect(link).toBeFocused();
+    expect(await link.evaluate(element => ({ visible: element.matches(":focus-visible"), width: getComputedStyle(element, "::after").outlineWidth, style: getComputedStyle(element, "::after").outlineStyle }))).toEqual({ visible: true, width: "2px", style: "solid" });
     const popup = page.context().waitForEvent("page");
     await link.click({ button: "middle" });
     const opened = await popup;
     await expect(opened).toHaveURL(`${base}/${path}/fixture`);
     await opened.close();
+    // Hit the description's position, where the stretched native link receives the click.
+    const description = await card.getByText("Resource description", { exact: true }).boundingBox();
+    await page.mouse.click(description!.x + 10, description!.y + 10);
+    await expect(page).toHaveURL(`${base}/${path}/fixture`);
   });
 }
 
@@ -75,4 +82,26 @@ test("Members and Models share the same explicit usage link", async ({ page }) =
     await expect(page.getByRole("link", { name: path === "members" ? "Fixture member" : "Fixture model", exact: true })).toHaveCount(0);
   }
   expect(styles[0]).toEqual(styles[1]);
+});
+
+for (const path of ["members", "models"]) test(`${path} row navigation keeps secondary controls independent`, async ({ page }) => {
+  await page.goto(`${base}/${path}`);
+  const row = page.getByRole("row").filter({ hasText: path === "members" ? "Fixture member" : "Fixture model" });
+  if (path === "members") {
+    await row.getByRole("combobox", { name: "Tier of viewer@example.test" }).click();
+    await expect(page.getByRole("option", { name: "member", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+  } else {
+    let saved = false;
+    await page.route("**/api/models/favorites", route => { saved = true; return route.fulfill({ json: { models: ["fixture/model"] } }); });
+    await row.getByRole("button", { name: "Add to favorites" }).click();
+    await expect.poll(() => saved).toBe(true);
+  }
+  await expect(page).toHaveURL(`${base}/${path}`);
+  const primary = row.getByRole("link", { name: "View usage", exact: true });
+  await primary.focus();
+  await expect(primary).toBeFocused();
+  const name = await row.getByText(path === "members" ? "Fixture member" : "Fixture model", { exact: true }).boundingBox();
+  await page.mouse.click(name!.x + 10, name!.y + 10);
+  await expect(page).toHaveURL(new RegExp(path === "members" ? "/usage\\?user=viewer" : "/models/usage\\?model=fixture%2Fmodel"));
 });

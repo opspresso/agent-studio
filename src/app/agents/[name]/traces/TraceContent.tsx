@@ -1,7 +1,8 @@
 "use client";
 
-import Link from "next/link";
-import { Anchor, Table, Text } from "@mantine/core";
+import { NavigationLink } from "@/app/_components/NavigationLink";
+
+import { Group, Table, Text } from "@mantine/core";
 import type { Trace } from "../../lib/api";
 
 function subagentLink(span: Trace["spans"][number]): { agent: string; traceId: string } | null {
@@ -109,17 +110,14 @@ export function TraceContent({ trace }: { trace: Trace }) {
                 <Table.Tr key={span.spanId}>
                   <Table.Td>{span.kind}</Table.Td>
                   <Table.Td ff="monospace">
-                    {typeof span.output?.chain === "string" ? span.output.chain : span.name}
-                    {nested && (
-                      <Anchor
-                        component={Link}
-                        href={`/agents/${nested.agent}/traces/${nested.traceId}`}
-                        fz="xs"
-                        ml="xs"
-                      >
-                        trace {nested.traceId.slice(0, 8)} ↗
-                      </Anchor>
-                    )}
+                    <Group gap="xs">
+                      <span>{typeof span.output?.chain === "string" ? span.output.chain : span.name}</span>
+                      {nested && (
+                        <NavigationLink href={`/agents/${nested.agent}/traces/${nested.traceId}`}>
+                          trace {nested.traceId.slice(0, 8)}
+                        </NavigationLink>
+                      )}
+                    </Group>
                     {error && (
                       <Text fz="xs" c="red" mt={2} style={{ whiteSpace: "pre-wrap" }}>
                         {error}

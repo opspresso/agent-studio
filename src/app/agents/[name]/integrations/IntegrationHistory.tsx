@@ -1,5 +1,7 @@
 "use client";
 
+import interaction from "@/app/_components/InteractiveSurface.module.css";
+import { IconArrowRight } from "@tabler/icons-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Alert, Button, Group, Stack, Text, Title } from "@mantine/core";
@@ -92,11 +94,11 @@ export function IntegrationHistory({ agentName, selected }: { agentName: string;
       : history?.kind === "trace" ? <Stack gap="xs" mt="md">
           <Text fz="xs" c="dimmed">{t("pint.traceHistoryHint")}</Text>
           {history.traces.length === 0 ? <Text fz="sm" c="dimmed">{t("pint.historyEmpty")}</Text>
-            : <div className={classes.rows}>{history.traces.map(trace => <Link className={classes.trace}
+            : <div className={classes.rows}>{history.traces.map(trace => <Link className={`${classes.trace} ${interaction.surface}`}
                 href={`/agents/${agentName}/traces/${trace.traceId}`} key={trace.traceId}>
                 <Group justify="space-between" gap="xs" wrap="nowrap">
                   <Text fz="sm" fw={600}>{formatDateTime(trace.createdAt, locale)}</Text>
-                  <TraceStatusBadge status={trace.status} />
+                  <Group gap="xs" wrap="nowrap"><TraceStatusBadge status={trace.status} /><IconArrowRight size={16} aria-hidden="true" /></Group>
                 </Group>
                 <Text fz="xs" c="dimmed" mt={4}>{trace.durationMs} ms · {trace.traceId.slice(0, 8)}</Text>
                 {(trace.error || trace.warnings?.[0]) && <Text fz="xs" c="dimmed" mt={4} lineClamp={2}>

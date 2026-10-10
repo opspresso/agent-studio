@@ -1,5 +1,7 @@
 "use client";
 
+import { NavigationLink } from "@/app/_components/NavigationLink";
+
 import { SectionHeading } from "@/app/_components/SectionHeading";
 import { TraceStatusBadge } from "@/app/_components/TraceStatusBadge";
 import { useEffect, useState } from "react";
@@ -7,9 +9,8 @@ import { useParams } from "next/navigation";
 import { DateRangePicker } from "@/app/_components/DateRangePicker";
 import { EmptyState, LoadingText } from "@/app/_components/PageState";
 import { defaultDateRange } from "@/app/_lib/dateRange";
-import Link from "next/link";
 import { listTraces, type Trace } from "../../lib/api";
-import { Accordion, Anchor, Group, Stack, Text } from "@mantine/core";
+import { Accordion, Group, Stack, Text } from "@mantine/core";
 import { TraceContent } from "./TraceContent";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import { formatDateTime } from "@/shared/date";
@@ -96,9 +97,9 @@ export default function TracesPage() {
                 )}
               </Accordion.Control>
               <Accordion.Panel>
-                <Anchor component={Link} href={`/agents/${name}/traces/${trace.traceId}`} fz="sm" mb="sm" display="inline-block">
-                  {t("trace.openDetail")} ↗
-                </Anchor>
+                <Group mb="sm"><NavigationLink href={`/agents/${name}/traces/${trace.traceId}`}>
+                  {t("trace.openDetail")}
+                </NavigationLink></Group>
                 <TraceContent trace={trace} />
               </Accordion.Panel>
             </Accordion.Item>

@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { NavigationLink } from "@/app/_components/NavigationLink";
 import { Card, Group, Stack, Text, ThemeIcon, Title } from "@mantine/core";
 import {
   IconBook2,
@@ -295,9 +295,9 @@ export default async function GuidePage() {
       <nav aria-label={t("guide.contents")}>
         <Group gap="md" wrap="wrap">
           {SECTIONS.map((section) => (
-            <a key={section.id} href={`#${section.id}`} className={classes.link}>
+            <NavigationLink key={section.id} href={`#${section.id}`}>
               {t(section.title)}
-            </a>
+            </NavigationLink>
           ))}
         </Group>
       </nav>
@@ -339,9 +339,9 @@ export default async function GuidePage() {
           {links && (
             <Group gap="sm" mt="lg">
               {links.map((link) => (
-                <Link key={link.href} href={link.href} className={classes.link}>
-                  {t(link.label)} →
-                </Link>
+                <NavigationLink key={link.href} href={link.href}>
+                  {t(link.label)}
+                </NavigationLink>
               ))}
             </Group>
           )}

@@ -1,11 +1,13 @@
 "use client";
 
+import { NavigationLink } from "@/app/_components/NavigationLink";
+
 import { canRunAgents, useViewer } from "@/app/_lib/useViewer";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PageHeader } from "@/app/_components/PageHeader";
 import { LoadingText } from "@/app/_components/PageState";
 import { useLatestScroll } from "@/app/_lib/useLatestScroll";
-import { Alert, Anchor, Badge, Box, Button, Code, Group, Loader, ScrollArea, Select, Stack, Tabs, Text, Textarea } from "@mantine/core";
+import { Alert, Badge, Box, Button, Code, Group, Loader, ScrollArea, Select, Stack, Tabs, Text, Textarea } from "@mantine/core";
 import { IconArrowDown, IconPlayerStop, IconSend, IconTerminal2 } from "@tabler/icons-react";
 import { useLocale, useT } from "@/app/_i18n/provider";
 import { formatDateTime } from "@/shared/date";
@@ -92,7 +94,7 @@ export function WorkspacePanel({ id }: { id: string }) {
       <Button size="xs" variant="default" disabled={busy || workspace.status === "closed" || workspace.status === "closing"} onClick={() => { void stop(true); }}>{t("workspace.finish")}</Button>
     </PageHeader>
     {workspace.coding && <Group gap="xs"><Code>{workspace.coding.branch}</Code><Text size="xs" c="dimmed">← {workspace.coding.baseBranch}</Text>
-      {workspace.pullRequest && <Anchor href={workspace.pullRequest.url} target="_blank" rel="noreferrer" size="sm">{workspace.pullRequest.draft ? "Draft PR" : "PR"} #{workspace.pullRequest.number} · {workspace.pullRequest.ci}</Anchor>}</Group>}
+      {workspace.pullRequest && <NavigationLink href={workspace.pullRequest.url} newTab>{workspace.pullRequest.draft ? "Draft PR" : "PR"} #{workspace.pullRequest.number} · {workspace.pullRequest.ci}</NavigationLink>}</Group>}
     {(error || loadError || workspace.error) && <Alert color="red" py="xs">{error ?? loadError ?? workspace.error}</Alert>}
     {optionsError && <Alert color="yellow" py="xs">
       <Group justify="space-between" gap="xs">

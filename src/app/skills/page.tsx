@@ -21,6 +21,7 @@ import { monoInput } from "@/app/_components/monoInput";
 import { useDisclosure } from "@mantine/hooks";
 import { CatalogCollection } from "@/app/_components/CatalogCollection";
 import { CatalogViewToggle, useCatalogView } from "@/app/_components/CatalogView";
+import interaction from "@/app/_components/InteractiveSurface.module.css";
 import rows from "@/app/_components/CatalogRows.module.css";
 import { CatalogHelp } from "@/app/_components/CatalogHelp";
 import { PageHeader } from "@/app/_components/PageHeader";
@@ -96,7 +97,7 @@ export default function SkillsPage() {
           {visibleItems.map((skill) => {
           const plugin = skill.source ? parsePluginSource(skill.source) : null;
           return (
-            <article key={skill.name} className={rows.row}>
+            <article key={skill.name} className={`${rows.row} ${interaction.surface}`}>
               <div className={rows.identity}>
                 <Group gap="xs" wrap="wrap"><NavigationLink resource href={`/skills/${encodeURIComponent(skill.name)}`}>{skill.name}</NavigationLink>
                   {plugin && <Badge color={PLUGIN_COLOR}>{plugin.plugin}</Badge>}</Group>

@@ -1,7 +1,7 @@
 "use client";
 
-import { Button, Stack } from "@mantine/core";
-import Link from "next/link";
+import { Stack } from "@mantine/core";
+import { NavigationLink } from "@/app/_components/NavigationLink";
 import { SectionHeading } from "@/app/_components/SectionHeading";
 import { useCallback } from "react";
 import { useParams } from "next/navigation";
@@ -22,9 +22,9 @@ export default function AgentArtifactsPage() {
   return (
     <Stack gap="lg">
       <SectionHeading title={t("agent.tab.artifacts")} description={t("agentArtifacts.privateFiles")}>
-        <Button component={Link} href="/artifacts" variant="light" size="xs">
+        <NavigationLink href="/artifacts">
           {t("agentArtifacts.openMine")}
-        </Button>
+        </NavigationLink>
       </SectionHeading>
       <ArtifactGallery
         load={load}

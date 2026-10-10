@@ -1,5 +1,9 @@
 "use client";
 
+import interaction from "@/app/_components/InteractiveSurface.module.css";
+import { IconArrowRight } from "@tabler/icons-react";
+import { NavigationLink } from "@/app/_components/NavigationLink";
+
 import { PageHeader } from "@/app/_components/PageHeader";
 import { IconPackage } from "@tabler/icons-react";
 import Link from "next/link";
@@ -7,7 +11,6 @@ import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   Alert,
-  Anchor,
   Badge,
   Card,
   Group,
@@ -95,22 +98,17 @@ function PluginDetail({ name }: { name: string }) {
         </>}
         details={<><Text fz="xs" c="dimmed" mt={6}>
           {treeUrl ? (
-            <Anchor href={treeUrl} target="_blank" rel="noreferrer" fz="xs">
+            <NavigationLink href={treeUrl} newTab>
               {location}
-            </Anchor>
+            </NavigationLink>
           ) : (
             location
           )}
           {" · "}
           {repoUrl ? (
-            <Anchor
-              href={`${repoUrl}/commit/${plugin.commitSha}`}
-              target="_blank"
-              rel="noreferrer"
-              fz="xs"
-            >
+            <NavigationLink href={`${repoUrl}/commit/${plugin.commitSha}`} newTab>
               {plugin.commitSha.slice(0, 7)}
-            </Anchor>
+            </NavigationLink>
           ) : (
             plugin.commitSha.slice(0, 7)
           )}
@@ -129,8 +127,8 @@ function PluginDetail({ name }: { name: string }) {
         render={(componentName) => {
           const skill = skills.get(componentName);
           return skill ? (
-            <Card key={componentName} component={Link} href={`/skills/${componentName}`} h="100%">
-              <Text fw={500}>{componentName}</Text>
+            <Card key={componentName} className={interaction.surface} component={Link} href={`/skills/${componentName}`} h="100%">
+              <Group justify="space-between" wrap="nowrap"><Text fw={650}>{componentName}</Text><IconArrowRight size={16} aria-hidden="true" /></Group>
               <Text fz="sm" c="dimmed" mt={4} lineClamp={2}>
                 {skill.description}
               </Text>
@@ -153,14 +151,15 @@ function PluginDetail({ name }: { name: string }) {
         render={(componentName) => {
           const server = servers.get(componentName);
           return server ? (
-            <Card key={componentName} component={Link} href={`/tools/${componentName}`} h="100%">
+            <Card key={componentName} className={interaction.surface} component={Link} href={`/tools/${componentName}`} h="100%">
               <Group gap="xs" wrap="nowrap">
-                <Text fw={500} truncate>
+                <Text fw={650} style={{ flex: 1 }} truncate>
                   {componentName}
                 </Text>
                 {server.runtime === "managed" && (
                   <Badge color={MCP_RUNTIME_COLOR.managed}>managed</Badge>
                 )}
+                <IconArrowRight size={16} aria-hidden="true" />
               </Group>
               <Text fz="sm" c="dimmed" mt={4} lineClamp={2}>
                 {server.description}

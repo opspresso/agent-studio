@@ -24,6 +24,7 @@ import { OwnerLine } from "@/app/_components/OwnerLine";
 import { createAgent, listAgents, type SanitizedAgent } from "./lib/api";
 import { CatalogCollection } from "@/app/_components/CatalogCollection";
 import { CatalogViewToggle, useCatalogView } from "@/app/_components/CatalogView";
+import interaction from "@/app/_components/InteractiveSurface.module.css";
 import rows from "@/app/_components/CatalogRows.module.css";
 import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
 import { PageHeader } from "@/app/_components/PageHeader";
@@ -111,7 +112,7 @@ export default function AgentsPage() {
       <CatalogCollection view={view} loading={loading} failed={!!error && agents.length === 0}
         empty={visibleAgents.length === 0} emptyText={t(agents.length === 0 ? "agents.empty" : "catalog.noResults")}>
           {visibleAgents.map((agent) => (
-            <article key={agent.name} className={rows.row}>
+            <article key={agent.name} className={`${rows.row} ${interaction.surface}`}>
               <div className={rows.identity}>
                 <Group gap="xs" wrap="wrap">
                   <NavigationLink resource href={`/agents/${encodeURIComponent(agent.name)}`}>{agent.displayName || agent.name}</NavigationLink>

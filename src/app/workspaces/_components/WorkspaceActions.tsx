@@ -1,8 +1,10 @@
 "use client";
 
+import { NavigationLink } from "@/app/_components/NavigationLink";
+
 import { canRunAgents, useViewer } from "@/app/_lib/useViewer";
 import { useState } from "react";
-import { Alert, Anchor, Button, Checkbox, Code, Group, Select, Stack, Text, Textarea, TextInput } from "@mantine/core";
+import { Alert, Button, Checkbox, Code, Group, Select, Stack, Text, Textarea, TextInput } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
 import { jsonHeaders, readJson } from "@/app/_lib/httpClient";
 import type { CodingApprovalResponse } from "@/app/api/workspaces/[id]/actions/route";
@@ -73,7 +75,7 @@ export function WorkspaceActions({ detail, workflows, refresh }: { detail: Works
       <Text size="sm">{t("workspace.chatContinuationHint")}</Text>
       {detail.continuation?.status === "waiting-ci" && <Text size="sm">{t("workspace.waitingCi")}</Text>}
       {detail.continuation?.error && <Text size="sm">{detail.continuation.error}</Text>}
-      <Anchor href={`/chats/${pending?.sourceChatId ?? latest?.sourceChatId}`}>{t("workspace.returnToChat")}</Anchor>
+      <NavigationLink href={`/chats/${pending?.sourceChatId ?? latest?.sourceChatId}`}>{t("workspace.returnToChat")}</NavigationLink>
     </Alert>}
     {pending?.status === "pending" ? <>
       <Alert title={t("workspace.reviewAction")} color="yellow">{t("workspace.reviewHint")}</Alert>

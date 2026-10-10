@@ -17,20 +17,11 @@
   display: block;
   width: 100%;
   min-width: 0;
-  padding: 15px 8px;
+  padding: 16px;
   border-bottom: 1px solid var(--studio-border);
-  border-radius: 4px;
+  border-radius: var(--mantine-radius-md);
   text-align: left;
   transition: background-color 120ms ease;
-}
-
-.chatRow:hover,
-.agentRow:hover { background: var(--surface-highlight); }
-
-.chatRow:focus-visible,
-.agentRow:focus-visible {
-  outline: 2px solid var(--mantine-primary-color-filled);
-  outline-offset: 2px;
 }
 
 .chatRowMain {
@@ -76,19 +67,8 @@
   font-weight: 650;
 }
 
-.inventoryLinks { display: flex; flex-wrap: wrap; gap: 12px 32px; }
+.inventoryLinks { display: flex; flex-wrap: wrap; gap: 12px; }
 
-.inventoryLinks a {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 10px;
-  color: var(--mantine-color-text);
-  font-size: 13px;
-  text-decoration: none;
-}
-
-.inventoryLinks a:hover { color: var(--mantine-primary-color-filled); }
-.inventoryLinks a:focus-visible { outline: 2px solid var(--mantine-primary-color-filled); outline-offset: 3px; }
 .inventoryLinks strong { font-size: 18px; font-variant-numeric: tabular-nums; }
 
 .usageSection { padding-top: 8px; }
@@ -100,5 +80,5 @@
 
 @media (max-width: 600px) {
   .inventory { align-items: start; flex-direction: column; gap: 10px; }
-  .inventoryLinks { gap: 10px 24px; }
+  .inventoryLinks { gap: 10px; }
 }

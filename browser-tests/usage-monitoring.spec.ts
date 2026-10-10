@@ -21,6 +21,16 @@ test.beforeAll(async () => {
     outdir: "/tmp/agent-studio-usage-monitoring-fixture", platform: "browser", format: "iife", jsx: "automatic",
     define: { "process.env.NODE_ENV": '"production"', "process.env": "{}" },
     plugins: [{ name: "dynamic", setup(build) {
+      build.onResolve({ filter: /^next\/navigation$/ }, args => ({ path: args.path, namespace: "navigation" }));
+      // Next patches native history writes to notify useSearchParams without refetching the page.
+      build.onLoad({ filter: /.*/, namespace: "navigation" }, () => ({ contents: `
+        import { useSyncExternalStore } from "react";
+        const subscribe = listener => { addEventListener("popstate", listener); return () => removeEventListener("popstate", listener); };
+        const push = history.pushState.bind(history);
+        history.pushState = (...args) => { push(...args); dispatchEvent(new PopStateEvent("popstate")); };
+        export const useSearchParams = () => new URLSearchParams(useSyncExternalStore(subscribe, () => location.search));`,
+        loader: "js", resolveDir: process.cwd(),
+      }));
       build.onResolve({ filter: /^next\/dynamic$/ }, args => ({ path: args.path, namespace: "dynamic" }));
       build.onLoad({ filter: /.*/, namespace: "dynamic" }, () => ({
         contents: 'import React from "react"; export default function dynamic(load, opts) { const View = React.lazy(load); return props => React.createElement(React.Suspense, { fallback: React.createElement(opts.loading) }, React.createElement(View, props)); }',
@@ -63,16 +73,39 @@ test("models show weighted throughput, sample coverage and a real daily graph", 
 test("administrators compare all users and drill down by user and model", async ({ page }) => {
   await fixtures(page);
   await page.goto(`${base}?admin`);
-  await expect(page.getByRole("button", { name: "SILENT (silent@example.test)" })).toBeVisible();
-  await page.getByRole("button", { name: "ALICE (alice@example.test)" }).click();
+  await expect(page.getByRole("button", { name: "Filter by SILENT (silent@example.test)" })).toBeVisible();
+  const memberCell = page.getByRole("cell").filter({ hasText: "ALICE (alice@example.test)" });
+  await memberCell.scrollIntoViewIfNeeded();
+  const member = await memberCell.boundingBox();
+  await page.mouse.click(member!.x + 12, member!.y + 12);
   const row = page.getByRole("row").filter({ hasText: model });
   await expect(row.getByRole("cell", { name: "100", exact: true })).toBeVisible();
   await expect(page.getByRole("row").filter({ hasText: other })).toHaveCount(0);
-  await page.getByRole("button", { name: model, exact: true }).click();
+  await page.getByRole("button", { name: `Filter by ${model}`, exact: true }).click();
   await expect(page.getByRole("combobox", { name: "model", exact: true })).toHaveValue(model);
   await page.getByRole("button", { name: "Clear filters" }).click();
   await expect(page.getByRole("row").filter({ hasText: other })).toBeVisible();
   await page.screenshot({ path: "/tmp/agent-studio-admin-usage.png", fullPage: true });
+});
+
+test("filter actions preserve URL history, reload state and keyboard focus", async ({ page }) => {
+  await fixtures(page);
+  await page.goto(`${base}?admin&from=2026-10-01&to=2026-10-09&metric=outputTokens`);
+  const filter = page.getByRole("button", { name: "Filter by ALICE (alice@example.test)", exact: true });
+  await filter.focus();
+  await filter.press("Enter");
+  await expect(page).toHaveURL(/user=alice/);
+  await expect(page.getByRole("heading", { name: "Usage breakdown", exact: true })).toBeFocused();
+  await expect(page.getByRole("combobox", { name: "Chart metric" })).toHaveValue("Output tokens");
+  await page.reload();
+  await expect(page.getByRole("combobox", { name: "User", exact: true })).toHaveValue("ALICE (alice@example.test)");
+  await expect(page.getByLabel("From", { exact: true })).toHaveValue("2026-10-01");
+  await page.getByRole("button", { name: "Clear filters", exact: true }).click();
+  await expect(page).not.toHaveURL(/user=/);
+  await page.goBack();
+  await expect(page.getByRole("combobox", { name: "User", exact: true })).toHaveValue("ALICE (alice@example.test)");
+  await page.goForward();
+  await expect(page.getByRole("combobox", { name: "User", exact: true })).toHaveValue("");
 });
 
 test("members cannot request the administrator ledger", async ({ page }) => {

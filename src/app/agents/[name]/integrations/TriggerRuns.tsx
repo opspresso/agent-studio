@@ -1,6 +1,8 @@
 "use client";
 
-import { Alert, Anchor, Badge, Group, Stack, Table, Text } from "@mantine/core";
+import { NavigationLink } from "@/app/_components/NavigationLink";
+
+import { Alert, Badge, Group, Stack, Table, Text } from "@mantine/core";
 import { formatDateTime } from "@/shared/date";
 import { useLocale } from "@/app/_i18n/provider";
 import type { TriggerRun } from "../../lib/api";
@@ -67,13 +69,13 @@ export function TriggerRuns({ runs, showTriggerId = false }: { runs: TriggerRun[
                     <Badge color={run.review.status === "posted" ? "teal" : run.review.status === "failed" ? "red" : "gray"}>
                       GitHub: {run.review.status}
                     </Badge>
-                    {run.review.url ? <Anchor href={run.review.url} target="_blank" rel="noopener noreferrer" size="xs">
+                    {run.review.url ? <NavigationLink href={run.review.url} newTab>
                       {run.review.repository} #{run.review.number}
-                    </Anchor> : <Text size="xs">{run.review.repository} #{run.review.number}</Text>}
+                    </NavigationLink> : <Text size="xs">{run.review.repository} #{run.review.number}</Text>}
                   </Group>}
                   {(run.review?.workspaceUrl || run.traceId) && <Group gap="xs">
-                    {run.review?.workspaceUrl && <Anchor href={run.review.workspaceUrl} size="xs">Workspace</Anchor>}
-                    {run.traceId && <Anchor href={`/agents/${encodeURIComponent(run.agentName)}/traces/${encodeURIComponent(run.traceId)}`} size="xs">Trace</Anchor>}
+                    {run.review?.workspaceUrl && <NavigationLink href={run.review.workspaceUrl}>Workspace</NavigationLink>}
+                    {run.traceId && <NavigationLink href={`/agents/${encodeURIComponent(run.agentName)}/traces/${encodeURIComponent(run.traceId)}`}>Trace</NavigationLink>}
                   </Group>}
                   {run.deliveryResults && run.deliveryResults.length > 0 && (
                     <Group gap={4}>

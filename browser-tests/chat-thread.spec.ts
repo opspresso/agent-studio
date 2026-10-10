@@ -54,7 +54,7 @@ test("shows only the final file across live output, tail synchronization and rel
   await expect(page.getByText("report.html", { exact: true })).toHaveCount(1);
   finished = true;
   await page.evaluate(() => window.dispatchEvent(new Event("finish-file-run")));
-  await expect(page.getByRole("link", { name: "report.html", exact: true })).toHaveAttribute("href", "https://files.test/final");
+  await expect(page.getByRole("link", { name: "Download: report.html", exact: true })).toHaveAttribute("href", "https://files.test/final");
   await expect(page.getByText("report.html", { exact: true })).toHaveCount(1);
   await page.reload();
   await expect(page.getByText("report.html", { exact: true })).toHaveCount(1);

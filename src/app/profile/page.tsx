@@ -1,9 +1,10 @@
 "use client";
 
+import { NavigationLink } from "@/app/_components/NavigationLink";
+
 import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
-  Anchor,
   Avatar,
   Badge,
   Card,
@@ -115,7 +116,7 @@ export default function ProfilePage() {
     <Stack gap="lg">
       {header}
       {!mayRun && <Alert>{t("common.memberExecutionRequired")}</Alert>}
-      <Anchor href="/profile/messaging">{t("messaging.identity.title")}</Anchor>
+      <NavigationLink href="/profile/messaging">{t("messaging.identity.title")}</NavigationLink>
 
       <Card>
         <Group gap="md" wrap="nowrap" align="flex-start">

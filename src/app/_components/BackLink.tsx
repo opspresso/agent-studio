@@ -1,11 +1,11 @@
 "use client";
 
-import Link from "next/link";
-import { Anchor } from "@mantine/core";
+import { NavigationLink } from "@/app/_components/NavigationLink";
+
 import { useT } from "@/app/_i18n/provider";
 
 /**
- * The dimmed "← Back to …" line a detail page opens with.
+ * The boxed return link a detail page opens with.
  *
  * The whole sentence is one message rather than a prefix plus the label,
  * because Korean puts the destination before the verb — a fixed prefix would
@@ -14,8 +14,8 @@ import { useT } from "@/app/_i18n/provider";
 export function BackLink({ href, label }: { href: string; label: string }) {
   const t = useT();
   return (
-    <Anchor component={Link} href={href} fz="sm" c="dimmed">
+    <NavigationLink back href={href}>
       {t("common.backTo", { label })}
-    </Anchor>
+    </NavigationLink>
   );
 }

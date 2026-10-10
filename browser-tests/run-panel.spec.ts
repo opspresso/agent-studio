@@ -72,10 +72,10 @@ test("offers isolated previews for addressed viewable files", async ({ page }) =
   await page.goto(base);
   await page.getByRole("textbox", { name: "Message", exact: true }).fill("Create reports");
   await page.getByRole("button", { name: "Run", exact: true }).last().click();
-  await expect(page.getByRole("link", { name: "report.html", exact: true })).toHaveAttribute("href", "/download/report.html");
-  await expect(page.getByRole("link", { name: "View", exact: true })).toHaveCount(1);
-  await expect(page.getByRole("link", { name: "View", exact: true })).toHaveAttribute("href", "/api/artifacts/artifact-html/view");
-  await expect(page.getByRole("link", { name: "View", exact: true })).toHaveAttribute("target", "_blank");
+  await expect(page.getByRole("link", { name: "Download: report.html", exact: true })).toHaveAttribute("href", "/download/report.html");
+  await expect(page.getByRole("link", { name: "View (opens in a new tab)", exact: true })).toHaveCount(1);
+  await expect(page.getByRole("link", { name: "View (opens in a new tab)", exact: true })).toHaveAttribute("href", "/api/artifacts/artifact-html/view");
+  await expect(page.getByRole("link", { name: "View (opens in a new tab)", exact: true })).toHaveAttribute("target", "_blank");
 });
 
 test("downloads inline files when object storage is unavailable", async ({ page }) => {
@@ -88,9 +88,9 @@ test("downloads inline files when object storage is unavailable", async ({ page 
   await page.goto(base);
   await page.getByRole("textbox", { name: "Message", exact: true }).fill("Create an inline report");
   await page.getByRole("button", { name: "Run", exact: true }).last().click();
-  await expect(page.getByRole("link", { name: "View", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "View (opens in a new tab)", exact: true })).toHaveCount(0);
   const completed = page.waitForEvent("download");
-  await page.getByRole("link", { name: "report.html", exact: true }).click();
+  await page.getByRole("link", { name: "Download: report.html", exact: true }).click();
   const download = await completed;
   expect(download.suggestedFilename()).toBe("report.html");
   expect(await readFile((await download.path())!, "utf8")).toBe(content);

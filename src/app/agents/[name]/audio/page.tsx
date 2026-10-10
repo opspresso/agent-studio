@@ -1,5 +1,7 @@
 "use client";
 
+import { NavigationLink } from "@/app/_components/NavigationLink";
+
 import { EmptyState, LoadingText } from "@/app/_components/PageState";
 import { SectionHeading } from "@/app/_components/SectionHeading";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -188,7 +190,7 @@ function AudioWorkspace({ name }: { name: string }) {
         {!savedConfig.enabled && <Alert>{t("audio.configDisabled")}</Alert>}
       </>}
         <FileInput label={t("audio.file")} placeholder={t("audio.chooseFile")} description="MP3, WAV, FLAC, Ogg" accept=".mp3,.wav,.flac,.ogg" value={file} onChange={(file) => { setFile(file); setUploaded(null); }} clearable={!busy} disabled={busy} />
-      {uploaded && <Text component="a" size="sm" href={`${base}/source-files/${uploaded.file.id}`}>{t("audio.uploadedFile")}: {uploaded.file.filename}</Text>}
+      {uploaded && <NavigationLink download={uploaded.file.filename} href={`${base}/source-files/${uploaded.file.id}`}>{t("audio.uploadedFile")}: {uploaded.file.filename}</NavigationLink>}
       {!useSaved && <>
         <ModelSelect label={t("audio.model")} searchable models={options.models} value={model} onChange={setModel} disabled={busy} />
         <TextInput label={t("audio.language")} placeholder="ko, en" value={language} onChange={(e) => setLanguage(e.currentTarget.value)} maxLength={3} disabled={busy} />
@@ -257,9 +259,9 @@ function AudioWorkspace({ name }: { name: string }) {
       </details>}
       {job.unavailableArtifacts && <Text size="sm" c="dimmed">{t("audio.unavailableArtifacts")}</Text>}
       <Group gap="xs">
-        {job.artifactLinks.source && <Button component="a" href={job.artifactLinks.source} variant="light" size="xs">{t("audio.original")}</Button>}
-        {job.artifactLinks.transcript && <Button component="a" href={job.artifactLinks.transcript} variant="light" size="xs">{t("audio.transcript")}</Button>}
-        {job.artifactLinks.processed && <Button component="a" href={job.artifactLinks.processed} variant="light" size="xs">{t("audio.result")}</Button>}
+        {job.artifactLinks.source && <NavigationLink download href={job.artifactLinks.source}>{t("audio.original")}</NavigationLink>}
+        {job.artifactLinks.transcript && <NavigationLink download href={job.artifactLinks.transcript}>{t("audio.transcript")}</NavigationLink>}
+        {job.artifactLinks.processed && <NavigationLink download href={job.artifactLinks.processed}>{t("audio.result")}</NavigationLink>}
         {(job.status === "failed" || job.status === "blocked") && <Button size="xs" variant="default" disabled={busy} onClick={() => act(job, "retry")}>{t("audio.retry")}</Button>}
         {isAudioJobTerminal(job.status) && <Button size="xs" variant="subtle" color="red" disabled={busy} onClick={() => act(job, "delete")}>{t("audio.delete")}</Button>}
         {["queued", "running", "waiting"].includes(job.status) && <Button size="xs" variant="subtle" color="red" disabled={busy} onClick={() => act(job, "cancel")}>{t("audio.cancel")}</Button>}

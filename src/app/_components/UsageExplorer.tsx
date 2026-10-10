@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { readUsageQuery, writeUsageQuery, type UsageQuery } from "@/app/_lib/usageQuery";
 import { Alert, Button, Card, Group, Select, SimpleGrid, Stack, Text } from "@mantine/core";
 import { IconChartBar } from "@tabler/icons-react";
 import type { UsageSummaryResponse } from "@/app/api/usages/summary/route";
 import type { MembersUsageResponse } from "@/app/api/usages/members/route";
 import { buildDailySeries, emptyUsageGroup, filterUsage, groupUsage, totalUsage, usageMetricValue,
-  type DailyCostRow, type GroupBy, type UsageMetric } from "@/app/_lib/usage";
+  type DailyCostRow, type UsageMetric } from "@/app/_lib/usage";
 import { USAGE_METRIC_LABELS, formatUsageMetric } from "@/app/_lib/usagePresentation";
 import { defaultDateRange } from "@/app/_lib/dateRange";
 import { readJson } from "@/app/_lib/httpClient";
@@ -22,18 +24,33 @@ import { UsageBreakdown } from "./UsageBreakdown";
 interface UsageView { key: string; items: DailyCostRow[]; members: MembersUsageResponse["members"]; error?: string }
 const METRICS: UsageMetric[] = ["cost", "calls", "inputTokens", "outputTokens", "tokensPerSecond"];
 
-export function UsageExplorer({ admin = false, initialModel, initialUser }: {
-  admin?: boolean; initialModel?: string; initialUser?: string;
-}) {
+export function UsageExplorer({ admin = false }: { admin?: boolean }) {
   const t = useT();
   const locale = useLocale();
   const viewer = useViewer();
   const mayRead = !admin || viewer?.isAdmin === true;
-  const [range, setRange] = useState(defaultDateRange);
-  const [model, setModel] = useState<string | null>(initialModel ?? null);
-  const [user, setUser] = useState<string | null>(initialUser ?? null);
-  const [groupBy, setGroupBy] = useState<GroupBy>(admin && !initialUser ? "user" : "model");
-  const [metric, setMetric] = useState<UsageMetric>("cost");
+  const searchParams = useSearchParams();
+  const defaults = useMemo(defaultDateRange, []);
+  const state = readUsageQuery(searchParams, admin, defaults);
+  const { range, model, user, groupBy, metric } = state;
+  const resultHeading = useRef<HTMLHeadingElement>(null);
+  const focusResults = useRef(false);
+  const search = searchParams.toString();
+  useEffect(() => {
+    if (focusResults.current) {
+      resultHeading.current?.focus({ preventScroll: true });
+      focusResults.current = false;
+    }
+  }, [search]);
+  function update(patch: Partial<UsageQuery>, focus = false) {
+    const next = writeUsageQuery({ ...state, ...patch }, search);
+    if (next === search) {
+      if (focus) resultHeading.current?.focus({ preventScroll: true });
+      return;
+    }
+    focusResults.current = focus;
+    window.history.pushState(null, "", `${window.location.pathname}?${next}${window.location.hash}`);
+  }
   const [refresh, setRefresh] = useState(0);
   const [view, setView] = useState<UsageView>();
   const query = `/api/usages/${admin ? "members" : "summary"}?${new URLSearchParams({ from: range.from, to: range.to })}`;
@@ -63,7 +80,7 @@ export function UsageExplorer({ admin = false, initialModel, initialUser }: {
     }
     return grouped.sort((a, b) => (usageMetricValue(b, metric) ?? -1) - (usageMetricValue(a, metric) ?? -1) || a.key.localeCompare(b.key));
   }, [rows, groupBy, metric, members, user, loading, error]);
-  const daily = useMemo(() => buildDailySeries(rows, groupBy, range.from, range.to, undefined, metric), [rows, groupBy, range, metric]);
+  const daily = useMemo(() => buildDailySeries(rows, groupBy, range.from, range.to, undefined, metric), [rows, groupBy, range.from, range.to, metric]);
   const empty = t(loading ? "common.loading" : error ? "usage.loadFailed"
     : metric === "tokensPerSecond" ? "usage.noMeasurements" : "usage.noMetricValues");
 
@@ -75,12 +92,12 @@ export function UsageExplorer({ admin = false, initialModel, initialUser }: {
   return <Stack gap="lg">
     {header}
     <Group align="end" gap="md">
-      <DateRangePicker value={range} onChange={setRange} />
+      <DateRangePicker value={range} onChange={range => update({ range })} />
       {admin && <Select label={t("usage.groupBy.user")} placeholder={t("usage.allUsers")} searchable clearable value={user}
-        data={[...members].map(([value, label]) => ({ value, label }))} onChange={setUser} miw={240} />}
+        data={[...members].map(([value, label]) => ({ value, label }))} onChange={user => update({ user })} miw={240} />}
       <Select label={t("usage.groupBy.model")} placeholder={t("usage.allModels")} searchable clearable value={model}
-        data={models} onChange={setModel} miw={240} />
-      {(model || user) && <Button variant="subtle" onClick={() => { setModel(null); setUser(null); }}>{t("usage.clearFilters")}</Button>}
+        data={models} onChange={model => update({ model })} miw={240} />
+      {(model || user) && <Button variant="subtle" onClick={() => update({ model: null, user: null })}>{t("usage.clearFilters")}</Button>}
     </Group>
     {error && <Alert color="red"><Group justify="space-between"><Text size="sm">{error}</Text>
       <Button variant="light" size="xs" onClick={() => setRefresh(value => value + 1)}>{t("error.retry")}</Button>
@@ -98,14 +115,15 @@ export function UsageExplorer({ admin = false, initialModel, initialUser }: {
         <Group>
           <Select aria-label={t("usage.metric")} value={metric} allowDeselect={false}
             data={METRICS.map(value => ({ value, label: t(USAGE_METRIC_LABELS[value]) }))}
-            onChange={value => { if (value) setMetric(value as UsageMetric); }} />
-          <GroupByControl value={groupBy} onChange={setGroupBy} options={admin ? ["user", "model", "provider"] : ["model", "provider"]} />
+            onChange={value => { if (value) update({ metric: value as UsageMetric }); }} />
+          <GroupByControl value={groupBy} onChange={groupBy => update({ groupBy })} options={admin ? ["user", "model", "provider"] : ["model", "provider"]} />
         </Group>
       </Group>
       <UsageChart data={daily.data} keys={daily.keys} metric={metric} labels={labels} empty={empty} />
     </Card>
+    <Text component="h2" ref={resultHeading} tabIndex={-1} fz="sm" fw={600}>{t("usage.breakdown")}</Text>
     <UsageBreakdown key={`${groupBy}:${model}:${user}:${metric}`} groups={groups} label={groupBy} labels={labels} loading={loading} failed={!!error}
-      onSelect={groupBy === "user" ? id => { setUser(id); setGroupBy("model"); }
-        : groupBy === "model" ? id => { setModel(id); if (admin && !user) setGroupBy("user"); } : undefined} />
+      onSelect={groupBy === "user" ? id => update({ user: id, groupBy: "model" }, true)
+        : groupBy === "model" ? id => update({ model: id, groupBy: admin && !user ? "user" : groupBy }, true) : undefined} />
   </Stack>;
 }

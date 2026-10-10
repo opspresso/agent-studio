@@ -1,0 +1,38 @@
+/* The primary native link/button covers the surface. Secondary controls sit above it. */
+.surface {
+  position: relative;
+  isolation: isolate;
+  --surface-radius: var(--mantine-radius-lg);
+  transition: background-color 150ms ease, box-shadow 150ms ease;
+}
+.surface:is(a, button):hover:not(:disabled),
+.surface:is(a, button):focus-visible:not(:disabled),
+.surface:has([data-surface-trigger]:hover),
+.surface:has([data-surface-trigger]:focus-visible) {
+  background: var(--surface-highlight);
+  box-shadow: inset 3px 0 0 var(--mantine-primary-color-filled);
+}
+.trigger[data-surface-trigger] { position: static; }
+/* A pressed transform would move the pseudo-element's containing block to the button,
+   shrinking the hit area between pointerdown and pointerup. */
+.surface .trigger[data-surface-trigger]:active { transform: none; }
+.trigger::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: var(--surface-radius);
+  cursor: pointer;
+}
+.trigger:focus-visible { outline: none; }
+.trigger:focus-visible::after {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: -2px;
+}
+.control { position: relative; z-index: 2; }
+@media (prefers-reduced-motion: reduce) {
+  .surface { transition: none; }
+}
+
+.surface:is(a, button) { color: inherit; text-decoration: none; }
+.surface:is(a, button):focus-visible:not(:disabled) { outline: 2px solid var(--mantine-primary-color-filled); outline-offset: -2px; }

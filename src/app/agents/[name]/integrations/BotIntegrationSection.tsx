@@ -1,6 +1,8 @@
 "use client";
 
-import { Alert, Anchor, Badge, Button, Stack, Text } from "@mantine/core";
+import { NavigationLink } from "@/app/_components/NavigationLink";
+
+import { Alert, Badge, Button, Stack, Text } from "@mantine/core";
 import { ConfigurationFields } from "@/app/_components/ConfigurationFields";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { LoadingText } from "@/app/_components/PageState";
@@ -39,7 +41,7 @@ export function BotIntegrationSection({
     selectLabel={onSelect ? t("pint.historyView") : undefined}>
     {view ? <Stack gap="md">
       <Text size="sm" c="dimmed">{t("integrations.callerAuthenticationHint")}</Text>
-      <Anchor href="/profile/messaging">{t("messaging.identity.title")}</Anchor>
+      <NavigationLink href="/profile/messaging">{t("messaging.identity.title")}</NavigationLink>
       <ConfigurationFields disabled={busy}>{children}</ConfigurationFields>
     </Stack> : error ? <Alert color="red"><Stack gap="xs" align="flex-start">
       <Text size="sm">{error}</Text>

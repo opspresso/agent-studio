@@ -8,6 +8,7 @@ import type { MemberTier } from "@/domain/member/tiers";
 import type { Member } from "@/domain/member/types";
 import type { MembersResponse } from "@/app/api/members/route";
 import { PageHeader } from "@/app/_components/PageHeader";
+import interaction from "@/app/_components/InteractiveSurface.module.css";
 import { DataTable } from "@/app/_components/DataTable";
 import { EmptyState, LoadingText } from "@/app/_components/PageState";
 import { formatDateTime } from "@/shared/date";
@@ -96,7 +97,7 @@ export default function MembersPage() {
             </Table.Thead>
             <Table.Tbody>
               {members.map((member) => (
-                <Table.Tr key={member.id}>
+                <Table.Tr key={member.id} className={interaction.surface}>
                   <Table.Td>
                     <Group gap="sm" wrap="nowrap">
                       <Avatar src={member.image} radius="xl">{member.name.slice(0, 1)}</Avatar>
@@ -108,6 +109,7 @@ export default function MembersPage() {
                   </Table.Td>
                   <Table.Td>
                     <Select
+                      className={interaction.control}
                       size="xs"
                       w={110}
                       data={tiers}
@@ -128,7 +130,7 @@ export default function MembersPage() {
                       {member.lastLoginAt ? formatDateTime(member.lastLoginAt, locale) : t("members.neverRecorded")}
                     </Text>
                   </Table.Td>
-                  <Table.Td><NavigationLink href={`/usage?user=${encodeURIComponent(member.id)}`}>{t("usage.view")}</NavigationLink></Table.Td>
+                  <Table.Td><NavigationLink surface href={`/usage?user=${encodeURIComponent(member.id)}`}>{t("usage.view")}</NavigationLink></Table.Td>
                 </Table.Tr>
               ))}
             </Table.Tbody>

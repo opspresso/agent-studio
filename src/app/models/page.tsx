@@ -66,7 +66,7 @@ export default function ModelsPage() {
     {favoriteError && <Alert color="red">{favoriteError}</Alert>}
     {!models && !error && <LoadingText />}
     {models && <ModelCollection scope="browse" models={models} emptyText={t("models.empty")}
-      renderActions={model => <NavigationLink href={`/models/usage?model=${encodeURIComponent(model.id)}`}>
+      renderActions={model => <NavigationLink surface href={`/models/usage?model=${encodeURIComponent(model.id)}`}>
         {t("usage.view")}
       </NavigationLink>}
       renderTitleAction={favorites === undefined ? undefined : model => {

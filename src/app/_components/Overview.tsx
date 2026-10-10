@@ -1,10 +1,12 @@
 "use client";
 
+import interaction from "./InteractiveSurface.module.css";
+import { NavigationLink } from "@/app/_components/NavigationLink";
+
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   Alert,
-  Anchor,
   Button,
   Group,
   Paper,
@@ -185,10 +187,11 @@ export function Overview({
             <div className={classes.chatList}>
               {chats.slice(0, RECENT_CHATS).map((chat) => (
                 <UnstyledButton key={chat.chatId} component={Link} href={`/chats/${chat.chatId}`}
-                  className={classes.chatRow}>
+                  className={`${classes.chatRow} ${interaction.surface}`}>
                   <div className={classes.chatRowMain}>
                     <span className={classes.kind}>{chat.workspaceId ? t("workspace.kind") : t("chat.kind")}</span>
-                    <Text component="span" truncate>{chat.title}</Text>
+                    <Text component="span" truncate style={{ flex: 1 }}>{chat.title}</Text>
+                    <IconArrowRight size={16} aria-hidden="true" />
                   </div>
                   <Text className={classes.rowMeta}>
                     {chat.agentName ? `${chat.agentName} · ` : ""}{formatDate(chat.updatedAt, locale)}
@@ -206,7 +209,7 @@ export function Overview({
             <div className={classes.agentList}>
               {recent.map((agent) => (
                 <UnstyledButton key={agent.name} component={Link} href={`/agents/${agent.name}`}
-                  className={classes.agentRow}>
+                  className={`${classes.agentRow} ${interaction.surface}`}>
                   <Group justify="space-between" gap="xs" wrap="nowrap">
                     <Text fw={600} truncate>{agent.displayName || agent.name}</Text>
                     <IconArrowRight size={16} aria-hidden="true" />
@@ -226,9 +229,9 @@ export function Overview({
       <nav aria-label={t("overview.inventory")} className={classes.inventory}>
         <Text className={classes.inventoryLabel}>{t("overview.inventory")}</Text>
         <div className={classes.inventoryLinks}>
-          <Link href="/agents"><span>{t("nav.agents")}</span><strong>{agents?.length ?? "—"}</strong></Link>
+          <NavigationLink href="/agents"><span>{t("nav.agents")}</span><strong>{agents?.length ?? "—"}</strong></NavigationLink>
           {CATALOGS.map(({ key, href, label }) => (
-            <Link href={href} key={key}><span>{t(label)}</span><strong>{counts[key] ?? "—"}</strong></Link>
+            <NavigationLink href={href} key={key}><span>{t(label)}</span><strong>{counts[key] ?? "—"}</strong></NavigationLink>
           ))}
         </div>
       </nav>
@@ -254,12 +257,7 @@ function Section({
   return (
     <Stack gap="md" component="section" className={classes.section}>
       <SectionHeading title={title} description={description}>
-        <Anchor component={Link} href={href} fz="sm" style={{ whiteSpace: "nowrap" }}>
-          <Group gap={4} wrap="nowrap">
-            {linkLabel}
-            <IconArrowRight size={14} />
-          </Group>
-        </Anchor>
+        <NavigationLink href={href}>{linkLabel}</NavigationLink>
       </SectionHeading>
       {children}
     </Stack>

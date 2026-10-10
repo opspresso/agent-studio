@@ -1,8 +1,9 @@
 "use client";
 
+import { NavigationLink } from "@/app/_components/NavigationLink";
+
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import { Anchor, Button, Checkbox, Divider, Stack, Text } from "@mantine/core";
+import { Button, Checkbox, Divider, Stack, Text } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
 import { readJson } from "@/app/_lib/httpClient";
 import { useViewer } from "@/app/_lib/useViewer";
@@ -35,7 +36,7 @@ export function ModelRoutingEditor({ value, onChange }: { value?: boolean; onCha
         {tiers.length ? tiers.map(tier => `${t(`routing.tier.${tier}`)}: ${view.policy.tiers[tier]}`).join(" · ") : t("routing.noSharedModels")}
       </Text>}
       {error && <Text size="xs" c="red">{error}</Text>}
-      {viewer?.isAdmin && <Anchor component={Link} href="/settings/model-usage" size="xs">{t("routing.manageShared")}</Anchor>}
+      {viewer?.isAdmin && <NavigationLink href="/settings/model-usage">{t("routing.manageShared")}</NavigationLink>}
     </>}
   </Stack>;
 }

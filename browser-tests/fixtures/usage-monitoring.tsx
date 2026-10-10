@@ -16,7 +16,7 @@ createRoot(document.getElementById("root")!).render(
   <I18nProvider locale={params.has("ko") ? "ko" : "en"}><ConsoleThemeProvider>
     <ViewerProvider viewer={params.has("viewerLoading") ? null : { email: "viewer@example.test", tier: restricted ? "member" : "admin", isAdmin: !restricted }}>
       <div style={{ padding: 20, maxWidth: 1400, margin: "auto" }}>
-        <UsageExplorer admin={admin} initialUser={params.get("user") ?? undefined} initialModel={params.get("model") ?? undefined} />
+        <UsageExplorer admin={admin} />
       </div>
     </ViewerProvider>
   </ConsoleThemeProvider></I18nProvider>,

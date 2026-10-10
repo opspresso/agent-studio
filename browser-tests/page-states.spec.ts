@@ -155,7 +155,7 @@ for (const [routeName, title, endpoint] of [["profile", "Profile", "me/profile"]
       await page.goto(`${base}?page=${routeName}`);
       const heading = page.getByRole("heading", { level: 1, name: title });
       await expect(heading).toBeVisible();
-      await expect(page.locator("main header svg")).toHaveCount(1);
+      await expect(page.locator("main header svg:not(a svg, button svg)")).toHaveCount(1);
       await expect(page.getByRole("status")).toContainText("Loading");
       await expect.poll(() => Boolean(release)).toBe(true);
       release!();
