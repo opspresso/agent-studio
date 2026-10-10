@@ -149,6 +149,20 @@ test("failed reads stay unknown and can be retried", async ({ page }) => {
   await expect(page.getByRole("alert")).toHaveCount(0);
 });
 
+for (const admin of [false, true]) test(`a fitting ${admin ? "member" : "model"} usage table has no scrollbar after hover`, async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await fixtures(page);
+  await page.goto(`${base}?${admin ? "admin&user=alice&" : ""}model=${encodeURIComponent(model)}&group=model`);
+  const table = page.getByRole("table");
+  await expect(table.getByRole("row").filter({ hasText: model })).toBeVisible();
+  const viewport = page.locator(".mantine-TableScrollContainer-scrollContainer .mantine-ScrollArea-viewport");
+  for (const hover of [false, true]) {
+    if (hover) await table.getByRole("row").filter({ hasText: model }).hover();
+    await expect.poll(() => viewport.evaluate(element => element.scrollWidth - element.clientWidth)).toBe(0);
+    await expect(page.locator('.mantine-TableScrollContainer-scrollContainer [data-orientation="horizontal"]')).not.toBeVisible();
+  }
+});
+
 test("Korean mobile view keeps the wide table inside its scroll container", async ({ page }) => {
   await fixtures(page);
   await page.setViewportSize({ width: 390, height: 844 });

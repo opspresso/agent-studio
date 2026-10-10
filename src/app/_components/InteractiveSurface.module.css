@@ -13,6 +13,9 @@
   border-color: var(--studio-border-hover);
 }
 .trigger[data-surface-trigger] { position: static; }
+/* Mantine's transparent loading overlay has negative insets. With the row as
+   its containing block, it would overflow even while the button is idle. */
+.trigger[data-surface-trigger]::before { content: none; }
 /* A pressed transform would move the pseudo-element's containing block to the button,
    shrinking the hit area between pointerdown and pointerup. */
 .surface .trigger[data-surface-trigger]:active { transform: none; }
